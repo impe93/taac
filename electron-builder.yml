@@ -1,5 +1,5 @@
 appId: com.electron.app
-productName: electron-tanstack
+productName: TaacNotes
 directories:
   buildResources: build
 files:

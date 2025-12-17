@@ -35,7 +35,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
           }}
         />
         <React.Suspense>
-          <TanStackRouterDevtools position="bottom-left" />
+          <TanStackRouterDevtools position="top-right" />
           <ReactQueryDevtools buttonPosition="bottom-right" />
         </React.Suspense>
       </ThemeProvider>

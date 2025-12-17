@@ -1,16 +1,19 @@
-import { Calendar, Home, Inbox, Search, Settings } from 'lucide-react'
+import { Briefcase, Home, Inbox, Plane, Settings, User } from 'lucide-react'
 
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
+  SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem
 } from '@renderer/components/ui/sidebar'
 import { Link } from '@tanstack/react-router'
+
 // Menu items.
 const items = [
   {
@@ -33,9 +36,10 @@ const items = [
 export function AppSidebar() {
   return (
     <Sidebar>
+      <SidebarHeader className="h-6" />
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Application</SidebarGroupLabel>
+          <SidebarGroupLabel>Taac Notes</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {items.map((item) => (
@@ -52,6 +56,13 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
+      <SidebarFooter>
+        <div className="flex items-center justify-center gap-4 mb-2">
+          <Briefcase className="size-4" />
+          <User className="size-4" />
+          <Plane className="size-4" />
+        </div>
+      </SidebarFooter>
     </Sidebar>
   )
 }
