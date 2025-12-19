@@ -59,6 +59,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "date-fns": "^4.1.0",
+    "electron-store": "^9.0.0",
     "electron-updater": "^6.6.2",
     "embla-carousel-react": "^8.5.2",
     "input-otp": "^1.4.2",
@@ -75,6 +76,7 @@
     "tailwind-merge": "^3.0.2",
     "tailwindcss": "^4.0.17",
     "tw-animate-css": "^1.2.5",
+    "uuid": "^10.0.0",
     "vaul": "^1.1.2",
     "zod": "^3.24.2"
   },
@@ -88,6 +90,7 @@
     "@types/node": "^22.13.14",
     "@types/react": "^19.0.12",
     "@types/react-dom": "^19.0.4",
+    "@types/uuid": "^10.0.0",
     "@vitejs/plugin-react": "^4.3.4",
     "electron": "^35.1.2",
     "electron-builder": "^26.0.12",
