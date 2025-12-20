@@ -13,6 +13,8 @@ export interface AppConfig {
     y?: number
   }
   recentNotes: string[]
+  activeSpaceId: string | null
+  spacesInitialized: boolean
 }
 
 const schema = {
@@ -55,6 +57,14 @@ const schema = {
     type: 'array',
     items: { type: 'string' },
     default: []
+  },
+  activeSpaceId: {
+    type: ['string', 'null'],
+    default: null
+  },
+  spacesInitialized: {
+    type: 'boolean',
+    default: false
   }
 } as const
 

@@ -2,17 +2,21 @@ import { ipcMain, type IpcMainInvokeEvent } from 'electron'
 import type { FileSystemManager, Note, FolderMetadata } from '../utils/fileSystem'
 import type { SerializedEditorState } from 'lexical'
 
-export function registerFileHandlers(fsManager: FileSystemManager): void {
+type GetFsManager = (spaceId: string) => FileSystemManager
+
+export function registerFileHandlers(getOrCreateFsManager: GetFsManager): void {
   // Note operations
   ipcMain.handle(
     'fs:createNote',
     async (
       _event: IpcMainInvokeEvent,
+      spaceId: string,
       folderId: string,
       content: SerializedEditorState,
       title: string
     ) => {
       try {
+        const fsManager = getOrCreateFsManager(spaceId)
         return await fsManager.createNote(folderId, content, title)
       } catch (error) {
         throw new Error(`Failed to create note: ${(error as Error).message}`)
@@ -22,8 +26,9 @@ export function registerFileHandlers(fsManager: FileSystemManager): void {
 
   ipcMain.handle(
     'fs:readNote',
-    async (_event: IpcMainInvokeEvent, folderId: string, noteId: string) => {
+    async (_event: IpcMainInvokeEvent, spaceId: string, folderId: string, noteId: string) => {
       try {
+        const fsManager = getOrCreateFsManager(spaceId)
         return await fsManager.readNote(folderId, noteId)
       } catch (error) {
         throw new Error(`Failed to read note: ${(error as Error).message}`)
@@ -35,11 +40,13 @@ export function registerFileHandlers(fsManager: FileSystemManager): void {
     'fs:updateNote',
     async (
       _event: IpcMainInvokeEvent,
+      spaceId: string,
       folderId: string,
       noteId: string,
       updates: Partial<Note>
     ) => {
       try {
+        const fsManager = getOrCreateFsManager(spaceId)
         return await fsManager.updateNote(folderId, noteId, updates)
       } catch (error) {
         throw new Error(`Failed to update note: ${(error as Error).message}`)
@@ -49,8 +56,9 @@ export function registerFileHandlers(fsManager: FileSystemManager): void {
 
   ipcMain.handle(
     'fs:deleteNote',
-    async (_event: IpcMainInvokeEvent, folderId: string, noteId: string) => {
+    async (_event: IpcMainInvokeEvent, spaceId: string, folderId: string, noteId: string) => {
       try {
+        const fsManager = getOrCreateFsManager(spaceId)
         await fsManager.deleteNote(folderId, noteId)
       } catch (error) {
         throw new Error(`Failed to delete note: ${(error as Error).message}`)
@@ -58,19 +66,24 @@ export function registerFileHandlers(fsManager: FileSystemManager): void {
     }
   )
 
-  ipcMain.handle('fs:listNotes', async (_event: IpcMainInvokeEvent, folderId: string) => {
-    try {
-      return await fsManager.listNotes(folderId)
-    } catch (error) {
-      throw new Error(`Failed to list notes: ${(error as Error).message}`)
+  ipcMain.handle(
+    'fs:listNotes',
+    async (_event: IpcMainInvokeEvent, spaceId: string, folderId: string) => {
+      try {
+        const fsManager = getOrCreateFsManager(spaceId)
+        return await fsManager.listNotes(folderId)
+      } catch (error) {
+        throw new Error(`Failed to list notes: ${(error as Error).message}`)
+      }
     }
-  })
+  )
 
   // Folder operations
   ipcMain.handle(
     'fs:createFolder',
-    async (_event: IpcMainInvokeEvent, name: string, parentId?: string) => {
+    async (_event: IpcMainInvokeEvent, spaceId: string, name: string, parentId?: string) => {
       try {
+        const fsManager = getOrCreateFsManager(spaceId)
         return await fsManager.createFolder(name, parentId)
       } catch (error) {
         throw new Error(`Failed to create folder: ${(error as Error).message}`)
@@ -78,18 +91,28 @@ export function registerFileHandlers(fsManager: FileSystemManager): void {
     }
   )
 
-  ipcMain.handle('fs:readFolderMetadata', async (_event: IpcMainInvokeEvent, folderId: string) => {
-    try {
-      return await fsManager.readFolderMetadata(folderId)
-    } catch (error) {
-      throw new Error(`Failed to read folder metadata: ${(error as Error).message}`)
+  ipcMain.handle(
+    'fs:readFolderMetadata',
+    async (_event: IpcMainInvokeEvent, spaceId: string, folderId: string) => {
+      try {
+        const fsManager = getOrCreateFsManager(spaceId)
+        return await fsManager.readFolderMetadata(folderId)
+      } catch (error) {
+        throw new Error(`Failed to read folder metadata: ${(error as Error).message}`)
+      }
     }
-  })
+  )
 
   ipcMain.handle(
     'fs:updateFolderMetadata',
-    async (_event: IpcMainInvokeEvent, folderId: string, updates: Partial<FolderMetadata>) => {
+    async (
+      _event: IpcMainInvokeEvent,
+      spaceId: string,
+      folderId: string,
+      updates: Partial<FolderMetadata>
+    ) => {
       try {
+        const fsManager = getOrCreateFsManager(spaceId)
         return await fsManager.updateFolderMetadata(folderId, updates)
       } catch (error) {
         throw new Error(`Failed to update folder metadata: ${(error as Error).message}`)
@@ -97,16 +120,21 @@ export function registerFileHandlers(fsManager: FileSystemManager): void {
     }
   )
 
-  ipcMain.handle('fs:deleteFolder', async (_event: IpcMainInvokeEvent, folderId: string) => {
-    try {
-      await fsManager.deleteFolder(folderId)
-    } catch (error) {
-      throw new Error(`Failed to delete folder: ${(error as Error).message}`)
+  ipcMain.handle(
+    'fs:deleteFolder',
+    async (_event: IpcMainInvokeEvent, spaceId: string, folderId: string) => {
+      try {
+        const fsManager = getOrCreateFsManager(spaceId)
+        await fsManager.deleteFolder(folderId)
+      } catch (error) {
+        throw new Error(`Failed to delete folder: ${(error as Error).message}`)
+      }
     }
-  })
+  )
 
-  ipcMain.handle('fs:getFolderTree', async (_event: IpcMainInvokeEvent) => {
+  ipcMain.handle('fs:getFolderTree', async (_event: IpcMainInvokeEvent, spaceId: string) => {
     try {
+      const fsManager = getOrCreateFsManager(spaceId)
       return await fsManager.getFolderTree()
     } catch (error) {
       throw new Error(`Failed to get folder tree: ${(error as Error).message}`)
@@ -118,11 +146,13 @@ export function registerFileHandlers(fsManager: FileSystemManager): void {
     'fs:saveAsset',
     async (
       _event: IpcMainInvokeEvent,
+      spaceId: string,
       originalName: string,
       buffer: Uint8Array,
       type: 'image' | 'pdf' | 'attachment'
     ) => {
       try {
+        const fsManager = getOrCreateFsManager(spaceId)
         return await fsManager.saveAsset(originalName, Buffer.from(buffer), type)
       } catch (error) {
         throw new Error(`Failed to save asset: ${(error as Error).message}`)
@@ -132,8 +162,14 @@ export function registerFileHandlers(fsManager: FileSystemManager): void {
 
   ipcMain.handle(
     'fs:readAsset',
-    async (_event: IpcMainInvokeEvent, assetId: string, type: 'image' | 'pdf' | 'attachment') => {
+    async (
+      _event: IpcMainInvokeEvent,
+      spaceId: string,
+      assetId: string,
+      type: 'image' | 'pdf' | 'attachment'
+    ) => {
       try {
+        const fsManager = getOrCreateFsManager(spaceId)
         const buffer = await fsManager.readAsset(assetId, type)
         return buffer
       } catch (error) {
@@ -144,8 +180,14 @@ export function registerFileHandlers(fsManager: FileSystemManager): void {
 
   ipcMain.handle(
     'fs:deleteAsset',
-    async (_event: IpcMainInvokeEvent, assetId: string, type: 'image' | 'pdf' | 'attachment') => {
+    async (
+      _event: IpcMainInvokeEvent,
+      spaceId: string,
+      assetId: string,
+      type: 'image' | 'pdf' | 'attachment'
+    ) => {
       try {
+        const fsManager = getOrCreateFsManager(spaceId)
         await fsManager.deleteAsset(assetId, type)
       } catch (error) {
         throw new Error(`Failed to delete asset: ${(error as Error).message}`)
@@ -154,8 +196,9 @@ export function registerFileHandlers(fsManager: FileSystemManager): void {
   )
 
   // Database path
-  ipcMain.handle('fs:getDatabasePath', async (_event: IpcMainInvokeEvent) => {
+  ipcMain.handle('fs:getDatabasePath', async (_event: IpcMainInvokeEvent, spaceId: string) => {
     try {
+      const fsManager = getOrCreateFsManager(spaceId)
       return fsManager.getDatabasePath()
     } catch (error) {
       throw new Error(`Failed to get database path: ${(error as Error).message}`)

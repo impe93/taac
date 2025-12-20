@@ -3,10 +3,22 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { FileSystemManager } from './utils/fileSystem'
+import { SpaceManager } from './utils/spaceManager'
+import { configStore } from './utils/configStore'
 import { registerFileHandlers } from './ipc/fileHandlers'
 import { registerConfigHandlers } from './ipc/configHandlers'
 
-let fsManager: FileSystemManager
+let spaceManager: SpaceManager
+const fsManagerMap = new Map<string, FileSystemManager>()
+
+// Get or create FileSystemManager for a specific space
+function getOrCreateFsManager(spaceId: string): FileSystemManager {
+  if (!fsManagerMap.has(spaceId)) {
+    const manager = new FileSystemManager(spaceId)
+    fsManagerMap.set(spaceId, manager)
+  }
+  return fsManagerMap.get(spaceId)!
+}
 
 function createWindow(): void {
   // Create the browser window.
@@ -49,12 +61,35 @@ app.whenReady().then(async () => {
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.electron')
 
-  // Initialize file system
-  fsManager = new FileSystemManager()
-  await fsManager.initialize()
+  // Initialize space manager
+  spaceManager = new SpaceManager()
+  await spaceManager.initialize()
+
+  // Ensure default "Personal" space exists
+  const spaces = await spaceManager.listSpaces()
+  if (spaces.length === 0) {
+    await spaceManager.createSpace('Personal', 'Home')
+    configStore.set('spacesInitialized', true)
+  }
+
+  // Set active space (from config or first available)
+  let activeSpaceId = configStore.get('activeSpaceId')
+  if (!activeSpaceId) {
+    const currentSpaces = await spaceManager.listSpaces()
+    if (currentSpaces.length > 0) {
+      activeSpaceId = currentSpaces[0].id
+      configStore.set('activeSpaceId', activeSpaceId)
+    }
+  }
+
+  // Initialize FileSystemManager for active space
+  if (activeSpaceId) {
+    const fsManager = getOrCreateFsManager(activeSpaceId)
+    await fsManager.initialize()
+  }
 
   // Register IPC handlers
-  registerFileHandlers(fsManager)
+  registerFileHandlers(getOrCreateFsManager)
   registerConfigHandlers()
 
   // Default open or close DevTools by F12 in development

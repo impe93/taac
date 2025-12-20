@@ -36,9 +36,16 @@ export interface Asset {
 // File System Manager
 export class FileSystemManager {
   private userDataPath: string
+  private spaceId: string
 
-  constructor() {
-    this.userDataPath = app.getPath('userData')
+  constructor(spaceId: string) {
+    this.spaceId = spaceId
+    this.userDataPath = join(app.getPath('userData'), 'spaces', spaceId)
+  }
+
+  // Get space ID
+  getSpaceId(): string {
+    return this.spaceId
   }
 
   // Base path getters
