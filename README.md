@@ -1,93 +1,183 @@
-# Electron TanStack App
+# TaacNotes
 
-A cross-platform desktop application built with Electron, React 19, and the TanStack ecosystem. This modern stack provides a robust foundation for building performant desktop applications with a beautiful UI.
-
-<img width="900" alt="image" src="https://github.com/user-attachments/assets/1c142933-d2f3-4a6d-8f19-f10e6c147a52" />
-
-## Features
-
-- **Cross-Platform**: Works on Windows, macOS, and Linux
-- **Modern UI**: Built with React 19, TailwindCSS v4, and Shadcn/UI components
-- **Type-Safe Routing**: Leveraging TanStack Router for file-based routing
-- **State Management**: TanStack Query for efficient data fetching and caching
-- **Theme Support**: Dark/light mode with next-themes
-- **UI Components**: Complete set of accessible UI primitives from Radix UI
-- **Form Handling**: Integrated with React Hook Form and Zod validation
+An AI-native note-taking desktop application built with Electron, React 19, Lexical editor, and the TanStack ecosystem. TaacNotes provides a modern, performant environment for creating and organizing notes with AI-powered features.
 
 ## Tech Stack
 
-- **Electron**: Cross-platform desktop framework
-- **React 19**: UI library with TypeScript
-- **TanStack Router**: Type-safe routing with file-based route organization
-- **TanStack Query**: Data fetching and state management
-- **Shadcn/UI + Radix**: Component library with accessible primitives
-- **TailwindCSS v4**: Utility-first styling
-- **Zod**: Schema validation
+- **Electron 35** - Cross-platform desktop framework
+- **React 19** - UI library with TypeScript
+- **Lexical** - Extensible rich text editor framework
+- **TanStack Router** - Type-safe file-based routing
+- **TanStack Query** - Data fetching and caching
+- **Shadcn/UI + Radix** - Accessible UI component library
+- **TailwindCSS v4** - Utility-first styling
+- **electron-store** - Persistent configuration storage
 
-## Project Structure
+## File System Utilities
+
+TaacNotes includes a comprehensive file system management layer for handling notes, folders, assets, and configuration with full type safety and IPC communication between Electron processes.
+
+### Architecture
+
+**Main Process** (`src/main/utils/fileSystem.ts`):
+- `FileSystemManager` class handles all file operations
+- Stores data in platform-specific `userData` directory
+- Provides CRUD operations for notes, folders, and assets
+- Implements path validation to prevent directory traversal attacks
+- UUID-based file naming for security
+
+**IPC Handlers** (`src/main/ipc/`):
+- `fileHandlers.ts` - Exposes file operations to renderer via IPC
+- `configHandlers.ts` - Exposes configuration operations
+- All operations use async `ipcMain.handle()` for request/response pattern
+
+**Preload Bridge** (`src/preload/index.ts`):
+- Exposes `window.fileSystem` and `window.config` APIs via `contextBridge`
+- Maintains context isolation for security
+- Full TypeScript type definitions in `src/preload/index.d.ts`
+
+**React Hooks** (`src/renderer/src/hooks/`):
+- `useFileSystem.ts` - TanStack Query hooks for notes, folders, and assets
+- `useConfig.ts` - Configuration management hooks
+- Automatic cache invalidation and optimistic updates
+
+### Directory Structure
 
 ```
-electron-tanstack-app/
-├── src/
-│   ├── main/          # Electron main process
-│   ├── preload/       # Preload scripts for IPC
-│   └── renderer/      # React frontend application
-│       └── src/
-│           ├── components/  # UI components
-│           │   └── ui/      # Shadcn/UI components
-│           ├── routes/      # Application routes
-│           ├── lib/         # Utilities and helpers
-│           ├── hooks/       # Custom React hooks
-│           └── assets/      # Application assets
-├── resources/         # Application resources
-└── ...
+{userData}/
+├── notes/              # User notes organized in folders
+│   ├── root/
+│   │   └── metadata.json
+│   └── {folder-id}/
+│       ├── {note-id}.json
+│       └── metadata.json
+├── assets/             # File attachments
+│   ├── images/
+│   ├── pdfs/
+│   └── attachments/
+├── database/           # SQLite vector database
+│   └── vectors.db
+├── config/             # Application configuration
+│   └── config.json
+└── logs/               # Application logs
 ```
 
-## Installation
+### Usage Examples
 
-```bash
-# Clone the repository
-$ git clone https://github.com/yourusername/electron-tanstack-app.git
-$ cd electron-tanstack-app
+**Creating a Note:**
+```typescript
+import { useCreateNote } from '@renderer/hooks/useFileSystem'
 
-# Install dependencies
-$ pnpm install
+const { mutate: createNote } = useCreateNote()
+
+createNote({
+  folderId: 'root',
+  content: lexicalEditorState,
+  title: 'My Note'
+})
 ```
+
+**Listing Notes:**
+```typescript
+import { useNotes } from '@renderer/hooks/useFileSystem'
+
+const { data: notes, isLoading } = useNotes(folderId)
+```
+
+**Managing Config:**
+```typescript
+import { useConfig, useSetConfig } from '@renderer/hooks/useConfig'
+
+const { data: theme } = useConfig('theme')
+const { mutate: setTheme } = useSetConfig()
+
+setTheme({ key: 'theme', value: 'dark' })
+```
+
+### Type Safety
+
+All file operations are fully typed with TypeScript interfaces:
+- `Note` - Lexical editor state with metadata
+- `FolderMetadata` - Folder tree structure
+- `Asset` - File attachment metadata
+- `AppConfig` - Application configuration schema
+
+Types are shared across processes via `@preload/types` import alias.
 
 ## Development
 
 ```bash
-# Start the development server with hot reload
-$ pnpm dev
+# Install dependencies
+pnpm install
+
+# Start development server with hot reload
+pnpm dev
+
+# Type checking
+pnpm typecheck          # All code
+pnpm typecheck:node     # Main process only
+pnpm typecheck:web      # Renderer only
+
+# Linting and formatting
+pnpm lint
+pnpm format
+
+# Add UI components
+pnpm ui-add
 ```
 
-## Building for Production
+## Building
 
 ```bash
-# For Windows
-$ pnpm build:win
+# Full production build (includes typecheck)
+pnpm build
 
-# For macOS
-$ pnpm build:mac
-
-# For Linux
-$ pnpm build:linux
+# Platform-specific builds
+pnpm build:win      # Windows
+pnpm build:mac      # macOS
+pnpm build:linux    # Linux
+pnpm build:unpack   # Build without packaging (for testing)
 ```
 
-## Recommended IDE Setup
+## Project Structure
 
-- [VSCode](https://code.visualstudio.com/) + [ESLint](https://marketplace.visualstudio.com/items?itemName=dbaeumer.vscode-eslint) + [Prettier](https://marketplace.visualstudio.com/items?itemName=esbenp.prettier-vscode)
+```
+TaacNotes/
+├── src/
+│   ├── main/              # Electron main process
+│   │   ├── index.ts       # Entry point
+│   │   ├── utils/         # FileSystemManager, configStore
+│   │   └── ipc/           # IPC handlers
+│   ├── preload/           # Preload scripts & type definitions
+│   │   ├── index.ts       # Context bridge APIs
+│   │   ├── index.d.ts     # API type definitions
+│   │   └── types.ts       # Shared type definitions
+│   ├── renderer/          # React frontend
+│   │   └── src/
+│   │       ├── routes/    # TanStack Router routes
+│   │       ├── hooks/     # Custom React hooks
+│   │       └── components/
+│   └── components/        # Lexical editor components
+├── resources/             # App icons and resources
+└── electron.vite.config.ts
+```
 
-## Development Tools
+## Configuration Notes
 
-- **UI Component Management**: `pnpm ui-add` to add new Shadcn UI components
-- **Type Checking**: `pnpm typecheck` to run TypeScript type checking
-- **Linting**: `pnpm lint` to lint the codebase
-- **Formatting**: `pnpm format` to format code with Prettier
+### electron-store ESM Fix
 
-## Contributing
+`electron-store` v9+ is a pure ESM module. To work with electron-vite's bundler, it must be excluded from externalized dependencies:
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+```typescript
+// electron.vite.config.ts
+main: {
+  plugins: [
+    externalizeDepsPlugin({
+      exclude: ['electron-store']
+    })
+  ]
+}
+```
 
 ## License
 

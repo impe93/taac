@@ -5,7 +5,11 @@ import { TanStackRouterVite } from '@tanstack/router-plugin/vite'
 import tailwindcss from '@tailwindcss/vite'
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()]
+    plugins: [
+      externalizeDepsPlugin({
+        exclude: ['electron-store']
+      })
+    ]
   },
   preload: {
     plugins: [externalizeDepsPlugin()]
