@@ -7,6 +7,7 @@ import { SpaceManager } from './utils/spaceManager'
 import { configStore } from './utils/configStore'
 import { registerFileHandlers } from './ipc/fileHandlers'
 import { registerConfigHandlers } from './ipc/configHandlers'
+import { registerSpaceHandlers } from './ipc/spaceHandlers'
 
 let spaceManager: SpaceManager
 const fsManagerMap = new Map<string, FileSystemManager>()
@@ -89,6 +90,7 @@ app.whenReady().then(async () => {
   }
 
   // Register IPC handlers
+  registerSpaceHandlers(spaceManager)
   registerFileHandlers(getOrCreateFsManager)
   registerConfigHandlers()
 

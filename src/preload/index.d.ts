@@ -1,40 +1,69 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
 import type { SerializedEditorState } from 'lexical'
-import type { Note, FolderMetadata, Asset, AppConfig } from './types'
+import type { Note, FolderMetadata, Asset, AppConfig, Space } from './types'
 
 // Re-export types from types.ts for convenience
-export type { Note, FolderMetadata, Asset, AppConfig }
+export type { Note, FolderMetadata, Asset, AppConfig, Space }
 
 // File System API interface
 export interface FileSystemAPI {
   // Note operations
-  createNote: (folderId: string, content: SerializedEditorState, title: string) => Promise<Note>
-  readNote: (folderId: string, noteId: string) => Promise<Note>
-  updateNote: (folderId: string, noteId: string, updates: Partial<Note>) => Promise<Note>
-  deleteNote: (folderId: string, noteId: string) => Promise<void>
-  listNotes: (folderId: string) => Promise<Note[]>
+  createNote: (
+    spaceId: string,
+    folderId: string,
+    content: SerializedEditorState,
+    title: string
+  ) => Promise<Note>
+  readNote: (spaceId: string, folderId: string, noteId: string) => Promise<Note>
+  updateNote: (
+    spaceId: string,
+    folderId: string,
+    noteId: string,
+    updates: Partial<Note>
+  ) => Promise<Note>
+  deleteNote: (spaceId: string, folderId: string, noteId: string) => Promise<void>
+  listNotes: (spaceId: string, folderId: string) => Promise<Note[]>
 
   // Folder operations
-  createFolder: (name: string, parentId?: string) => Promise<FolderMetadata>
-  readFolderMetadata: (folderId: string) => Promise<FolderMetadata>
+  createFolder: (spaceId: string, name: string, parentId?: string) => Promise<FolderMetadata>
+  readFolderMetadata: (spaceId: string, folderId: string) => Promise<FolderMetadata>
   updateFolderMetadata: (
+    spaceId: string,
     folderId: string,
     updates: Partial<FolderMetadata>
   ) => Promise<FolderMetadata>
-  deleteFolder: (folderId: string) => Promise<void>
-  getFolderTree: () => Promise<FolderMetadata>
+  deleteFolder: (spaceId: string, folderId: string) => Promise<void>
+  getFolderTree: (spaceId: string) => Promise<FolderMetadata>
 
   // Asset operations
   saveAsset: (
+    spaceId: string,
     originalName: string,
     buffer: Uint8Array,
     type: 'image' | 'pdf' | 'attachment'
   ) => Promise<Asset>
-  readAsset: (assetId: string, type: 'image' | 'pdf' | 'attachment') => Promise<Buffer>
-  deleteAsset: (assetId: string, type: 'image' | 'pdf' | 'attachment') => Promise<void>
+  readAsset: (
+    spaceId: string,
+    assetId: string,
+    type: 'image' | 'pdf' | 'attachment'
+  ) => Promise<Buffer>
+  deleteAsset: (
+    spaceId: string,
+    assetId: string,
+    type: 'image' | 'pdf' | 'attachment'
+  ) => Promise<void>
 
   // Database
-  getDatabasePath: () => Promise<string>
+  getDatabasePath: (spaceId: string) => Promise<string>
+}
+
+// Space API interface
+export interface SpaceAPI {
+  list: () => Promise<Space[]>
+  get: (spaceId: string) => Promise<Space>
+  create: (name: string, icon: string) => Promise<Space>
+  update: (spaceId: string, updates: Partial<Space>) => Promise<Space>
+  delete: (spaceId: string) => Promise<void>
 }
 
 // Config API interface
@@ -55,5 +84,6 @@ declare global {
     electron: ElectronAPI
     fileSystem: FileSystemAPI
     config: ConfigAPI
+    space: SpaceAPI
   }
 }

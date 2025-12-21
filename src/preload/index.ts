@@ -4,45 +4,66 @@ import { electronAPI } from '@electron-toolkit/preload'
 // File System API
 const fileSystemAPI = {
   // Note operations
-  createNote: (folderId: string, content: unknown, title: string) =>
-    ipcRenderer.invoke('fs:createNote', folderId, content, title),
+  createNote: (spaceId: string, folderId: string, content: unknown, title: string) =>
+    ipcRenderer.invoke('fs:createNote', spaceId, folderId, content, title),
 
-  readNote: (folderId: string, noteId: string) =>
-    ipcRenderer.invoke('fs:readNote', folderId, noteId),
+  readNote: (spaceId: string, folderId: string, noteId: string) =>
+    ipcRenderer.invoke('fs:readNote', spaceId, folderId, noteId),
 
-  updateNote: (folderId: string, noteId: string, updates: unknown) =>
-    ipcRenderer.invoke('fs:updateNote', folderId, noteId, updates),
+  updateNote: (spaceId: string, folderId: string, noteId: string, updates: unknown) =>
+    ipcRenderer.invoke('fs:updateNote', spaceId, folderId, noteId, updates),
 
-  deleteNote: (folderId: string, noteId: string) =>
-    ipcRenderer.invoke('fs:deleteNote', folderId, noteId),
+  deleteNote: (spaceId: string, folderId: string, noteId: string) =>
+    ipcRenderer.invoke('fs:deleteNote', spaceId, folderId, noteId),
 
-  listNotes: (folderId: string) => ipcRenderer.invoke('fs:listNotes', folderId),
+  listNotes: (spaceId: string, folderId: string) =>
+    ipcRenderer.invoke('fs:listNotes', spaceId, folderId),
 
   // Folder operations
-  createFolder: (name: string, parentId?: string) =>
-    ipcRenderer.invoke('fs:createFolder', name, parentId),
+  createFolder: (spaceId: string, name: string, parentId?: string) =>
+    ipcRenderer.invoke('fs:createFolder', spaceId, name, parentId),
 
-  readFolderMetadata: (folderId: string) => ipcRenderer.invoke('fs:readFolderMetadata', folderId),
+  readFolderMetadata: (spaceId: string, folderId: string) =>
+    ipcRenderer.invoke('fs:readFolderMetadata', spaceId, folderId),
 
-  updateFolderMetadata: (folderId: string, updates: unknown) =>
-    ipcRenderer.invoke('fs:updateFolderMetadata', folderId, updates),
+  updateFolderMetadata: (spaceId: string, folderId: string, updates: unknown) =>
+    ipcRenderer.invoke('fs:updateFolderMetadata', spaceId, folderId, updates),
 
-  deleteFolder: (folderId: string) => ipcRenderer.invoke('fs:deleteFolder', folderId),
+  deleteFolder: (spaceId: string, folderId: string) =>
+    ipcRenderer.invoke('fs:deleteFolder', spaceId, folderId),
 
-  getFolderTree: () => ipcRenderer.invoke('fs:getFolderTree'),
+  getFolderTree: (spaceId: string) => ipcRenderer.invoke('fs:getFolderTree', spaceId),
 
   // Asset operations
-  saveAsset: (originalName: string, buffer: Uint8Array, type: 'image' | 'pdf' | 'attachment') =>
-    ipcRenderer.invoke('fs:saveAsset', originalName, buffer, type),
+  saveAsset: (
+    spaceId: string,
+    originalName: string,
+    buffer: Uint8Array,
+    type: 'image' | 'pdf' | 'attachment'
+  ) => ipcRenderer.invoke('fs:saveAsset', spaceId, originalName, buffer, type),
 
-  readAsset: (assetId: string, type: 'image' | 'pdf' | 'attachment') =>
-    ipcRenderer.invoke('fs:readAsset', assetId, type),
+  readAsset: (spaceId: string, assetId: string, type: 'image' | 'pdf' | 'attachment') =>
+    ipcRenderer.invoke('fs:readAsset', spaceId, assetId, type),
 
-  deleteAsset: (assetId: string, type: 'image' | 'pdf' | 'attachment') =>
-    ipcRenderer.invoke('fs:deleteAsset', assetId, type),
+  deleteAsset: (spaceId: string, assetId: string, type: 'image' | 'pdf' | 'attachment') =>
+    ipcRenderer.invoke('fs:deleteAsset', spaceId, assetId, type),
 
   // Database
-  getDatabasePath: () => ipcRenderer.invoke('fs:getDatabasePath')
+  getDatabasePath: (spaceId: string) => ipcRenderer.invoke('fs:getDatabasePath', spaceId)
+}
+
+// Space API
+const spaceAPI = {
+  list: () => ipcRenderer.invoke('space:list'),
+
+  get: (spaceId: string) => ipcRenderer.invoke('space:get', spaceId),
+
+  create: (name: string, icon: string) => ipcRenderer.invoke('space:create', name, icon),
+
+  update: (spaceId: string, updates: unknown) =>
+    ipcRenderer.invoke('space:update', spaceId, updates),
+
+  delete: (spaceId: string) => ipcRenderer.invoke('space:delete', spaceId)
 }
 
 // Config API
@@ -72,6 +93,7 @@ if (process.contextIsolated) {
     contextBridge.exposeInMainWorld('electron', electronAPI)
     contextBridge.exposeInMainWorld('fileSystem', fileSystemAPI)
     contextBridge.exposeInMainWorld('config', configAPI)
+    contextBridge.exposeInMainWorld('space', spaceAPI)
   } catch (error) {
     console.error(error)
   }
@@ -82,4 +104,6 @@ if (process.contextIsolated) {
   window.fileSystem = fileSystemAPI
   // @ts-ignore (define in dts)
   window.config = configAPI
+  // @ts-ignore (define in dts)
+  window.space = spaceAPI
 }

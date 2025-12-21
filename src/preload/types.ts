@@ -29,6 +29,16 @@ export interface Asset {
   createdAt: string
 }
 
+// Space type
+export interface Space {
+  id: string
+  name: string
+  icon: string
+  createdAt: string
+  updatedAt: string
+  order: number
+}
+
 // App configuration type
 export interface AppConfig {
   theme: 'light' | 'dark' | 'system'
@@ -43,4 +53,6 @@ export interface AppConfig {
     y?: number
   }
   recentNotes: string[]
+  activeSpaceId: string | null
+  spacesInitialized: boolean
 }
