@@ -13,6 +13,10 @@ An AI-native note-taking desktop application built with Electron, React 19, Lexi
 - **TailwindCSS v4** - Utility-first styling
 - **electron-store** - Persistent configuration storage
 
+## Spaces
+
+TaacNotes organizes notes into **Spaces** (max 5), each with its own isolated directory tree, custom name, and Lucide React icon. Spaces are managed by `SpaceManager` (`src/main/utils/spaceManager.ts`) which handles CRUD operations and stores metadata in `spaces/spaces.json`. Each space has a dedicated `FileSystemManager` instance that operates on `{userData}/spaces/{spaceId}/` for complete data isolation. The active space is tracked in `electron-store` and accessed via `useActiveSpace()` hook (`src/renderer/src/hooks/useSpaces.ts`), with UI components in `src/renderer/src/components/spaces/` for switching and managing spaces.
+
 ## File System Utilities
 
 TaacNotes includes a comprehensive file system management layer for handling notes, folders, assets, and configuration with full type safety and IPC communication between Electron processes.
