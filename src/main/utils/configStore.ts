@@ -15,6 +15,16 @@ export interface AppConfig {
   recentNotes: string[]
   activeSpaceId: string | null
   spacesInitialized: boolean
+  // Redux persistence
+  reduxUIState?: {
+    expandedFolders: string[]
+    selectedNoteId: string | null
+    selectedNoteFolderId: string | null
+  }
+  reduxTreeCache?: {
+    folders: Record<string, unknown>
+    notes: Record<string, unknown>
+  }
 }
 
 const schema = {
@@ -65,6 +75,30 @@ const schema = {
   spacesInitialized: {
     type: 'boolean',
     default: false
+  },
+  reduxUIState: {
+    type: 'object',
+    properties: {
+      expandedFolders: { type: 'array', items: { type: 'string' } },
+      selectedNoteId: { type: ['string', 'null'] },
+      selectedNoteFolderId: { type: ['string', 'null'] }
+    },
+    default: {
+      expandedFolders: ['root'],
+      selectedNoteId: null,
+      selectedNoteFolderId: null
+    }
+  },
+  reduxTreeCache: {
+    type: 'object',
+    properties: {
+      folders: { type: 'object' },
+      notes: { type: 'object' }
+    },
+    default: {
+      folders: {},
+      notes: {}
+    }
   }
 } as const
 

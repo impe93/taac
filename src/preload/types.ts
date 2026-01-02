@@ -55,4 +55,14 @@ export interface AppConfig {
   recentNotes: string[]
   activeSpaceId: string | null
   spacesInitialized: boolean
+  // Redux persistence
+  reduxUIState?: {
+    expandedFolders: string[]
+    selectedNoteId: string | null
+    selectedNoteFolderId: string | null
+  }
+  reduxTreeCache?: {
+    folders: Record<string, unknown>
+    notes: Record<string, unknown>
+  }
 }
