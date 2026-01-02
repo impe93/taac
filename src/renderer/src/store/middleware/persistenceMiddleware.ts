@@ -1,4 +1,30 @@
-import type { Middleware, MiddlewareAPI } from '@reduxjs/toolkit'
+import type { Middleware } from '@reduxjs/toolkit'
+
+/**
+ * Azioni che triggherano il salvataggio di UI state in electron-store.
+ * Solo azioni sincrone che modificano expandedFolders, selectedNoteId, selectedNoteFolderId.
+ */
+const PERSISTABLE_UI_ACTIONS = [
+  'notesTree/toggleFolder',
+  'notesTree/expandFolder',
+  'notesTree/collapseFolder',
+  'notesTree/selectNote',
+  'notesTree/clearSelection'
+] as const
+
+/**
+ * Azioni che triggherano il salvataggio di tree cache (folders/notes) in electron-store.
+ * Debounced a 1 secondo per evitare scritture eccessive.
+ */
+const PERSISTABLE_TREE_CACHE_ACTIONS = [
+  'notesTree/loadTree/fulfilled',
+  'notesTree/createNote/fulfilled',
+  'notesTree/updateNote/fulfilled',
+  'notesTree/deleteNote/fulfilled',
+  'notesTree/createFolder/fulfilled',
+  'notesTree/updateFolder/fulfilled',
+  'notesTree/deleteFolder/fulfilled'
+] as const
 
 /**
  * Middleware per sincronizzare lo stato Redux con electron-store
@@ -7,7 +33,7 @@ import type { Middleware, MiddlewareAPI } from '@reduxjs/toolkit'
  * 1. UI State: expandedFolders, selectedNoteId, selectedNoteFolderId
  * 2. Tree Cache: folders, notes (per caricamento veloce)
  */
-export const persistenceMiddleware: Middleware = (store: MiddlewareAPI) => {
+export const persistenceMiddleware: Middleware = (store) => {
   // Setup listener per cambiamenti da electron-store
   if (typeof window !== 'undefined' && window.config) {
     // Ascolta cambiamenti da altre finestre o main process
@@ -18,50 +44,35 @@ export const persistenceMiddleware: Middleware = (store: MiddlewareAPI) => {
     })
   }
 
-  return (next) => (action: unknown) => {
+  return (next) => (action) => {
     const result = next(action)
-    const state = store.getState() as {
-      notesTree: {
-        folders: Record<string, unknown>
-        notes: Record<string, unknown>
-        expandedFolders: string[]
-        selectedNoteId: string | null
-        selectedNoteFolderId: string | null
-      }
-    }
+    const state = store.getState()
 
-    // Dopo ogni action, persisti lo stato rilevante
+    // Type guard per verificare che action abbia una proprietà type
     if (
       typeof action === 'object' &&
       action !== null &&
       'type' in action &&
-      typeof action.type === 'string' &&
-      action.type.startsWith('notesTree/')
+      typeof action.type === 'string'
     ) {
-      // Persisti UI state
-      const uiState = {
-        expandedFolders: state.notesTree.expandedFolders,
-        selectedNoteId: state.notesTree.selectedNoteId,
-        selectedNoteFolderId: state.notesTree.selectedNoteFolderId
+      // Persisti UI state solo su azioni che modificano UI
+      if (PERSISTABLE_UI_ACTIONS.includes(action.type as (typeof PERSISTABLE_UI_ACTIONS)[number])) {
+        const uiState = {
+          expandedFolders: state.notesTree.expandedFolders,
+          selectedNoteId: state.notesTree.selectedNoteId,
+          selectedNoteFolderId: state.notesTree.selectedNoteFolderId
+        }
+
+        // Scrittura immediata (no debouncing per UI state)
+        window.config.set('reduxUIState', uiState).catch(console.error)
       }
 
-      // Usa window.config per persistere (async, non blocca)
-      window.config.set('reduxUIState', uiState).catch(console.error)
-
-      // Persisti tree cache (throttled per performance)
-      // Solo su azioni che modificano i dati, non l'UI
-      const dataModifyingActions = [
-        'notesTree/loadTree/fulfilled',
-        'notesTree/createNote/fulfilled',
-        'notesTree/updateNote/fulfilled',
-        'notesTree/deleteNote/fulfilled',
-        'notesTree/createFolder/fulfilled',
-        'notesTree/updateFolder/fulfilled',
-        'notesTree/deleteFolder/fulfilled'
-      ]
-
-      if (dataModifyingActions.includes(action.type)) {
-        // Persisti cache del tree (debounced)
+      // Persisti tree cache (debounced) solo su azioni che modificano dati
+      if (
+        PERSISTABLE_TREE_CACHE_ACTIONS.includes(
+          action.type as (typeof PERSISTABLE_TREE_CACHE_ACTIONS)[number]
+        )
+      ) {
         debouncedPersistTreeCache(state.notesTree.folders, state.notesTree.notes)
       }
     }
