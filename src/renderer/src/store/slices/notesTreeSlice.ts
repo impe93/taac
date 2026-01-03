@@ -23,7 +23,9 @@ export interface NotesTreeState {
   error: string | null
 
   // PERSISTENCE
-  isHydrated: boolean // Se lo stato è stato caricato da electron-store
+  isCacheHydrated: boolean // true dopo hydration del cache
+  isFullyHydrated: boolean // true dopo reconciliazione con filesystem
+  isHydrated: boolean // DEPRECATED: mantenuto per backward compatibility
 }
 
 const initialState: NotesTreeState = {
@@ -36,6 +38,8 @@ const initialState: NotesTreeState = {
   loading: false,
   loadingOperations: {},
   error: null,
+  isCacheHydrated: false,
+  isFullyHydrated: false,
   isHydrated: false
 }
 
@@ -191,6 +195,33 @@ const notesTreeSlice = createSlice({
       state.isHydrated = true
     },
 
+    // Hydrate completo (tree data + UI state) da cache all'avvio
+    hydrateFromCache: (
+      state,
+      action: PayloadAction<{
+        folders: Record<string, FolderMetadata>
+        notes: Record<string, Note>
+        uiState: {
+          expandedFolders: string[]
+          selectedNoteId: string | null
+          selectedNoteFolderId: string | null
+        }
+      }>
+    ) => {
+      // Hydrate tree data
+      state.folders = action.payload.folders
+      state.notes = action.payload.notes
+
+      // Hydrate UI state
+      state.expandedFolders = action.payload.uiState.expandedFolders
+      state.selectedNoteId = action.payload.uiState.selectedNoteId
+      state.selectedNoteFolderId = action.payload.uiState.selectedNoteFolderId
+
+      // Set flags
+      state.isCacheHydrated = true
+      state.isHydrated = true // backward compatibility
+    },
+
     // UI Actions
     toggleFolder: (state, action: PayloadAction<string>) => {
       const index = state.expandedFolders.indexOf(action.payload)
@@ -234,8 +265,32 @@ const notesTreeSlice = createSlice({
       })
       .addCase(loadTree.fulfilled, (state, action) => {
         state.loading = false
+
+        // Sovrascrivi con dati fresh dal filesystem
         state.folders = action.payload.folders
         state.notes = action.payload.notes
+
+        // VALIDAZIONE UI STATE
+
+        // 1. Valida selectedNoteId: se non esiste più, clear selection
+        if (state.selectedNoteId && !action.payload.notes[state.selectedNoteId]) {
+          state.selectedNoteId = null
+          state.selectedNoteFolderId = null
+        }
+
+        // 2. Valida expandedFolders: rimuovi ID che non esistono più
+        state.expandedFolders = state.expandedFolders.filter(
+          (folderId) => action.payload.folders[folderId]
+        )
+
+        // 3. Assicurati che 'root' sia sempre espanso
+        if (!state.expandedFolders.includes('root')) {
+          state.expandedFolders.push('root')
+        }
+
+        // Set fully hydrated flag
+        state.isFullyHydrated = true
+        state.isHydrated = true // backward compatibility
       })
       .addCase(loadTree.rejected, (state, action) => {
         state.loading = false
@@ -367,7 +422,8 @@ const notesTreeSlice = createSlice({
 })
 
 export const {
-  hydrateUIState,
+  hydrateUIState, // deprecated ma mantenuto
+  hydrateFromCache, // NUOVA
   toggleFolder,
   expandFolder,
   collapseFolder,

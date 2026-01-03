@@ -7,7 +7,8 @@ import { SidebarProvider } from './ui/sidebar'
 import { Provider as ReduxProvider } from 'react-redux'
 import { store } from '@renderer/store'
 import { useAppDispatch } from '@renderer/store/hooks'
-import { hydrateUIState, loadTree } from '@renderer/store/slices/notesTreeSlice'
+import { hydrateUIState, hydrateFromCache, loadTree } from '@renderer/store/slices/notesTreeSlice'
+import type { Note, FolderMetadata } from '@preload/types'
 // https://tanstack.com/router/v1/docs/framework/react/devtools
 const TanStackRouterDevtools = import.meta.env.PROD
   ? () => null
@@ -21,23 +22,56 @@ const ReactQueryDevtools = import.meta.env.PROD ? () => null : ReactQueryDevtool
 
 const queryClient = new QueryClient()
 
-// Componente per inizializzare Redux all'avvio
+// Componente per inizializzare Redux all'avvio con hydration multi-stage
 function ReduxInitializer({ children }: { children: React.ReactNode }): React.ReactElement {
   const dispatch = useAppDispatch()
 
   useEffect(() => {
-    // 1. Hydrate UI state da electron-store
-    window.config
-      .get('reduxUIState')
-      .then((uiState) => {
-        if (uiState) {
+    const initializeRedux = async (): Promise<void> => {
+      try {
+        // Stage 1: Fetch parallelo di cache e UI state
+        const [cacheData, uiState] = await Promise.all([
+          window.config.get('reduxTreeCache'),
+          window.config.get('reduxUIState')
+        ])
+
+        // Validazione base del cache
+        if (
+          cacheData &&
+          typeof cacheData === 'object' &&
+          'folders' in cacheData &&
+          'notes' in cacheData &&
+          cacheData.folders &&
+          cacheData.notes
+        ) {
+          // Dispatch hydration sincrona del cache
+          dispatch(
+            hydrateFromCache({
+              folders: cacheData.folders as Record<string, FolderMetadata>,
+              notes: cacheData.notes as Record<string, Note>,
+              uiState: uiState || {
+                expandedFolders: ['root'],
+                selectedNoteId: null,
+                selectedNoteFolderId: null
+              }
+            })
+          )
+        } else if (uiState) {
+          // Cache non valido, ma UI state esiste → hydrate solo UI state
           dispatch(hydrateUIState(uiState))
         }
-      })
-      .catch(console.error)
 
-    // 2. Carica tree completo (eager loading)
-    dispatch(loadTree())
+        // Stage 2: Background reconciliation con filesystem
+        // loadTree.fulfilled gestirà il merge e la validazione
+        dispatch(loadTree())
+      } catch (error) {
+        console.error('Redux initialization error:', error)
+        // Fallback: esegui solo loadTree
+        dispatch(loadTree())
+      }
+    }
+
+    initializeRedux()
   }, [dispatch])
 
   return <>{children}</>
