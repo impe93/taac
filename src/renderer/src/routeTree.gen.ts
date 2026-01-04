@@ -15,31 +15,38 @@ import { Route as DashboardLayoutImport } from './routes/dashboard/layout'
 import { Route as IndexImport } from './routes/index'
 import { Route as SettingsIndexImport } from './routes/settings/index'
 import { Route as DashboardIndexImport } from './routes/dashboard/index'
+import { Route as NoteNoteIdImport } from './routes/note/$noteId'
 
 // Create/Update Routes
 
 const DashboardLayoutRoute = DashboardLayoutImport.update({
   id: '/dashboard',
   path: '/dashboard',
-  getParentRoute: () => rootRoute
+  getParentRoute: () => rootRoute,
 } as any)
 
 const IndexRoute = IndexImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => rootRoute
+  getParentRoute: () => rootRoute,
 } as any)
 
 const SettingsIndexRoute = SettingsIndexImport.update({
   id: '/settings/',
   path: '/settings/',
-  getParentRoute: () => rootRoute
+  getParentRoute: () => rootRoute,
 } as any)
 
 const DashboardIndexRoute = DashboardIndexImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => DashboardLayoutRoute
+  getParentRoute: () => DashboardLayoutRoute,
+} as any)
+
+const NoteNoteIdRoute = NoteNoteIdImport.update({
+  id: '/note/$noteId',
+  path: '/note/$noteId',
+  getParentRoute: () => rootRoute,
 } as any)
 
 // Populate the FileRoutesByPath interface
@@ -58,6 +65,13 @@ declare module '@tanstack/react-router' {
       path: '/dashboard'
       fullPath: '/dashboard'
       preLoaderRoute: typeof DashboardLayoutImport
+      parentRoute: typeof rootRoute
+    }
+    '/note/$noteId': {
+      id: '/note/$noteId'
+      path: '/note/$noteId'
+      fullPath: '/note/$noteId'
+      preLoaderRoute: typeof NoteNoteIdImport
       parentRoute: typeof rootRoute
     }
     '/dashboard/': {
@@ -84,22 +98,24 @@ interface DashboardLayoutRouteChildren {
 }
 
 const DashboardLayoutRouteChildren: DashboardLayoutRouteChildren = {
-  DashboardIndexRoute: DashboardIndexRoute
+  DashboardIndexRoute: DashboardIndexRoute,
 }
 
 const DashboardLayoutRouteWithChildren = DashboardLayoutRoute._addFileChildren(
-  DashboardLayoutRouteChildren
+  DashboardLayoutRouteChildren,
 )
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardLayoutRouteWithChildren
+  '/note/$noteId': typeof NoteNoteIdRoute
   '/dashboard/': typeof DashboardIndexRoute
   '/settings': typeof SettingsIndexRoute
 }
 
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/note/$noteId': typeof NoteNoteIdRoute
   '/dashboard': typeof DashboardIndexRoute
   '/settings': typeof SettingsIndexRoute
 }
@@ -108,29 +124,38 @@ export interface FileRoutesById {
   __root__: typeof rootRoute
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardLayoutRouteWithChildren
+  '/note/$noteId': typeof NoteNoteIdRoute
   '/dashboard/': typeof DashboardIndexRoute
   '/settings/': typeof SettingsIndexRoute
 }
 
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/dashboard' | '/dashboard/' | '/settings'
+  fullPaths: '/' | '/dashboard' | '/note/$noteId' | '/dashboard/' | '/settings'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/dashboard' | '/settings'
-  id: '__root__' | '/' | '/dashboard' | '/dashboard/' | '/settings/'
+  to: '/' | '/note/$noteId' | '/dashboard' | '/settings'
+  id:
+    | '__root__'
+    | '/'
+    | '/dashboard'
+    | '/note/$noteId'
+    | '/dashboard/'
+    | '/settings/'
   fileRoutesById: FileRoutesById
 }
 
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DashboardLayoutRoute: typeof DashboardLayoutRouteWithChildren
+  NoteNoteIdRoute: typeof NoteNoteIdRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DashboardLayoutRoute: DashboardLayoutRouteWithChildren,
-  SettingsIndexRoute: SettingsIndexRoute
+  NoteNoteIdRoute: NoteNoteIdRoute,
+  SettingsIndexRoute: SettingsIndexRoute,
 }
 
 export const routeTree = rootRoute
@@ -145,6 +170,7 @@ export const routeTree = rootRoute
       "children": [
         "/",
         "/dashboard",
+        "/note/$noteId",
         "/settings/"
       ]
     },
@@ -156,6 +182,9 @@ export const routeTree = rootRoute
       "children": [
         "/dashboard/"
       ]
+    },
+    "/note/$noteId": {
+      "filePath": "note/$noteId.tsx"
     },
     "/dashboard/": {
       "filePath": "dashboard/index.tsx",

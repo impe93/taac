@@ -75,6 +75,18 @@ export class SpaceManager {
     await this.ensureDir(join(spaceDir, 'assets', 'pdfs'))
     await this.ensureDir(join(spaceDir, 'assets', 'attachments'))
 
+    // Initialize FileSystemManager for the new space
+    try {
+      // Dynamic import to avoid circular dependency
+      const { getOrCreateFsManager } = await import('../index')
+      const fsManager = getOrCreateFsManager(spaceId)
+      await fsManager.initialize()
+      console.log(`[SpaceManager] Initialized FileSystemManager for new space: ${spaceId}`)
+    } catch (error) {
+      console.error(`[SpaceManager] Failed to initialize FileSystemManager for space ${spaceId}:`, error)
+      // Don't fail space creation if FileSystemManager init fails
+    }
+
     // Add space to metadata
     spaces.push(space)
     await this.saveSpaces(spaces)

@@ -13,10 +13,16 @@ let spaceManager: SpaceManager
 const fsManagerMap = new Map<string, FileSystemManager>()
 
 // Get or create FileSystemManager for a specific space
-function getOrCreateFsManager(spaceId: string): FileSystemManager {
+export function getOrCreateFsManager(spaceId: string): FileSystemManager {
   if (!fsManagerMap.has(spaceId)) {
     const manager = new FileSystemManager(spaceId)
     fsManagerMap.set(spaceId, manager)
+
+    // Initialize the new FileSystemManager asynchronously
+    // This ensures the file structure is set up when switching spaces
+    manager.initialize().catch((error) => {
+      console.error(`[Main] Failed to initialize FileSystemManager for space ${spaceId}:`, error)
+    })
   }
   return fsManagerMap.get(spaceId)!
 }

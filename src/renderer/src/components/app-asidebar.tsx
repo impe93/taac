@@ -1,38 +1,7 @@
-import { Home, Inbox, Settings } from 'lucide-react'
-
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem
-} from '@renderer/components/ui/sidebar'
-import { Link } from '@tanstack/react-router'
+import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader } from '@renderer/components/ui/sidebar'
 import { SpaceHeader } from './spaces/space-header'
 import { SpaceSelector } from './spaces/space-selector'
-
-// Menu items.
-const items = [
-  {
-    title: 'Home',
-    url: '/',
-    icon: Home
-  },
-  {
-    title: 'Dashboard',
-    url: '/dashboard',
-    icon: Inbox
-  },
-  {
-    title: 'Settings',
-    url: '/settings',
-    icon: Settings
-  }
-]
+import { NotesTree } from './notes-tree/NotesTree'
 
 export function AppSidebar() {
   return (
@@ -41,22 +10,7 @@ export function AppSidebar() {
         <SpaceHeader />
       </SidebarHeader>
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {items.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild>
-                    <Link to={item.url}>
-                      <item.icon />
-                      <span>{item.title}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        <NotesTree />
       </SidebarContent>
       <SidebarFooter>
         <SpaceSelector />

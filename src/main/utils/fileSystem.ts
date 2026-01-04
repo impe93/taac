@@ -74,6 +74,29 @@ export class FileSystemManager {
     }
   }
 
+  // Check if file exists
+  private async fileExists(filePath: string): Promise<boolean> {
+    try {
+      await fs.access(filePath)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  // Migrate root structure from old location to new location
+  private async migrateRootStructure(): Promise<void> {
+    const oldPath = join(this.getBasePath('notes'), 'metadata.json')
+    const newPath = join(this.getBasePath('notes'), 'root', 'metadata.json')
+
+    // If old file exists and new file doesn't exist, migrate
+    if ((await this.fileExists(oldPath)) && !(await this.fileExists(newPath))) {
+      await this.ensureDir(join(this.getBasePath('notes'), 'root'))
+      await fs.rename(oldPath, newPath)
+      console.log(`[FileSystemManager] Migrated root metadata for space ${this.spaceId}`)
+    }
+  }
+
   // Initialize file structure
   async initialize(): Promise<void> {
     const dirs = [
@@ -90,8 +113,14 @@ export class FileSystemManager {
       await this.ensureDir(dir)
     }
 
+    // Migrate root structure from old location if needed
+    await this.migrateRootStructure()
+
+    // Ensure root directory exists
+    await this.ensureDir(join(this.getBasePath('notes'), 'root'))
+
     // Initialize root metadata if it doesn't exist
-    const rootMetaPath = join(this.getBasePath('notes'), 'metadata.json')
+    const rootMetaPath = join(this.getBasePath('notes'), 'root', 'metadata.json')
     try {
       await fs.access(rootMetaPath)
     } catch {
