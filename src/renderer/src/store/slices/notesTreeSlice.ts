@@ -182,6 +182,45 @@ export const deleteFolder = createAsyncThunk(
   }
 )
 
+// Sposta nota tra cartelle
+export const moveNote = createAsyncThunk(
+  'notesTree/moveNote',
+  async (payload: {
+    spaceId: string
+    noteId: string
+    sourceFolderId: string
+    targetFolderId: string
+  }) => {
+    const { spaceId, noteId, sourceFolderId, targetFolderId } = payload
+
+    const updatedNote = await window.fileSystem.moveNote(
+      spaceId,
+      noteId,
+      sourceFolderId,
+      targetFolderId
+    )
+
+    return { spaceId, noteId, sourceFolderId, targetFolderId, updatedNote }
+  }
+)
+
+// Sposta cartella
+export const moveFolder = createAsyncThunk(
+  'notesTree/moveFolder',
+  async (payload: {
+    spaceId: string
+    folderId: string
+    currentParentId: string | null
+    targetParentId: string
+  }) => {
+    const { spaceId, folderId, currentParentId, targetParentId } = payload
+
+    const updatedFolder = await window.fileSystem.moveFolder(spaceId, folderId, targetParentId)
+
+    return { spaceId, folderId, currentParentId, targetParentId, updatedFolder }
+  }
+)
+
 // ============================================================================
 // SLICE
 // ============================================================================
@@ -536,6 +575,163 @@ const notesTreeSlice = createSlice({
         space.selectedNoteFolderId = null
       }
     })
+
+    // MOVE NOTE - Optimistic update
+    builder
+      .addCase(moveNote.pending, (state, action) => {
+        const { spaceId, noteId, sourceFolderId, targetFolderId } = action.meta.arg
+
+        if (!state.spaces[spaceId]) return
+        const space = state.spaces[spaceId]
+
+        // OPTIMISTIC UPDATE
+        const note = space.notes[noteId]
+        if (!note) return
+
+        // Update note's folderId
+        note.folderId = targetFolderId
+
+        // Remove from source folder
+        if (space.folders[sourceFolderId]) {
+          space.folders[sourceFolderId].noteIds = space.folders[sourceFolderId].noteIds.filter(
+            (id) => id !== noteId
+          )
+        }
+
+        // Add to target folder
+        if (space.folders[targetFolderId]) {
+          if (!space.folders[targetFolderId].noteIds.includes(noteId)) {
+            space.folders[targetFolderId].noteIds.push(noteId)
+          }
+        }
+
+        // Update selection if moved note is selected
+        if (space.selectedNoteId === noteId) {
+          space.selectedNoteFolderId = targetFolderId
+        }
+      })
+      .addCase(moveNote.fulfilled, (state, action) => {
+        const { spaceId, updatedNote } = action.payload
+
+        if (!state.spaces[spaceId]) return
+        const space = state.spaces[spaceId]
+
+        // Update with confirmed data from backend
+        space.notes[updatedNote.id] = updatedNote
+      })
+      .addCase(moveNote.rejected, (state, action) => {
+        const { spaceId, noteId, sourceFolderId, targetFolderId } = action.meta.arg
+
+        if (!state.spaces[spaceId]) return
+        const space = state.spaces[spaceId]
+
+        // ROLLBACK OPTIMISTIC UPDATE
+        const note = space.notes[noteId]
+        if (!note) return
+
+        // Restore original folderId
+        note.folderId = sourceFolderId
+
+        // Remove from target folder
+        if (space.folders[targetFolderId]) {
+          space.folders[targetFolderId].noteIds = space.folders[targetFolderId].noteIds.filter(
+            (id) => id !== noteId
+          )
+        }
+
+        // Re-add to source folder
+        if (
+          space.folders[sourceFolderId] &&
+          !space.folders[sourceFolderId].noteIds.includes(noteId)
+        ) {
+          space.folders[sourceFolderId].noteIds.push(noteId)
+        }
+
+        // Restore selection
+        if (space.selectedNoteId === noteId) {
+          space.selectedNoteFolderId = sourceFolderId
+        }
+
+        // Set error message
+        state.error = action.error.message || 'Failed to move note'
+      })
+
+    // MOVE FOLDER - Optimistic update
+    builder
+      .addCase(moveFolder.pending, (state, action) => {
+        const { spaceId, folderId, currentParentId, targetParentId } = action.meta.arg
+
+        if (!state.spaces[spaceId]) return
+        const space = state.spaces[spaceId]
+
+        // OPTIMISTIC UPDATE
+        const folder = space.folders[folderId]
+        if (!folder) return
+
+        // Update folder's parentId
+        folder.parentId = targetParentId
+
+        // Remove from current parent's children
+        if (currentParentId && space.folders[currentParentId]) {
+          space.folders[currentParentId].children = space.folders[currentParentId].children.filter(
+            (id) => id !== folderId
+          )
+        }
+
+        // Add to target parent's children
+        if (
+          space.folders[targetParentId] &&
+          !space.folders[targetParentId].children.includes(folderId)
+        ) {
+          space.folders[targetParentId].children.push(folderId)
+        }
+
+        // Auto-expand target parent
+        if (!space.expandedFolders.includes(targetParentId)) {
+          space.expandedFolders.push(targetParentId)
+        }
+      })
+      .addCase(moveFolder.fulfilled, (state, action) => {
+        const { spaceId, updatedFolder } = action.payload
+
+        if (!state.spaces[spaceId]) return
+        const space = state.spaces[spaceId]
+
+        // Update with confirmed data from backend
+        space.folders[updatedFolder.id] = updatedFolder
+      })
+      .addCase(moveFolder.rejected, (state, action) => {
+        const { spaceId, folderId, currentParentId, targetParentId } = action.meta.arg
+
+        if (!state.spaces[spaceId]) return
+        const space = state.spaces[spaceId]
+
+        // ROLLBACK OPTIMISTIC UPDATE
+        const folder = space.folders[folderId]
+        if (!folder) return
+
+        // Restore original parentId
+        folder.parentId = currentParentId
+
+        // Remove from target parent's children
+        if (space.folders[targetParentId]) {
+          space.folders[targetParentId].children = space.folders[targetParentId].children.filter(
+            (id) => id !== folderId
+          )
+        }
+
+        // Re-add to current parent's children
+        if (
+          currentParentId &&
+          space.folders[currentParentId] &&
+          !space.folders[currentParentId].children.includes(folderId)
+        ) {
+          space.folders[currentParentId].children.push(folderId)
+        }
+
+        // Set error message
+        state.error = action.error.message || 'Failed to move folder'
+      })
   }
 })
 

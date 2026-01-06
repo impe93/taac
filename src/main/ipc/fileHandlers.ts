@@ -141,6 +141,42 @@ export function registerFileHandlers(getOrCreateFsManager: GetFsManager): void {
     }
   })
 
+  // Move operations
+  ipcMain.handle(
+    'fs:moveNote',
+    async (
+      _event: IpcMainInvokeEvent,
+      spaceId: string,
+      noteId: string,
+      sourceFolderId: string,
+      targetFolderId: string
+    ) => {
+      try {
+        const fsManager = getOrCreateFsManager(spaceId)
+        return await fsManager.moveNote(noteId, sourceFolderId, targetFolderId)
+      } catch (error) {
+        throw new Error(`Failed to move note: ${(error as Error).message}`)
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'fs:moveFolder',
+    async (
+      _event: IpcMainInvokeEvent,
+      spaceId: string,
+      folderId: string,
+      targetParentId: string
+    ) => {
+      try {
+        const fsManager = getOrCreateFsManager(spaceId)
+        return await fsManager.moveFolder(folderId, targetParentId)
+      } catch (error) {
+        throw new Error(`Failed to move folder: ${(error as Error).message}`)
+      }
+    }
+  )
+
   // Asset operations
   ipcMain.handle(
     'fs:saveAsset',

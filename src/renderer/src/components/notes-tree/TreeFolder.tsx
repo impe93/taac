@@ -1,11 +1,14 @@
-import { type FC, useState } from 'react'
+import { type FC, useState, useEffect, useRef } from 'react'
 import { useAppDispatch, useAppSelector } from '@renderer/store/hooks'
 import {
   toggleFolder,
   selectFolder,
   selectNotesInFolder,
-  selectExpandedFolders
+  selectExpandedFolders,
+  expandFolder
 } from '@renderer/store/slices/notesTreeSlice'
+import { useDraggable, useDroppable } from '@dnd-kit/core'
+import { CSS } from '@dnd-kit/utilities'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@renderer/components/ui/collapsible'
 import { ChevronRight, Folder, FolderOpen, MoreHorizontal } from 'lucide-react'
 import { cn } from '@renderer/lib/utils'
@@ -44,9 +47,54 @@ export const TreeFolder: FC<TreeFolderProps> = ({
   const expandedFolders = useAppSelector(selectExpandedFolders)
   const [showActions, setShowActions] = useState(false)
 
-  if (!folder) return null
+  // HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
+  // Setup draggable
+  const {
+    attributes: dragAttributes,
+    listeners: dragListeners,
+    setNodeRef: setDragRef,
+    transform: dragTransform,
+    isDragging
+  } = useDraggable({
+    id: `folder-${folderId}`,
+    data: {
+      type: 'folder',
+      id: folderId,
+      folderId: folder?.parentId || 'root',
+      name: folder?.name || 'Unnamed Folder'
+    }
+  })
 
+  // Setup droppable
+  const { setNodeRef: setDropRef, isOver } = useDroppable({
+    id: `folder-drop-${folderId}`,
+    data: {
+      type: 'folder',
+      folderId: folderId
+    }
+  })
+
+  // Auto-expand on hover during drag
+  const expandTimerRef = useRef<NodeJS.Timeout | null>(null)
   const isExpanded = expandedFolders.includes(folderId)
+
+  useEffect(() => {
+    if (isOver && !isExpanded) {
+      expandTimerRef.current = setTimeout(() => {
+        dispatch(expandFolder(folderId))
+      }, 1500) // 1.5 second delay
+    }
+
+    return () => {
+      if (expandTimerRef.current) {
+        clearTimeout(expandTimerRef.current)
+        expandTimerRef.current = null
+      }
+    }
+  }, [isOver, isExpanded, folderId, dispatch])
+
+  // NOW we can do conditional returns
+  if (!folder) return null
 
   const handleToggle = (): void => {
     dispatch(toggleFolder(folderId))
@@ -54,10 +102,23 @@ export const TreeFolder: FC<TreeFolderProps> = ({
 
   const paddingLeft = level * 12
 
+  // Combine refs
+  const setRefs = (element: HTMLElement | null): void => {
+    setDragRef(element)
+    setDropRef(element)
+  }
+
+  const style = {
+    transform: CSS.Translate.toString(dragTransform),
+    opacity: isDragging ? 0.5 : 1
+  }
+
   return (
     <Collapsible open={isExpanded} onOpenChange={handleToggle}>
       <div
-        className="group relative"
+        ref={setRefs}
+        style={style}
+        className={cn('group relative', isOver && 'bg-accent/50 ring-2 ring-primary/50 rounded-md')}
         onMouseEnter={() => setShowActions(true)}
         onMouseLeave={() => setShowActions(false)}
       >
@@ -70,6 +131,8 @@ export const TreeFolder: FC<TreeFolderProps> = ({
         >
           <CollapsibleTrigger asChild>
             <button
+              {...dragAttributes}
+              {...dragListeners}
               className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-accent text-sm transition-colors"
               style={{ paddingLeft: `${paddingLeft + 8}px` }}
             >

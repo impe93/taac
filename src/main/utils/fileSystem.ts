@@ -311,6 +311,153 @@ export class FileSystemManager {
     return this.readFolderMetadata('root')
   }
 
+  // Move operations
+  async moveNote(
+    noteId: string,
+    sourceFolderId: string,
+    targetFolderId: string
+  ): Promise<Note> {
+    // 1. VALIDATION
+    if (sourceFolderId === targetFolderId) {
+      throw new Error('Source and target folders are the same')
+    }
+
+    // 2. READ NOTE DATA
+    const note = await this.readNote(sourceFolderId, noteId)
+
+    // 3. CONSTRUCT PATHS
+    const sourcePath = this.validatePath(
+      join(this.getBasePath('notes'), sourceFolderId, `${noteId}.json`),
+      this.getBasePath('notes')
+    )
+
+    const targetFolderPath = join(this.getBasePath('notes'), targetFolderId)
+    await this.ensureDir(targetFolderPath)
+
+    const targetPath = this.validatePath(
+      join(targetFolderPath, `${noteId}.json`),
+      this.getBasePath('notes')
+    )
+
+    // 4. ATOMIC MOVE: File System Operation
+    try {
+      // Move file atomically
+      await fs.rename(sourcePath, targetPath)
+
+      // 5. UPDATE NOTE METADATA
+      const updatedNote: Note = {
+        ...note,
+        folderId: targetFolderId,
+        updatedAt: new Date().toISOString()
+      }
+
+      // Write updated metadata to new location
+      await fs.writeFile(targetPath, JSON.stringify(updatedNote, null, 2), 'utf-8')
+
+      // 6. UPDATE SOURCE FOLDER METADATA (remove noteId)
+      await this.removeNoteFromFolder(sourceFolderId, noteId)
+
+      // 7. UPDATE TARGET FOLDER METADATA (add noteId)
+      await this.addNoteToFolder(targetFolderId, noteId)
+
+      return updatedNote
+    } catch (error) {
+      // ROLLBACK: If any step fails, attempt to restore
+      try {
+        if (await this.fileExists(targetPath)) {
+          await fs.rename(targetPath, sourcePath)
+        }
+      } catch (rollbackError) {
+        console.error('CRITICAL: Rollback failed:', rollbackError)
+      }
+
+      throw new Error(`Failed to move note: ${(error as Error).message}`)
+    }
+  }
+
+  async moveFolder(folderId: string, targetParentId: string): Promise<FolderMetadata> {
+    // 1. VALIDATION
+    if (folderId === 'root') {
+      throw new Error('Cannot move root folder')
+    }
+
+    if (folderId === targetParentId) {
+      throw new Error('Cannot move folder into itself')
+    }
+
+    // 2. LOAD FOLDER METADATA
+    const folderMeta = await this.readFolderMetadata(folderId)
+    const currentParentId = folderMeta.parentId
+
+    if (currentParentId === targetParentId) {
+      throw new Error('Folder is already in target parent')
+    }
+
+    // 3. CHECK FOR CIRCULAR DEPENDENCY
+    await this.validateNoCircularDependency(folderId, targetParentId)
+
+    // 4. UPDATE FOLDER METADATA
+    const updatedFolder: FolderMetadata = {
+      ...folderMeta,
+      parentId: targetParentId,
+      updatedAt: new Date().toISOString()
+    }
+
+    try {
+      // 5. WRITE UPDATED METADATA
+      const metaPath = this.validatePath(
+        join(this.getBasePath('notes'), folderId, 'metadata.json'),
+        this.getBasePath('notes')
+      )
+      await fs.writeFile(metaPath, JSON.stringify(updatedFolder, null, 2), 'utf-8')
+
+      // 6. UPDATE OLD PARENT (remove from children)
+      if (currentParentId) {
+        await this.removeChildFromFolder(currentParentId, folderId)
+      }
+
+      // 7. UPDATE NEW PARENT (add to children)
+      await this.addChildToFolder(targetParentId, folderId)
+
+      return updatedFolder
+    } catch (error) {
+      // ROLLBACK: Restore original metadata
+      try {
+        const metaPath = this.validatePath(
+          join(this.getBasePath('notes'), folderId, 'metadata.json'),
+          this.getBasePath('notes')
+        )
+        await fs.writeFile(metaPath, JSON.stringify(folderMeta, null, 2), 'utf-8')
+
+        // Restore parent relationships
+        if (currentParentId) {
+          await this.addChildToFolder(currentParentId, folderId)
+        }
+        await this.removeChildFromFolder(targetParentId, folderId)
+      } catch (rollbackError) {
+        console.error('CRITICAL: Rollback failed:', rollbackError)
+      }
+
+      throw new Error(`Failed to move folder: ${(error as Error).message}`)
+    }
+  }
+
+  private async validateNoCircularDependency(
+    folderId: string,
+    targetParentId: string
+  ): Promise<void> {
+    let currentId: string | null = targetParentId
+
+    while (currentId !== null) {
+      if (currentId === folderId) {
+        throw new Error('Cannot move folder into its own descendant')
+      }
+
+      const parentMeta = await this.readFolderMetadata(currentId)
+      currentId = parentMeta.parentId
+    }
+  }
+
   private async addNoteToFolder(folderId: string, noteId: string): Promise<void> {
     const meta = await this.readFolderMetadata(folderId)
     if (!meta.noteIds.includes(noteId)) {

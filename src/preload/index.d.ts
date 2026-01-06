@@ -35,6 +35,15 @@ export interface FileSystemAPI {
   deleteFolder: (spaceId: string, folderId: string) => Promise<void>
   getFolderTree: (spaceId: string) => Promise<FolderMetadata>
 
+  // Move operations
+  moveNote: (
+    spaceId: string,
+    noteId: string,
+    sourceFolderId: string,
+    targetFolderId: string
+  ) => Promise<Note>
+  moveFolder: (spaceId: string, folderId: string, targetParentId: string) => Promise<FolderMetadata>
+
   // Asset operations
   saveAsset: (
     spaceId: string,
