@@ -4,6 +4,8 @@ import {
   selectRootFolder,
   selectIsLoading,
   selectError,
+  selectIsFullyHydrated,
+  selectActiveSpaceId,
   loadTree
 } from '@renderer/store/slices/notesTreeSlice'
 import { TreeFolder } from './TreeFolder'
@@ -20,7 +22,8 @@ export const NotesTree: FC = () => {
   const rootFolder = useAppSelector(selectRootFolder)
   const isLoading = useAppSelector(selectIsLoading)
   const error = useAppSelector(selectError)
-  const isFullyHydrated = useAppSelector((state) => state.notesTree.isFullyHydrated)
+  const isFullyHydrated = useAppSelector(selectIsFullyHydrated)
+  const activeSpaceId = useAppSelector(selectActiveSpaceId)
 
   // Dialog state management (lifted state)
   const [createDialog, setCreateDialog] = useState<{
@@ -76,7 +79,11 @@ export const NotesTree: FC = () => {
     return (
       <div className="p-4 space-y-2">
         <p className="text-sm text-destructive">Error: {error}</p>
-        <Button variant="outline" size="sm" onClick={() => dispatch(loadTree())}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => activeSpaceId && dispatch(loadTree({ spaceId: activeSpaceId }))}
+        >
           Retry
         </Button>
       </div>

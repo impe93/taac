@@ -1,7 +1,11 @@
 import { type FC } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useAppDispatch, useAppSelector } from '@renderer/store/hooks'
-import { selectNoteById, selectNote } from '@renderer/store/slices/notesTreeSlice'
+import {
+  selectNoteById,
+  selectNote,
+  selectSelectedNote
+} from '@renderer/store/slices/notesTreeSlice'
 import { FileText } from 'lucide-react'
 import { cn } from '@renderer/lib/utils'
 import { NoteContextMenu } from './NoteContextMenu'
@@ -17,7 +21,7 @@ export const TreeNote: FC<TreeNoteProps> = ({ noteId, folderId, level, onDelete 
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
   const note = useAppSelector(selectNoteById(noteId))
-  const selectedNoteId = useAppSelector((state) => state.notesTree.selectedNoteId)
+  const { noteId: selectedNoteId } = useAppSelector(selectSelectedNote)
 
   if (!note) return null
 

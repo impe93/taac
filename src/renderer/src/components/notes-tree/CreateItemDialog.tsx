@@ -11,7 +11,11 @@ import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import { Label } from '@renderer/components/ui/label'
 import { useAppDispatch, useAppSelector } from '@renderer/store/hooks'
-import { createNote, createFolder } from '@renderer/store/slices/notesTreeSlice'
+import {
+  createNote,
+  createFolder,
+  selectActiveSpaceId
+} from '@renderer/store/slices/notesTreeSlice'
 import { EMPTY_EDITOR_STATE } from './constants'
 
 interface CreateItemDialogProps {
@@ -28,6 +32,7 @@ export const CreateItemDialog: FC<CreateItemDialogProps> = ({
   onOpenChange
 }) => {
   const dispatch = useAppDispatch()
+  const activeSpaceId = useAppSelector(selectActiveSpaceId)
   const loadingOperations = useAppSelector((state) => state.notesTree.loadingOperations)
   const [name, setName] = useState('')
 
@@ -44,11 +49,12 @@ export const CreateItemDialog: FC<CreateItemDialogProps> = ({
   }, [open])
 
   const handleCreate = async (): Promise<void> => {
-    if (!name.trim()) return
+    if (!name.trim() || !activeSpaceId) return
 
     if (type === 'note') {
       await dispatch(
         createNote({
+          spaceId: activeSpaceId,
           folderId: parentFolderId,
           title: name.trim(),
           content: EMPTY_EDITOR_STATE
@@ -57,6 +63,7 @@ export const CreateItemDialog: FC<CreateItemDialogProps> = ({
     } else {
       await dispatch(
         createFolder({
+          spaceId: activeSpaceId,
           name: name.trim(),
           parentId: parentFolderId
         })

@@ -1,8 +1,30 @@
 import type { Middleware } from '@reduxjs/toolkit'
+import type { NotesTreeState, SpaceTreeState } from '../slices/notesTreeSlice'
+import type { FolderMetadata, Note } from '@preload/types'
+
+// Type alias per la struttura della cache multi-spazio
+type SpacesCacheStructure = Record<
+  string,
+  {
+    tree: {
+      folders: Record<string, FolderMetadata>
+      notes: Record<string, Note>
+    }
+    ui: {
+      expandedFolders: string[]
+      selectedNoteId: string | null
+      selectedNoteFolderId: string | null
+    }
+    metadata: {
+      lastSaved: string
+      version: number
+    }
+  }
+>
 
 /**
  * Azioni che triggherano il salvataggio di UI state in electron-store.
- * Solo azioni sincrone che modificano expandedFolders, selectedNoteId, selectedNoteFolderId.
+ * Modificano expandedFolders, selectedNoteId, selectedNoteFolderId dello spazio attivo.
  */
 const PERSISTABLE_UI_ACTIONS = [
   'notesTree/toggleFolder',
@@ -23,30 +45,23 @@ const PERSISTABLE_TREE_CACHE_ACTIONS = [
   'notesTree/deleteNote/fulfilled',
   'notesTree/createFolder/fulfilled',
   'notesTree/updateFolder/fulfilled',
-  'notesTree/deleteFolder/fulfilled'
+  'notesTree/deleteFolder/fulfilled',
+  'notesTree/hydrateAllSpacesFromCache'
 ] as const
 
 /**
- * Middleware per sincronizzare lo stato Redux con electron-store
+ * Middleware per sincronizzare lo stato Redux multi-spazio con electron-store
  *
- * Persiste:
- * 1. UI State: expandedFolders, selectedNoteId, selectedNoteFolderId
- * 2. Tree Cache: folders, notes (per caricamento veloce)
+ * Persiste tutto in una singola chiave `reduxSpacesCaches` contenente tutti gli spazi.
+ * Ogni spazio ha isolati:
+ * 1. Tree data: folders, notes
+ * 2. UI State: expandedFolders, selectedNoteId, selectedNoteFolderId
+ * 3. Metadata: lastSaved, version
  */
 export const persistenceMiddleware: Middleware = (store) => {
-  // Setup listener per cambiamenti da electron-store
-  if (typeof window !== 'undefined' && window.config) {
-    // Ascolta cambiamenti da altre finestre o main process
-    window.config.onChange('reduxUIState', (newValue) => {
-      if (newValue) {
-        store.dispatch({ type: 'notesTree/hydrateUIState', payload: newValue })
-      }
-    })
-  }
-
   return (next) => (action) => {
     const result = next(action)
-    const state = store.getState()
+    const state = store.getState() as { notesTree: NotesTreeState }
 
     // Type guard per verificare che action abbia una proprietà type
     if (
@@ -55,16 +70,14 @@ export const persistenceMiddleware: Middleware = (store) => {
       'type' in action &&
       typeof action.type === 'string'
     ) {
-      // Persisti UI state solo su azioni che modificano UI
-      if (PERSISTABLE_UI_ACTIONS.includes(action.type as (typeof PERSISTABLE_UI_ACTIONS)[number])) {
-        const uiState = {
-          expandedFolders: state.notesTree.expandedFolders,
-          selectedNoteId: state.notesTree.selectedNoteId,
-          selectedNoteFolderId: state.notesTree.selectedNoteFolderId
-        }
+      const { activeSpaceId, spaces } = state.notesTree
 
-        // Scrittura immediata (no debouncing per UI state)
-        window.config.set('reduxUIState', uiState).catch(console.error)
+      // Persisti UI state solo se c'è uno spazio attivo
+      if (
+        activeSpaceId &&
+        PERSISTABLE_UI_ACTIONS.includes(action.type as (typeof PERSISTABLE_UI_ACTIONS)[number])
+      ) {
+        persistSpaceUIState(activeSpaceId, spaces[activeSpaceId])
       }
 
       // Persisti tree cache (debounced) solo su azioni che modificano dati
@@ -73,7 +86,7 @@ export const persistenceMiddleware: Middleware = (store) => {
           action.type as (typeof PERSISTABLE_TREE_CACHE_ACTIONS)[number]
         )
       ) {
-        debouncedPersistTreeCache(state.notesTree.folders, state.notesTree.notes)
+        debouncedPersistAllSpaces(spaces)
       }
     }
 
@@ -81,15 +94,70 @@ export const persistenceMiddleware: Middleware = (store) => {
   }
 }
 
-// Debounce per evitare troppe scritture
+/**
+ * Persiste immediatamente l'UI state dello spazio attivo
+ */
+async function persistSpaceUIState(
+  spaceId: string,
+  spaceState: SpaceTreeState | undefined
+): Promise<void> {
+  if (!spaceState) return
+
+  try {
+    // Leggi cache esistente
+    const existingCache =
+      ((await window.config.get('reduxSpacesCaches')) as SpacesCacheStructure | undefined) || {}
+
+    // Aggiorna UI state dello spazio corrente
+    existingCache[spaceId] = {
+      ...existingCache[spaceId],
+      ui: {
+        expandedFolders: spaceState.expandedFolders,
+        selectedNoteId: spaceState.selectedNoteId,
+        selectedNoteFolderId: spaceState.selectedNoteFolderId
+      }
+    }
+
+    // Salva cache aggiornata
+    await window.config.set('reduxSpacesCaches', existingCache)
+  } catch (error) {
+    console.error('Error persisting UI state:', error)
+  }
+}
+
+/**
+ * Persiste tutti gli spazi (debounced 1 secondo)
+ */
 let persistTimer: NodeJS.Timeout | null = null
-function debouncedPersistTreeCache(
-  folders: Record<string, unknown>,
-  notes: Record<string, unknown>
-): void {
+function debouncedPersistAllSpaces(spaces: Record<string, SpaceTreeState>): void {
   if (persistTimer) clearTimeout(persistTimer)
 
-  persistTimer = setTimeout(() => {
-    window.config.set('reduxTreeCache', { folders, notes }).catch(console.error)
+  persistTimer = setTimeout(async () => {
+    try {
+      const spacesCache: SpacesCacheStructure = {}
+
+      // Costruisci cache per ogni spazio
+      Object.entries(spaces).forEach(([spaceId, spaceState]) => {
+        spacesCache[spaceId] = {
+          tree: {
+            folders: spaceState.folders,
+            notes: spaceState.notes
+          },
+          ui: {
+            expandedFolders: spaceState.expandedFolders,
+            selectedNoteId: spaceState.selectedNoteId,
+            selectedNoteFolderId: spaceState.selectedNoteFolderId
+          },
+          metadata: {
+            lastSaved: new Date().toISOString(),
+            version: 1
+          }
+        }
+      })
+
+      await window.config.set('reduxSpacesCaches', spacesCache)
+    } catch (error) {
+      console.error('Error persisting spaces cache:', error)
+    }
   }, 1000) // 1 secondo di debounce
 }

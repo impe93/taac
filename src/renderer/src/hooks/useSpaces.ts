@@ -1,6 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import type { Space } from '@preload/types'
+import { useAppDispatch, useAppStore } from '@renderer/store/hooks'
+import { switchActiveSpace, loadTree } from '@renderer/store/slices/notesTreeSlice'
 
 // List all spaces
 export const useSpaces = () => {
@@ -91,14 +93,30 @@ export const useDeleteSpace = () => {
 // Switch active space
 export const useSwitchSpace = () => {
   const queryClient = useQueryClient()
+  const dispatch = useAppDispatch()
+  const store = useAppStore()
 
   return useMutation({
-    mutationFn: (spaceId: string) => window.config.set('activeSpaceId', spaceId),
-    onSuccess: (_, spaceId) => {
+    mutationFn: async (spaceId: string) => {
+      // 1. Update electron-store config
+      await window.config.set('activeSpaceId', spaceId)
+
+      // 2. Update Redux active space
+      dispatch(switchActiveSpace(spaceId))
+
+      // 3. Se spazio non è fully hydrated, carica da filesystem
+      const state = store.getState()
+      const space = state.notesTree.spaces[spaceId]
+      if (!space?.isFullyHydrated) {
+        dispatch(loadTree({ spaceId }))
+      }
+
+      return spaceId
+    },
+    onSuccess: (spaceId) => {
+      // 4. Update React Query cache
       queryClient.setQueryData(['config', 'activeSpaceId'], spaceId)
-      queryClient.invalidateQueries({ queryKey: ['folderTree'] })
-      queryClient.invalidateQueries({ queryKey: ['notes'] })
-      queryClient.invalidateQueries({ queryKey: ['folders'] })
+      // Note: Non invalidiamo più le query perché Redux gestisce lo stato
     }
   })
 }

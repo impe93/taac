@@ -55,7 +55,26 @@ export interface AppConfig {
   recentNotes: string[]
   activeSpaceId: string | null
   spacesInitialized: boolean
-  // Redux persistence
+  // Redux persistence (new multi-space structure)
+  reduxSpacesCaches?: Record<
+    string,
+    {
+      tree: {
+        folders: Record<string, unknown>
+        notes: Record<string, unknown>
+      }
+      ui: {
+        expandedFolders: string[]
+        selectedNoteId: string | null
+        selectedNoteFolderId: string | null
+      }
+      metadata: {
+        lastSaved: string
+        version: number
+      }
+    }
+  >
+  // LEGACY Redux persistence (mantenute per migrazione)
   reduxUIState?: {
     expandedFolders: string[]
     selectedNoteId: string | null

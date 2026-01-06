@@ -10,7 +10,11 @@ import {
   AlertDialogTitle
 } from '@renderer/components/ui/alert-dialog'
 import { useAppDispatch, useAppSelector } from '@renderer/store/hooks'
-import { deleteNote, deleteFolder } from '@renderer/store/slices/notesTreeSlice'
+import {
+  deleteNote,
+  deleteFolder,
+  selectActiveSpaceId
+} from '@renderer/store/slices/notesTreeSlice'
 
 interface DeleteItemDialogProps {
   type: 'note' | 'folder'
@@ -30,6 +34,7 @@ export const DeleteItemDialog: FC<DeleteItemDialogProps> = ({
   onOpenChange
 }) => {
   const dispatch = useAppDispatch()
+  const activeSpaceId = useAppSelector(selectActiveSpaceId)
   const loadingOperations = useAppSelector((state) => state.notesTree.loadingOperations)
 
   const isPending =
@@ -38,14 +43,16 @@ export const DeleteItemDialog: FC<DeleteItemDialogProps> = ({
       : loadingOperations[`deleteFolder-${itemId}`]
 
   const handleDelete = async (): Promise<void> => {
+    if (!activeSpaceId) return
+
     if (type === 'note') {
       if (!folderId) {
         console.error('folderId is required for deleting notes')
         return
       }
-      await dispatch(deleteNote({ noteId: itemId, folderId }))
+      await dispatch(deleteNote({ spaceId: activeSpaceId, noteId: itemId, folderId }))
     } else {
-      await dispatch(deleteFolder({ folderId: itemId }))
+      await dispatch(deleteFolder({ spaceId: activeSpaceId, folderId: itemId }))
     }
     onOpenChange(false)
   }

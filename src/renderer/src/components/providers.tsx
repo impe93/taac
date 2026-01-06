@@ -7,8 +7,33 @@ import { SidebarProvider } from './ui/sidebar'
 import { Provider as ReduxProvider } from 'react-redux'
 import { store } from '@renderer/store'
 import { useAppDispatch } from '@renderer/store/hooks'
-import { hydrateUIState, hydrateFromCache, loadTree } from '@renderer/store/slices/notesTreeSlice'
-import type { Note, FolderMetadata } from '@preload/types'
+import {
+  hydrateAllSpacesFromCache,
+  switchActiveSpace,
+  loadTree
+} from '@renderer/store/slices/notesTreeSlice'
+import type { FolderMetadata, Note } from '@preload/types'
+
+// Type alias per la struttura della cache multi-spazio
+type SpacesCacheStructure = Record<
+  string,
+  {
+    tree: {
+      folders: Record<string, FolderMetadata>
+      notes: Record<string, Note>
+    }
+    ui: {
+      expandedFolders: string[]
+      selectedNoteId: string | null
+      selectedNoteFolderId: string | null
+    }
+    metadata: {
+      lastSaved: string
+      version: number
+    }
+  }
+>
+
 // https://tanstack.com/router/v1/docs/framework/react/devtools
 const TanStackRouterDevtools = import.meta.env.PROD
   ? () => null
@@ -22,6 +47,73 @@ const ReactQueryDevtools = import.meta.env.PROD ? () => null : ReactQueryDevtool
 
 const queryClient = new QueryClient()
 
+/**
+ * Migra cache legacy (reduxTreeCache + reduxUIState) alla nuova struttura multi-spazio
+ */
+async function migrateFromLegacy(
+  activeSpaceId: string
+): Promise<SpacesCacheStructure | undefined> {
+  try {
+    const [legacyTree, legacyUI] = await Promise.all([
+      window.config.get('reduxTreeCache'),
+      window.config.get('reduxUIState')
+    ])
+
+    if (!legacyTree && !legacyUI) return undefined
+
+    console.log('Migrating legacy Redux cache to multi-space structure...')
+
+    // Crea nuova struttura con legacy data sotto l'activeSpaceId
+    const newCache: SpacesCacheStructure = {
+      [activeSpaceId]: {
+        tree: {
+          folders:
+            legacyTree && typeof legacyTree === 'object' && 'folders' in legacyTree
+              ? (legacyTree.folders as Record<string, FolderMetadata>)
+              : {},
+          notes:
+            legacyTree && typeof legacyTree === 'object' && 'notes' in legacyTree
+              ? (legacyTree.notes as Record<string, Note>)
+              : {}
+        },
+        ui: {
+          expandedFolders:
+            legacyUI && typeof legacyUI === 'object' && 'expandedFolders' in legacyUI
+              ? (legacyUI.expandedFolders as string[])
+              : ['root'],
+          selectedNoteId:
+            legacyUI && typeof legacyUI === 'object' && 'selectedNoteId' in legacyUI
+              ? (legacyUI.selectedNoteId as string | null)
+              : null,
+          selectedNoteFolderId:
+            legacyUI && typeof legacyUI === 'object' && 'selectedNoteFolderId' in legacyUI
+              ? (legacyUI.selectedNoteFolderId as string | null)
+              : null
+        },
+        metadata: {
+          lastSaved: new Date().toISOString(),
+          version: 1
+        }
+      }
+    }
+
+    // Salva nuova struttura
+    await window.config.set('reduxSpacesCaches', newCache)
+
+    // Elimina chiavi legacy
+    await Promise.all([
+      window.config.set('reduxTreeCache', undefined),
+      window.config.set('reduxUIState', undefined)
+    ])
+
+    console.log('Migration complete!')
+    return newCache
+  } catch (error) {
+    console.error('Migration failed:', error)
+    return undefined
+  }
+}
+
 // Componente per inizializzare Redux all'avvio con hydration multi-stage
 function ReduxInitializer({ children }: { children: React.ReactNode }): React.ReactElement {
   const dispatch = useAppDispatch()
@@ -29,45 +121,48 @@ function ReduxInitializer({ children }: { children: React.ReactNode }): React.Re
   useEffect(() => {
     const initializeRedux = async (): Promise<void> => {
       try {
-        // Stage 1: Fetch parallelo di cache e UI state
-        const [cacheData, uiState] = await Promise.all([
-          window.config.get('reduxTreeCache'),
-          window.config.get('reduxUIState')
-        ])
-
-        // Validazione base del cache
-        if (
-          cacheData &&
-          typeof cacheData === 'object' &&
-          'folders' in cacheData &&
-          'notes' in cacheData &&
-          cacheData.folders &&
-          cacheData.notes
-        ) {
-          // Dispatch hydration sincrona del cache
-          dispatch(
-            hydrateFromCache({
-              folders: cacheData.folders as Record<string, FolderMetadata>,
-              notes: cacheData.notes as Record<string, Note>,
-              uiState: uiState || {
-                expandedFolders: ['root'],
-                selectedNoteId: null,
-                selectedNoteFolderId: null
-              }
-            })
-          )
-        } else if (uiState) {
-          // Cache non valido, ma UI state esiste → hydrate solo UI state
-          dispatch(hydrateUIState(uiState))
+        // Get active space ID
+        const activeSpaceId = await window.config.get('activeSpaceId')
+        if (!activeSpaceId) {
+          console.warn('No active space ID found')
+          return
         }
 
-        // Stage 2: Background reconciliation con filesystem
-        // loadTree.fulfilled gestirà il merge e la validazione
-        dispatch(loadTree())
+        // Stage 1: Carica cache (prova nuova struttura, poi migrazione)
+        let spacesCache = await window.config.get('reduxSpacesCaches')
+
+        if (!spacesCache || typeof spacesCache !== 'object') {
+          // Tenta migrazione da legacy
+          spacesCache = await migrateFromLegacy(activeSpaceId)
+        }
+
+        if (spacesCache && typeof spacesCache === 'object') {
+          // Dispatch hydration di TUTTI gli spazi
+          dispatch(
+            hydrateAllSpacesFromCache({
+              spacesCache: spacesCache as SpacesCacheStructure,
+              activeSpaceId
+            })
+          )
+        } else {
+          // Nessuna cache trovata, imposta solo activeSpaceId
+          dispatch(switchActiveSpace(activeSpaceId))
+        }
+
+        // Stage 2: Riconcilia solo spazio attivo con filesystem
+        dispatch(loadTree({ spaceId: activeSpaceId }))
       } catch (error) {
         console.error('Redux initialization error:', error)
-        // Fallback: esegui solo loadTree
-        dispatch(loadTree())
+        // Fallback: carica da filesystem se esiste activeSpaceId
+        window.config
+          .get('activeSpaceId')
+          .then((activeSpaceId) => {
+            if (activeSpaceId) {
+              dispatch(switchActiveSpace(activeSpaceId))
+              dispatch(loadTree({ spaceId: activeSpaceId }))
+            }
+          })
+          .catch(console.error)
       }
     }
 
