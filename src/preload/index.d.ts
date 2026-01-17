@@ -1,5 +1,4 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
-import type { SerializedEditorState } from 'lexical'
 import type { Note, FolderMetadata, Asset, AppConfig, Space } from './types'
 
 // Re-export types from types.ts for convenience
@@ -11,7 +10,7 @@ export interface FileSystemAPI {
   createNote: (
     spaceId: string,
     folderId: string,
-    content: SerializedEditorState,
+    content: string,
     title: string
   ) => Promise<Note>
   readNote: (spaceId: string, folderId: string, noteId: string) => Promise<Note>

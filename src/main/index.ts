@@ -1,5 +1,6 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, protocol, net } from 'electron'
 import { join } from 'path'
+import { pathToFileURL } from 'url'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { FileSystemManager } from './utils/fileSystem'
@@ -8,6 +9,20 @@ import { configStore } from './utils/configStore'
 import { registerFileHandlers } from './ipc/fileHandlers'
 import { registerConfigHandlers } from './ipc/configHandlers'
 import { registerSpaceHandlers } from './ipc/spaceHandlers'
+
+// Register custom protocol for serving local assets
+// Must be called before app is ready
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'taac-asset',
+    privileges: {
+      secure: true,
+      standard: true,
+      supportFetchAPI: true,
+      bypassCSP: true
+    }
+  }
+])
 
 let spaceManager: SpaceManager
 const fsManagerMap = new Map<string, FileSystemManager>()
@@ -45,6 +60,7 @@ function createWindow(): void {
   mainWindow.once('ready-to-show', () => {
     mainWindow.show()
     mainWindow.focus()
+    mainWindow.webContents.openDevTools()
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -67,6 +83,36 @@ function createWindow(): void {
 app.whenReady().then(async () => {
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.electron')
+
+  // Register protocol handler for local assets
+  // URL format: taac-asset://spaceId/type/filename
+  // Example: taac-asset://abc123/images/image.png
+  protocol.handle('taac-asset', (request) => {
+    const url = new URL(request.url)
+    // The hostname is the spaceId, pathname is /type/filename
+    const spaceId = url.hostname
+    const pathParts = url.pathname.split('/').filter(Boolean)
+
+    if (pathParts.length < 2) {
+      return new Response('Invalid asset path', { status: 400 })
+    }
+
+    const assetType = pathParts[0] // 'images', 'pdfs', 'attachments'
+    const filename = pathParts.slice(1).join('/')
+
+    // Construct the file path
+    const assetPath = join(
+      app.getPath('userData'),
+      'spaces',
+      spaceId,
+      'assets',
+      assetType,
+      filename
+    )
+
+    // Use net.fetch to load the file (converts to file:// internally but allowed in main process)
+    return net.fetch(pathToFileURL(assetPath).toString())
+  })
 
   // Initialize space manager
   spaceManager = new SpaceManager()
@@ -109,6 +155,11 @@ app.whenReady().then(async () => {
 
   // IPC test
   ipcMain.on('ping', () => console.log('pong'))
+
+  // Handle opening external URLs in the default browser
+  ipcMain.handle('shell:openExternal', async (_event, url: string) => {
+    await shell.openExternal(url)
+  })
 
   createWindow()
 

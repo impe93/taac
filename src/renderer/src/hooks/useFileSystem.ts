@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Note, FolderMetadata } from '@preload/types'
-import type { SerializedEditorState } from 'lexical'
 import { useActiveSpace } from './useSpaces'
 
 // Note hooks
@@ -37,7 +36,7 @@ export const useCreateNote = () => {
       title
     }: {
       folderId: string
-      content: SerializedEditorState
+      content: string
       title: string
     }) => {
       if (!activeSpace) throw new Error('No active space')

@@ -1,6 +1,5 @@
 import { createSlice, createAsyncThunk, type PayloadAction } from '@reduxjs/toolkit'
 import type { Note, FolderMetadata } from '@preload/types'
-import type { SerializedEditorState } from 'lexical'
 
 // ============================================================================
 // STATE INTERFACE
@@ -113,7 +112,7 @@ export const createNote = createAsyncThunk(
     spaceId: string
     folderId: string
     title: string
-    content: SerializedEditorState
+    content: string
   }) => {
     const { spaceId, folderId, title, content } = payload
 

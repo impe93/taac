@@ -1,10 +1,8 @@
-import type { SerializedEditorState } from 'lexical'
-
 // Type definitions for file system entities
 export interface Note {
   id: string
   folderId: string
-  content: SerializedEditorState
+  content: string // Markdown content
   createdAt: string
   updatedAt: string
   title: string
