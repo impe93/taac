@@ -23,6 +23,9 @@ import {
   InsertImage,
   InsertTable,
   InsertThematicBreak,
+  InsertCodeBlock,
+  ChangeCodeMirrorLanguage,
+  ConditionalContents,
   Separator
 } from '@mdxeditor/editor'
 import '@mdxeditor/editor/style.css'
@@ -190,21 +193,34 @@ export const MDXNoteEditor: FC<MDXNoteEditorProps> = ({
     plugins.push(
       toolbarPlugin({
         toolbarContents: () => (
-          <>
-            <UndoRedo />
-            <Separator />
-            <BoldItalicUnderlineToggles />
-            <CodeToggle />
-            <Separator />
-            <ListsToggle />
-            <Separator />
-            <BlockTypeSelect />
-            <Separator />
-            <CreateLink />
-            <InsertImage />
-            <InsertTable />
-            <InsertThematicBreak />
-          </>
+          <ConditionalContents
+            options={[
+              {
+                when: (editor) => editor?.editorType === 'codeblock',
+                contents: () => <ChangeCodeMirrorLanguage />
+              },
+              {
+                fallback: () => (
+                  <>
+                    <UndoRedo />
+                    <Separator />
+                    <BoldItalicUnderlineToggles />
+                    <CodeToggle />
+                    <Separator />
+                    <ListsToggle />
+                    <Separator />
+                    <BlockTypeSelect />
+                    <Separator />
+                    <CreateLink />
+                    <InsertImage />
+                    <InsertTable />
+                    <InsertCodeBlock />
+                    <InsertThematicBreak />
+                  </>
+                )
+              }
+            ]}
+          />
         )
       })
     )

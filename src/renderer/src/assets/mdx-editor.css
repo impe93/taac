@@ -93,14 +93,14 @@
 
 /* Content area styling */
 .mdx-note-editor [class*='_contentEditable_'] {
-  padding: 1.5rem;
+  padding: 0;
   min-height: 400px;
 }
 
 /* Editor root */
 .mdx-note-editor [class*='_rootContentEditableWrapper_'] {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border: none;
+  border-radius: 0;
   overflow: hidden;
 }
 
@@ -117,6 +117,82 @@
   font-family: var(--font-mono);
   font-size: 0.875rem;
 }
+
+/* CodeMirror base styling (applies to both themes) */
+.mdx-note-editor .cm-editor {
+  background-color: var(--muted) !important;
+  color: var(--foreground);
+  border-radius: var(--radius);
+}
+
+.mdx-note-editor .cm-focused {
+  outline: none !important;
+}
+
+/* CodeMirror dark theme styling */
+.mdx-note-editor.dark-editor .cm-editor {
+  background-color: var(--muted) !important;
+  color: var(--foreground);
+}
+
+.mdx-note-editor.dark-editor .cm-content {
+  caret-color: var(--foreground);
+}
+
+.mdx-note-editor.dark-editor .cm-gutters {
+  background-color: var(--muted) !important;
+  border-right: 1px solid var(--border);
+  color: var(--muted-foreground);
+}
+
+.mdx-note-editor.dark-editor .cm-activeLineGutter {
+  background-color: var(--accent) !important;
+}
+
+.mdx-note-editor.dark-editor .cm-activeLine {
+  background-color: var(--accent) !important;
+}
+
+.mdx-note-editor.dark-editor .cm-selectionBackground,
+.mdx-note-editor.dark-editor .cm-content ::selection {
+  background-color: hsl(var(--primary) / 0.3) !important;
+}
+
+.mdx-note-editor.dark-editor .cm-cursor {
+  border-left-color: var(--foreground) !important;
+}
+
+.mdx-note-editor.dark-editor .cm-matchingBracket {
+  background-color: hsl(var(--primary) / 0.2);
+  outline: 1px solid var(--primary);
+}
+
+/* CodeMirror syntax highlighting for dark mode */
+.mdx-note-editor.dark-editor .cm-editor .cm-line {
+  color: var(--foreground);
+}
+
+/* Token colors for syntax highlighting */
+.mdx-note-editor.dark-editor .ͼ1 .tok-keyword { color: #c678dd; }
+.mdx-note-editor.dark-editor .ͼ1 .tok-operator { color: #56b6c2; }
+.mdx-note-editor.dark-editor .ͼ1 .tok-number { color: #d19a66; }
+.mdx-note-editor.dark-editor .ͼ1 .tok-string { color: #98c379; }
+.mdx-note-editor.dark-editor .ͼ1 .tok-comment { color: #5c6370; font-style: italic; }
+.mdx-note-editor.dark-editor .ͼ1 .tok-variableName { color: #e06c75; }
+.mdx-note-editor.dark-editor .ͼ1 .tok-definition { color: #61afef; }
+.mdx-note-editor.dark-editor .ͼ1 .tok-function { color: #61afef; }
+.mdx-note-editor.dark-editor .ͼ1 .tok-typeName { color: #e5c07b; }
+.mdx-note-editor.dark-editor .ͼ1 .tok-className { color: #e5c07b; }
+.mdx-note-editor.dark-editor .ͼ1 .tok-propertyName { color: #e06c75; }
+.mdx-note-editor.dark-editor .ͼ1 .tok-punctuation { color: #abb2bf; }
+.mdx-note-editor.dark-editor .ͼ1 .tok-meta { color: #abb2bf; }
+.mdx-note-editor.dark-editor .ͼ1 .tok-bool { color: #d19a66; }
+.mdx-note-editor.dark-editor .ͼ1 .tok-null { color: #d19a66; }
+.mdx-note-editor.dark-editor .ͼ1 .tok-atom { color: #d19a66; }
+.mdx-note-editor.dark-editor .ͼ1 .tok-attributeName { color: #d19a66; }
+.mdx-note-editor.dark-editor .ͼ1 .tok-attributeValue { color: #98c379; }
+.mdx-note-editor.dark-editor .ͼ1 .tok-tagName { color: #e06c75; }
+.mdx-note-editor.dark-editor .ͼ1 .tok-angleBracket { color: #abb2bf; }
 
 /* Inline code */
 .mdx-note-editor :not(pre) > code {
