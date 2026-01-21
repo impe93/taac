@@ -240,4 +240,42 @@ export function registerFileHandlers(getOrCreateFsManager: GetFsManager): void {
       throw new Error(`Failed to get database path: ${(error as Error).message}`)
     }
   })
+
+  // Cross-space move operations
+  ipcMain.handle(
+    'fs:moveNoteToSpace',
+    async (
+      _event: IpcMainInvokeEvent,
+      sourceSpaceId: string,
+      targetSpaceId: string,
+      noteId: string,
+      sourceFolderId: string
+    ) => {
+      try {
+        const sourceFsManager = getOrCreateFsManager(sourceSpaceId)
+        const targetFsManager = getOrCreateFsManager(targetSpaceId)
+        return await sourceFsManager.moveNoteToSpace(targetFsManager, noteId, sourceFolderId)
+      } catch (error) {
+        throw new Error(`Failed to move note to space: ${(error as Error).message}`)
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'fs:moveFolderToSpace',
+    async (
+      _event: IpcMainInvokeEvent,
+      sourceSpaceId: string,
+      targetSpaceId: string,
+      folderId: string
+    ) => {
+      try {
+        const sourceFsManager = getOrCreateFsManager(sourceSpaceId)
+        const targetFsManager = getOrCreateFsManager(targetSpaceId)
+        return await sourceFsManager.moveFolderToSpace(targetFsManager, folderId)
+      } catch (error) {
+        throw new Error(`Failed to move folder to space: ${(error as Error).message}`)
+      }
+    }
+  )
 }

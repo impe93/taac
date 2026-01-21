@@ -33,6 +33,12 @@ export interface Asset {
   createdAt: string
 }
 
+export interface MoveFolderToSpaceResult {
+  folders: Record<string, FolderMetadata>
+  notes: Record<string, Note>
+  topFolderId: string
+}
+
 // File System Manager
 export class FileSystemManager {
   private userDataPath: string
@@ -545,5 +551,238 @@ export class FileSystemManager {
   // Database path getter
   getDatabasePath(): string {
     return join(this.getBasePath('database'), 'vectors.db')
+  }
+
+  // ============================================================================
+  // CROSS-SPACE MOVE OPERATIONS
+  // ============================================================================
+
+  /**
+   * Extract asset URLs from Lexical editor content
+   * Matches pattern: taac-asset://spaceId/type/assetId.ext
+   */
+  extractAssetUrls(content: SerializedEditorState): string[] {
+    const urls: string[] = []
+    const contentStr = JSON.stringify(content)
+
+    // Match taac-asset:// URLs
+    const regex = /taac-asset:\/\/([^/]+)\/([^/]+)\/([^"\\]+)/g
+    let match
+
+    while ((match = regex.exec(contentStr)) !== null) {
+      urls.push(match[0])
+    }
+
+    return [...new Set(urls)] // Remove duplicates
+  }
+
+  /**
+   * Rewrite asset URLs in content from source space to target space
+   */
+  rewriteAssetUrls(
+    content: SerializedEditorState,
+    sourceSpaceId: string,
+    targetSpaceId: string
+  ): SerializedEditorState {
+    const contentStr = JSON.stringify(content)
+    const rewritten = contentStr.replace(
+      new RegExp(`taac-asset://${sourceSpaceId}/`, 'g'),
+      `taac-asset://${targetSpaceId}/`
+    )
+    return JSON.parse(rewritten)
+  }
+
+  /**
+   * Copy an asset from this space to the target space
+   * @param targetFsManager FileSystemManager instance for target space
+   * @param assetUrl Full taac-asset:// URL
+   * @returns The new asset URL in target space
+   */
+  async copyAssetToSpace(targetFsManager: FileSystemManager, assetUrl: string): Promise<string> {
+    // Parse URL: taac-asset://spaceId/type/assetId.ext
+    const urlMatch = assetUrl.match(/taac-asset:\/\/([^/]+)\/([^/]+)\/(.+)/)
+    if (!urlMatch) {
+      throw new Error(`Invalid asset URL: ${assetUrl}`)
+    }
+
+    const [, , typeStr, filename] = urlMatch
+    const type = typeStr.replace(/s$/, '') as 'image' | 'pdf' | 'attachment' // Remove trailing 's'
+    const assetId = filename.split('.')[0]
+
+    // Read asset from source space
+    const buffer = await this.readAsset(assetId, type)
+
+    // Save to target space (will generate new ID but we keep same extension)
+    const ext = filename.split('.').pop() || ''
+    const newAsset = await targetFsManager.saveAsset(`asset.${ext}`, buffer, type)
+
+    // Return new URL
+    return `taac-asset://${targetFsManager.getSpaceId()}/${type}s/${newAsset.id}.${ext}`
+  }
+
+  /**
+   * Move a note from this space to another space
+   * Handles asset copying and URL rewriting
+   * @param targetFsManager FileSystemManager instance for target space
+   * @param noteId ID of the note to move
+   * @param sourceFolderId Current folder ID of the note
+   * @returns The moved note in target space
+   */
+  async moveNoteToSpace(
+    targetFsManager: FileSystemManager,
+    noteId: string,
+    sourceFolderId: string
+  ): Promise<Note> {
+    // 1. Read note from source space
+    const note = await this.readNote(sourceFolderId, noteId)
+
+    // 2. Extract and copy assets
+    const assetUrls = this.extractAssetUrls(note.content)
+    const assetMap = new Map<string, string>() // oldUrl -> newUrl
+
+    for (const url of assetUrls) {
+      try {
+        const newUrl = await this.copyAssetToSpace(targetFsManager, url)
+        assetMap.set(url, newUrl)
+      } catch (error) {
+        console.warn(`Failed to copy asset ${url}:`, error)
+        // Continue - asset might not exist anymore
+      }
+    }
+
+    // 3. Rewrite content with new asset URLs
+    let newContent = note.content
+    if (assetMap.size > 0) {
+      let contentStr = JSON.stringify(newContent)
+      assetMap.forEach((newUrl, oldUrl) => {
+        contentStr = contentStr.split(oldUrl).join(newUrl)
+      })
+      newContent = JSON.parse(contentStr)
+    }
+
+    // 4. Create note in target space (root folder)
+    const targetNote = await targetFsManager.createNote('root', newContent, note.title)
+
+    // 5. Delete note from source space
+    await this.deleteNote(sourceFolderId, noteId)
+
+    return targetNote
+  }
+
+  /**
+   * Recursively collect all folder IDs and note IDs in a subtree
+   */
+  private async collectSubtree(
+    folderId: string
+  ): Promise<{ folderIds: string[]; noteData: Array<{ noteId: string; folderId: string }> }> {
+    const folder = await this.readFolderMetadata(folderId)
+    const folderIds: string[] = [folderId]
+    const noteData: Array<{ noteId: string; folderId: string }> = []
+
+    // Collect notes in this folder
+    for (const noteId of folder.noteIds) {
+      noteData.push({ noteId, folderId })
+    }
+
+    // Recursively collect from child folders
+    for (const childId of folder.children) {
+      const childData = await this.collectSubtree(childId)
+      folderIds.push(...childData.folderIds)
+      noteData.push(...childData.noteData)
+    }
+
+    return { folderIds, noteData }
+  }
+
+  /**
+   * Move a folder and all its contents to another space
+   * Creates the folder structure in target space root
+   * @param targetFsManager FileSystemManager instance for target space
+   * @param folderId ID of the folder to move
+   * @returns All created folders and notes in target space
+   */
+  async moveFolderToSpace(
+    targetFsManager: FileSystemManager,
+    folderId: string
+  ): Promise<MoveFolderToSpaceResult> {
+    if (folderId === 'root') {
+      throw new Error('Cannot move root folder')
+    }
+
+    // 1. Collect entire subtree structure
+    const { folderIds, noteData } = await this.collectSubtree(folderId)
+
+    // 2. Build folder ID mapping (old -> new) and create folders in target
+    const folderIdMap = new Map<string, string>()
+    const createdFolders: Record<string, FolderMetadata> = {}
+    const createdNotes: Record<string, Note> = {}
+
+    // Create folders in topological order (parents before children)
+    for (const srcFolderId of folderIds) {
+      const srcMeta = await this.readFolderMetadata(srcFolderId)
+
+      // Determine parent in target space
+      let targetParentId: string
+      if (srcFolderId === folderId) {
+        // Top-level folder goes to root
+        targetParentId = 'root'
+      } else {
+        // Child folders use mapped parent ID
+        targetParentId = folderIdMap.get(srcMeta.parentId!)!
+      }
+
+      const newFolder = await targetFsManager.createFolder(srcMeta.name, targetParentId)
+      folderIdMap.set(srcFolderId, newFolder.id)
+      createdFolders[newFolder.id] = newFolder
+    }
+
+    // 3. Move notes with asset handling
+    for (const { noteId, folderId: srcNoteFolder } of noteData) {
+      const note = await this.readNote(srcNoteFolder, noteId)
+
+      // Extract and copy assets
+      const assetUrls = this.extractAssetUrls(note.content)
+      const assetMap = new Map<string, string>()
+
+      for (const url of assetUrls) {
+        try {
+          const newUrl = await this.copyAssetToSpace(targetFsManager, url)
+          assetMap.set(url, newUrl)
+        } catch (error) {
+          console.warn(`Failed to copy asset ${url}:`, error)
+        }
+      }
+
+      // Rewrite content with new asset URLs
+      let newContent = note.content
+      if (assetMap.size > 0) {
+        let contentStr = JSON.stringify(newContent)
+        assetMap.forEach((newUrl, oldUrl) => {
+          contentStr = contentStr.split(oldUrl).join(newUrl)
+        })
+        newContent = JSON.parse(contentStr)
+      }
+
+      // Create note in corresponding target folder
+      const targetFolderId = folderIdMap.get(srcNoteFolder)!
+      const newNote = await targetFsManager.createNote(targetFolderId, newContent, note.title)
+      createdNotes[newNote.id] = newNote
+    }
+
+    // 4. Re-read all folders to get updated metadata (with correct noteIds and children)
+    for (const newFolderId of Object.keys(createdFolders)) {
+      createdFolders[newFolderId] = await targetFsManager.readFolderMetadata(newFolderId)
+    }
+
+    // 5. Delete entire source folder tree
+    await this.deleteFolder(folderId)
+
+    // 6. Return all created folders and notes
+    const topFolderId = folderIdMap.get(folderId)!
+    return {
+      folders: createdFolders,
+      notes: createdNotes,
+      topFolderId
+    }
   }
 }

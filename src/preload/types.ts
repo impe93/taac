@@ -27,6 +27,13 @@ export interface Asset {
   createdAt: string
 }
 
+// Cross-space move result types
+export interface MoveFolderToSpaceResult {
+  folders: Record<string, FolderMetadata>
+  notes: Record<string, Note>
+  topFolderId: string
+}
+
 // Space type
 export interface Space {
   id: string

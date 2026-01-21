@@ -1,8 +1,8 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
-import type { Note, FolderMetadata, Asset, AppConfig, Space } from './types'
+import type { Note, FolderMetadata, Asset, AppConfig, Space, MoveFolderToSpaceResult } from './types'
 
 // Re-export types from types.ts for convenience
-export type { Note, FolderMetadata, Asset, AppConfig, Space }
+export type { Note, FolderMetadata, Asset, AppConfig, Space, MoveFolderToSpaceResult }
 
 // File System API interface
 export interface FileSystemAPI {
@@ -42,6 +42,19 @@ export interface FileSystemAPI {
     targetFolderId: string
   ) => Promise<Note>
   moveFolder: (spaceId: string, folderId: string, targetParentId: string) => Promise<FolderMetadata>
+
+  // Cross-space move operations
+  moveNoteToSpace: (
+    sourceSpaceId: string,
+    targetSpaceId: string,
+    noteId: string,
+    sourceFolderId: string
+  ) => Promise<Note>
+  moveFolderToSpace: (
+    sourceSpaceId: string,
+    targetSpaceId: string,
+    folderId: string
+  ) => Promise<MoveFolderToSpaceResult>
 
   // Asset operations
   saveAsset: (

@@ -41,6 +41,17 @@ const fileSystemAPI = {
   moveFolder: (spaceId: string, folderId: string, targetParentId: string) =>
     ipcRenderer.invoke('fs:moveFolder', spaceId, folderId, targetParentId),
 
+  // Cross-space move operations
+  moveNoteToSpace: (
+    sourceSpaceId: string,
+    targetSpaceId: string,
+    noteId: string,
+    sourceFolderId: string
+  ) => ipcRenderer.invoke('fs:moveNoteToSpace', sourceSpaceId, targetSpaceId, noteId, sourceFolderId),
+
+  moveFolderToSpace: (sourceSpaceId: string, targetSpaceId: string, folderId: string) =>
+    ipcRenderer.invoke('fs:moveFolderToSpace', sourceSpaceId, targetSpaceId, folderId),
+
   // Asset operations
   saveAsset: (
     spaceId: string,

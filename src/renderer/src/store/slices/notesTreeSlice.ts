@@ -220,6 +220,55 @@ export const moveFolder = createAsyncThunk(
   }
 )
 
+// Cross-space move: Sposta nota in un altro spazio
+export const moveNoteToSpace = createAsyncThunk(
+  'notesTree/moveNoteToSpace',
+  async (payload: {
+    sourceSpaceId: string
+    targetSpaceId: string
+    noteId: string
+    sourceFolderId: string
+  }) => {
+    const { sourceSpaceId, targetSpaceId, noteId, sourceFolderId } = payload
+
+    const targetNote = await window.fileSystem.moveNoteToSpace(
+      sourceSpaceId,
+      targetSpaceId,
+      noteId,
+      sourceFolderId
+    )
+
+    return { sourceSpaceId, targetSpaceId, noteId, sourceFolderId, targetNote }
+  }
+)
+
+// Cross-space move: Sposta cartella in un altro spazio
+export const moveFolderToSpace = createAsyncThunk(
+  'notesTree/moveFolderToSpace',
+  async (payload: {
+    sourceSpaceId: string
+    targetSpaceId: string
+    folderId: string
+  }) => {
+    const { sourceSpaceId, targetSpaceId, folderId } = payload
+
+    const result = await window.fileSystem.moveFolderToSpace(
+      sourceSpaceId,
+      targetSpaceId,
+      folderId
+    )
+
+    return {
+      sourceSpaceId,
+      targetSpaceId,
+      folderId,
+      createdFolders: result.folders,
+      createdNotes: result.notes,
+      topFolderId: result.topFolderId
+    }
+  }
+)
+
 // ============================================================================
 // SLICE
 // ============================================================================
@@ -730,6 +779,148 @@ const notesTreeSlice = createSlice({
 
         // Set error message
         state.error = action.error.message || 'Failed to move folder'
+      })
+
+    // MOVE NOTE TO SPACE - Cross-space move
+    builder
+      .addCase(moveNoteToSpace.pending, (state, action) => {
+        const { sourceSpaceId, noteId, sourceFolderId } = action.meta.arg
+
+        // Optimistically remove from source space
+        const sourceSpace = state.spaces[sourceSpaceId]
+        if (!sourceSpace) return
+
+        // Remove note from notes
+        delete sourceSpace.notes[noteId]
+
+        // Remove noteId from source folder
+        if (sourceSpace.folders[sourceFolderId]) {
+          sourceSpace.folders[sourceFolderId].noteIds = sourceSpace.folders[
+            sourceFolderId
+          ].noteIds.filter((id) => id !== noteId)
+        }
+
+        // Clear selection if this note was selected
+        if (sourceSpace.selectedNoteId === noteId) {
+          sourceSpace.selectedNoteId = null
+          sourceSpace.selectedNoteFolderId = null
+        }
+      })
+      .addCase(moveNoteToSpace.fulfilled, (state, action) => {
+        const { targetSpaceId, targetNote } = action.payload
+
+        // Add to target space (if it exists in Redux state)
+        const targetSpace = state.spaces[targetSpaceId]
+        if (!targetSpace) return
+
+        // Add note to target space
+        targetSpace.notes[targetNote.id] = targetNote
+
+        // Add noteId to root folder in target space
+        if (targetSpace.folders['root']) {
+          if (!targetSpace.folders['root'].noteIds.includes(targetNote.id)) {
+            targetSpace.folders['root'].noteIds.push(targetNote.id)
+          }
+        }
+      })
+      .addCase(moveNoteToSpace.rejected, (state, action) => {
+        // On failure, we need to reload the tree since the optimistic update
+        // removed the note but the backend didn't complete the move
+        state.error = action.error.message || 'Failed to move note to space'
+        // Note: The caller should trigger a loadTree to restore state
+      })
+
+    // MOVE FOLDER TO SPACE - Cross-space move
+    builder
+      .addCase(moveFolderToSpace.pending, (state, action) => {
+        const { sourceSpaceId, folderId } = action.meta.arg
+
+        const sourceSpace = state.spaces[sourceSpaceId]
+        if (!sourceSpace) return
+
+        // Helper to collect all folder IDs and note IDs in subtree
+        const collectSubtreeIds = (
+          fId: string
+        ): { folderIds: string[]; noteIds: string[] } => {
+          const folder = sourceSpace.folders[fId]
+          if (!folder) return { folderIds: [], noteIds: [] }
+
+          const folderIds: string[] = [fId]
+          const noteIds: string[] = [...folder.noteIds]
+
+          for (const childId of folder.children) {
+            const childData = collectSubtreeIds(childId)
+            folderIds.push(...childData.folderIds)
+            noteIds.push(...childData.noteIds)
+          }
+
+          return { folderIds, noteIds }
+        }
+
+        const { folderIds, noteIds } = collectSubtreeIds(folderId)
+
+        // Get parent of the folder being moved
+        const folder = sourceSpace.folders[folderId]
+        const parentId = folder?.parentId
+
+        // Remove all notes in subtree
+        noteIds.forEach((noteId) => {
+          delete sourceSpace.notes[noteId]
+          // Clear selection if any of these notes was selected
+          if (sourceSpace.selectedNoteId === noteId) {
+            sourceSpace.selectedNoteId = null
+            sourceSpace.selectedNoteFolderId = null
+          }
+        })
+
+        // Remove all folders in subtree
+        folderIds.forEach((fId) => {
+          delete sourceSpace.folders[fId]
+          // Remove from expandedFolders
+          sourceSpace.expandedFolders = sourceSpace.expandedFolders.filter((id) => id !== fId)
+        })
+
+        // Remove from parent's children
+        if (parentId && sourceSpace.folders[parentId]) {
+          sourceSpace.folders[parentId].children = sourceSpace.folders[parentId].children.filter(
+            (id) => id !== folderId
+          )
+        }
+      })
+      .addCase(moveFolderToSpace.fulfilled, (state, action) => {
+        const { targetSpaceId, createdFolders, createdNotes, topFolderId } = action.payload
+
+        // Add to target space (if it exists in Redux state)
+        const targetSpace = state.spaces[targetSpaceId]
+        if (!targetSpace) return
+
+        // Add ALL created folders to target space
+        Object.entries(createdFolders).forEach(([folderId, folder]) => {
+          targetSpace.folders[folderId] = folder
+        })
+
+        // Add ALL created notes to target space
+        Object.entries(createdNotes).forEach(([noteId, note]) => {
+          targetSpace.notes[noteId] = note
+        })
+
+        // Update root's children in target space (add top-level folder)
+        if (targetSpace.folders['root']) {
+          if (!targetSpace.folders['root'].children.includes(topFolderId)) {
+            targetSpace.folders['root'].children.push(topFolderId)
+          }
+        }
+
+        // Auto-expand root in target space
+        if (!targetSpace.expandedFolders.includes('root')) {
+          targetSpace.expandedFolders.push('root')
+        }
+      })
+      .addCase(moveFolderToSpace.rejected, (state, action) => {
+        // On failure, we need to reload the tree since the optimistic update
+        // removed the folder but the backend didn't complete the move
+        state.error = action.error.message || 'Failed to move folder to space'
+        // Note: The caller should trigger a loadTree to restore state
       })
   }
 })
