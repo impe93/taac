@@ -106,5 +106,6 @@ declare global {
     fileSystem: FileSystemAPI
     config: ConfigAPI
     space: SpaceAPI
+    platform: NodeJS.Platform
   }
 }

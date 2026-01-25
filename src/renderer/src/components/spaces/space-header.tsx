@@ -23,7 +23,7 @@ export const SpaceHeader: FC = () => {
 
   return (
     <>
-      <div className="flex items-center justify-between pl-2 pr-1 h-14 pt-8">
+      <div className="flex items-center justify-between pl-2 pr-1 h-12 pt-2">
         <div className="flex items-center gap-2">
           <Icon className="size-4 text-muted-foreground" />
           <span className="uppercase text-xs text-muted-foreground">{activeSpace.name}</span>

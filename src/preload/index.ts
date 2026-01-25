@@ -112,6 +112,7 @@ if (process.contextIsolated) {
     contextBridge.exposeInMainWorld('fileSystem', fileSystemAPI)
     contextBridge.exposeInMainWorld('config', configAPI)
     contextBridge.exposeInMainWorld('space', spaceAPI)
+    contextBridge.exposeInMainWorld('platform', process.platform)
   } catch (error) {
     console.error(error)
   }
@@ -124,4 +125,6 @@ if (process.contextIsolated) {
   window.config = configAPI
   // @ts-ignore (define in dts)
   window.space = spaceAPI
+  // @ts-ignore (define in dts)
+  window.platform = process.platform
 }
