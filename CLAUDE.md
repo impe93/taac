@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-TaacNotes is an AI-native note-taking desktop application built with Electron, React 19, and the TanStack ecosystem. The project uses Lexical for rich text editing and follows a modern TypeScript-first architecture.
+TaacNotes is an AI-native note-taking desktop application built with Electron 35, React 19, and the TanStack ecosystem. It uses MDXEditor for rich text editing, Redux Toolkit for state management, and is building local AI features with node-llama-cpp for RAG (Retrieval Augmented Generation).
 
 ## MCP Usage
 
@@ -18,30 +18,15 @@ Always use serena when I need to explore the codebase and have a better understa
 
 ## Essential Commands
 
-### Development
-
 ```bash
 pnpm dev                # Start development with hot reload
-pnpm typecheck          # Run all TypeScript type checks
-pnpm typecheck:node     # Type check Node/Electron main process
-pnpm typecheck:web      # Type check renderer/React code
+pnpm typecheck          # Run all TypeScript type checks (node + web)
 pnpm lint               # Lint codebase
 pnpm format             # Format code with Prettier
-```
-
-### Building
-
-```bash
 pnpm build              # Full production build (includes typecheck)
-pnpm build:win          # Build for Windows
 pnpm build:mac          # Build for macOS
+pnpm build:win          # Build for Windows
 pnpm build:linux        # Build for Linux
-pnpm build:unpack       # Build without packaging (for testing)
-```
-
-### UI Development
-
-```bash
 pnpm ui-add             # Add new Shadcn/UI components
 ```
 
@@ -50,127 +35,95 @@ pnpm ui-add             # Add new Shadcn/UI components
 ### Electron Three-Process Model
 
 1. **Main Process** (`src/main/`)
-
-   - Entry point: `src/main/index.ts`
-   - Manages app lifecycle, window creation, and native OS integration
-   - Uses `@electron-toolkit/utils` for common Electron patterns
-   - IPC handlers defined here (currently basic ping/pong example)
+   - Entry: `src/main/index.ts`
+   - Managers: `FileSystemManager`, `SpaceManager`, `configStore`
+   - IPC handlers in `src/main/ipc/` (fileHandlers, configHandlers, spaceHandlers)
 
 2. **Preload Scripts** (`src/preload/`)
-
-   - Bridge between main and renderer with context isolation
-   - Exposes safe APIs via `contextBridge`
-   - Type definitions in `index.d.ts`
+   - Exposes `window.fileSystem`, `window.config`, `window.space`, `window.platform`
+   - Types in `src/preload/types.ts` and `src/preload/index.d.ts`
 
 3. **Renderer Process** (`src/renderer/`)
-   - React 19 application with TypeScript
-   - Uses TanStack Router with hash-based history (required for Electron)
-   - All UI code lives here
+   - React 19 + TanStack Router (hash history for Electron)
+   - TanStack Query for async data
+   - Redux Toolkit for UI state (`src/renderer/src/store/`)
 
-### Frontend Architecture
+### Multi-Space Architecture
 
-**Router Configuration** (`src/renderer/src/main.tsx`):
-
-- Uses `createHashHistory()` for Electron compatibility (not browser history)
-- File-based routing with TanStack Router
-- Route tree auto-generated in `routeTree.gen.ts`
-- Routes use `layout.tsx` token for nested layouts
-
-**Route Structure**:
-
-```
-src/renderer/src/routes/
-├── __root.tsx           # Root layout with providers and sidebar
-├── index.tsx            # Home page
-├── dashboard/
-│   ├── layout.tsx       # Dashboard-specific layout
-│   └── index.tsx
-└── settings/
-    └── index.tsx
-```
-
-**Providers Setup** (`src/renderer/src/components/providers.tsx`):
-
-- TanStack Query for data fetching/caching
-- next-themes for dark/light mode
-- Shadcn/UI Sidebar provider
-- Development-only devtools (Router & Query)
-- Toast notifications with Sonner
-
-**Editor System** (`src/components/`):
-
-- Lexical-based rich text editor (not in `src/renderer/`)
-- Custom editor blocks in `src/components/blocks/editor-00/`
-- Reusable editor UI components in `src/components/editor/`
-- Theme configuration in `src/components/editor/themes/`
-
-### TypeScript Configuration
-
-Three separate tsconfig files for different parts:
-
-- `tsconfig.node.json` - Main process/Node.js code
-- `tsconfig.web.json` - Renderer/React code
-- `tsconfig.app.json` - Application-specific config
-
-Path alias: `@renderer/*` maps to `src/renderer/src/*`
-
-### Build Configuration
-
-**Electron Vite** (`electron.vite.config.ts`):
-
-- Main process: Node externalization
-- Preload: Node externalization
-- Renderer:
-  - TanStack Router plugin with auto code-splitting
-  - TailwindCSS v4 Vite plugin
-  - React plugin
-  - `@renderer` path alias
-
-## Code Standards (from .cursorrules)
-
-### TypeScript
-
-- Use explicit return types for functions and components
-- Define interfaces for component props
-- Leverage Zod for validation
-- Avoid implicit `any` types
-- Use type inference where it improves readability
-
-### React Components
-
-- Functional components with explicit prop interfaces
-- Prefer `const` arrow functions over function declarations
-- Use early returns for better readability
-- Implement proper loading and error states
-- Follow accessibility best practices (ARIA labels, keyboard navigation)
-
-### Event Handlers
-
-- Prefix with "handle" (e.g., `handleClick`, `handleKeyDown`)
-- Use proper event types (`React.MouseEvent`, `React.KeyboardEvent`, etc.)
-- Implement keyboard accessibility for interactive elements
-
-### Styling
-
-- TailwindCSS v4 exclusively (no custom CSS unless in theme files)
-- Use Shadcn/UI components from `src/renderer/src/components/ui/`
-- Use `clsx`/`cn` utility for conditional classes
-- Prefer `className` over style props
-- Mobile-first responsive design
+Notes are organized into **Spaces** (max 5), each with isolated data:
+- `SpaceManager` (`src/main/utils/spaceManager.ts`) handles CRUD, stores metadata in `spaces/spaces.json`
+- Each space has its own `FileSystemManager` instance operating on `{userData}/spaces/{spaceId}/`
+- Redux state is per-space in `notesTreeSlice.ts` with `spaces: Record<string, SpaceTreeState>`
+- Active space tracked via `useActiveSpace()` hook and persisted in electron-store
 
 ### State Management
 
-- TanStack Query for server state
-- Standard React hooks for local state
-- Implement proper caching strategies
-- Use `React.memo` strategically
+**Redux Toolkit** (`src/renderer/src/store/`):
+- `notesTreeSlice.ts` - Normalized notes/folders state with async thunks for IPC operations
+- Multi-space state: each space has its own folders, notes, expandedFolders, selectedNoteId
+- Optimistic updates with rollback for move operations
+- Persistence middleware saves to electron-store for instant hydration on restart
 
-### Code Organization
+**TanStack Query** - Used for spaces list, config, and other async data
+
+### File System Layer
+
+**Directory Structure** (`{userData}/`):
+```
+spaces/
+├── spaces.json          # Space metadata
+└── {spaceId}/
+    ├── notes/           # Notes organized in folders
+    │   ├── root/
+    │   │   └── metadata.json
+    │   └── {folder-id}/
+    │       ├── {note-id}.json
+    │       └── metadata.json
+    ├── assets/          # File attachments (images/, pdfs/, attachments/)
+    └── database/        # SQLite vector database
+```
+
+**IPC Pattern**: All file operations go through preload → IPC → FileSystemManager
+
+### Drag-and-Drop System
+
+Notes tree (`src/renderer/src/components/notes-tree/`) uses @dnd-kit/core:
+- 10px threshold before drag activates (allows normal clicks)
+- Auto-expand folders after 1.5s hover
+- Optimistic Redux updates with automatic rollback on errors
+- Validates against circular dependencies for folder moves
+- Supports cross-space moves via `moveNoteToSpace` and `moveFolderToSpace`
+
+### AI Architecture (In Development)
+
+See `docs/AI_ARCHITECTURE.md` for full details. Key components:
+- `node-llama-cpp` for local LLM inference
+- `better-sqlite3` + sqlite-vec for vector search
+- `systeminformation` for hardware detection
+- Per-space vector databases, global conversation storage
+
+### TypeScript Configuration
+
+Three tsconfig files:
+- `tsconfig.node.json` - Main process/Node.js
+- `tsconfig.web.json` - Renderer/React
+- `tsconfig.app.json` - Application-specific
+
+Path alias: `@renderer/*` → `src/renderer/src/*`
+
+## Code Standards
+
+### TypeScript
+
+- Explicit return types for functions and components
+- Interfaces for component props
+- Zod for validation
+- Avoid implicit `any`
+
+### React Components
 
 ```tsx
-// Standard component structure:
 import { type FC } from 'react'
-import { useQuery } from '@tanstack/react-query'
 
 interface ComponentProps {
   id: string
@@ -178,39 +131,55 @@ interface ComponentProps {
 }
 
 export const Component: FC<ComponentProps> = ({ id, className }) => {
-  // Queries/hooks
-  // Event handlers
+  // Queries/hooks first
+  // Event handlers (prefix with "handle")
   // Early returns
   // Render
 }
 ```
+
+### Styling
+
+- TailwindCSS v4 exclusively
+- Shadcn/UI components from `src/renderer/src/components/ui/`
+- Use `cn` utility for conditional classes
+- Mobile-first responsive design
+
+### Event Handlers
+
+- Prefix with "handle" (handleClick, handleKeyDown)
+- Use proper React event types
+- Implement keyboard accessibility
 
 ## Important Notes
 
 ### Electron-Specific
 
 - Must use hash history (`createHashHistory`) not browser history
-- Preload scripts bridge main/renderer with context isolation
-- Window configuration uses `titleBarStyle: 'hiddenInset'` for native look
-- Development uses HMR via `ELECTRON_RENDERER_URL` env var
+- `electron-store` ESM fix required - exclude from externalized deps in `electron.vite.config.ts`
+- Window uses `titleBarStyle: 'hiddenInset'` for native look
 
-### Editor Implementation
+### Editor
 
-- Lexical editor components are NOT in `src/renderer/` but in `src/components/`
-- Editor blocks are modular and located in `src/components/blocks/`
-- Custom theme configuration in `src/components/editor/themes/`
+- MDXEditor components in `src/components/blocks/editor-00/`
+- Editor UI components in `src/components/editor/`
 
-### Shadcn/UI Configuration
+### Route Structure
 
-- Registry includes custom `@shadcn-editor` for editor components
+```
+src/renderer/src/routes/
+├── __root.tsx           # Root layout with providers
+├── index.tsx            # Home/notes list
+├── note/$noteId.tsx     # Note editor route
+├── dashboard/           # Dashboard section
+│   ├── layout.tsx
+│   └── index.tsx
+└── settings/
+    └── index.tsx
+```
+
+### Shadcn/UI
+
 - Style: "new-york"
-- Uses CSS variables for theming
 - Icon library: Lucide React
 - Add components via `pnpm ui-add`
-
-### Development Workflow
-
-- Always run `pnpm typecheck` before building
-- Separate type checking for Node and Web code
-- Use ESLint with Electron-specific config
-- Prettier for code formatting
