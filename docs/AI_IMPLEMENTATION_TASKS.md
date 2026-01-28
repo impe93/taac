@@ -19,7 +19,7 @@ Documento di pianificazione per l'implementazione delle funzionalità AI in Taac
 
 ## Fase 1: Foundation
 
-### Task 1.1: Installazione dipendenze AI
+### Task 1.1: Installazione dipendenze AI (FATTO)
 
 **Descrizione**: Installare tutte le dipendenze npm necessarie per l'integrazione AI locale: `node-llama-cpp`, `systeminformation`, `better-sqlite3`, e `@huggingface/gguf`. Verificare che le dipendenze siano installate correttamente.
 
@@ -37,7 +37,7 @@ Dopo l'installazione, verifica che non ci siano conflitti di dipendenze e aggior
 
 ---
 
-### Task 1.2: Configurazione Electron Vite per moduli nativi
+### Task 1.2: Configurazione Electron Vite per moduli nativi (FATTO)
 
 **Descrizione**: Configurare `electron.vite.config.ts` per gestire correttamente i moduli nativi (`node-llama-cpp`, `better-sqlite3`). Questi moduli devono essere esternalizzati dal bundler per funzionare in Electron.
 

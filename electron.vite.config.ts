@@ -7,9 +7,17 @@ export default defineConfig({
   main: {
     plugins: [
       externalizeDepsPlugin({
-        exclude: ['electron-store']
+        exclude: ['electron-store'],
+        // Native AI modules must be externalized
+        include: ['node-llama-cpp', 'better-sqlite3']
       })
-    ]
+    ],
+    build: {
+      rollupOptions: {
+        // Explicitly mark native modules as external
+        external: ['node-llama-cpp', 'better-sqlite3']
+      }
+    }
   },
   preload: {
     plugins: [externalizeDepsPlugin()]
