@@ -1,5 +1,12 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
-import type { Note, FolderMetadata, Asset, AppConfig, Space, MoveFolderToSpaceResult } from './types'
+import type {
+  Note,
+  FolderMetadata,
+  Asset,
+  AppConfig,
+  Space,
+  MoveFolderToSpaceResult
+} from './types'
 
 // Re-export types from types.ts for convenience
 export type { Note, FolderMetadata, Asset, AppConfig, Space, MoveFolderToSpaceResult }
@@ -7,12 +14,7 @@ export type { Note, FolderMetadata, Asset, AppConfig, Space, MoveFolderToSpaceRe
 // File System API interface
 export interface FileSystemAPI {
   // Note operations
-  createNote: (
-    spaceId: string,
-    folderId: string,
-    content: string,
-    title: string
-  ) => Promise<Note>
+  createNote: (spaceId: string, folderId: string, content: string, title: string) => Promise<Note>
   readNote: (spaceId: string, folderId: string, noteId: string) => Promise<Note>
   updateNote: (
     spaceId: string,

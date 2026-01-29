@@ -24,6 +24,7 @@ Documento architetturale per l'integrazione di funzionalità AI locali in TaacNo
 ## 1. Panoramica
 
 TaacNotes integrerà funzionalità AI locali per permettere agli utenti di:
+
 - **Analizzare l'hardware** del proprio computer e ricevere raccomandazioni sul miglior LLM locale
 - **Scaricare e gestire modelli LLM** direttamente dall'applicazione senza setup complessi
 - **Creare conversazioni AI** con contesto derivato dalle note (RAG - Retrieval Augmented Generation)
@@ -36,32 +37,32 @@ L'architettura segue i pattern esistenti nel codebase (Manager classes, IPC hand
 
 ### 2.1 Requisiti Funzionali
 
-| Requisito | Descrizione |
-|-----------|-------------|
-| **Hardware Detection** | Rilevare CPU, RAM, GPU/VRAM per classificare il sistema in tier di performance |
-| **Model Recommendations** | Suggerire modelli appropriati basati sul tier hardware |
-| **Model Download** | Download integrato con progress bar, pause/resume support |
-| **Chat Interface** | Conversazioni con streaming delle risposte |
-| **RAG Integration** | Ricerca semantica nelle note per arricchire il contesto AI |
-| **Conversation Persistence** | Salvataggio conversazioni globali con riferimenti a note multiple |
+| Requisito                    | Descrizione                                                                    |
+| ---------------------------- | ------------------------------------------------------------------------------ |
+| **Hardware Detection**       | Rilevare CPU, RAM, GPU/VRAM per classificare il sistema in tier di performance |
+| **Model Recommendations**    | Suggerire modelli appropriati basati sul tier hardware                         |
+| **Model Download**           | Download integrato con progress bar, pause/resume support                      |
+| **Chat Interface**           | Conversazioni con streaming delle risposte                                     |
+| **RAG Integration**          | Ricerca semantica nelle note per arricchire il contesto AI                     |
+| **Conversation Persistence** | Salvataggio conversazioni globali con riferimenti a note multiple              |
 
 ### 2.2 Requisiti Non Funzionali
 
-| Requisito | Specifiche |
-|-----------|------------|
+| Requisito             | Specifiche                                                    |
+| --------------------- | ------------------------------------------------------------- |
 | **Accelerazione GPU** | Metal (macOS), CUDA (Windows/Linux Nvidia), Vulkan (fallback) |
-| **Memory Management** | Auto-unload modelli idle, max 2 modelli caricati |
-| **Privacy** | Tutto locale, nessun dato inviato a server esterni |
-| **UX** | Onboarding guidato, minimal friction per utenti non tecnici |
+| **Memory Management** | Auto-unload modelli idle, max 2 modelli caricati              |
+| **Privacy**           | Tutto locale, nessun dato inviato a server esterni            |
+| **UX**                | Onboarding guidato, minimal friction per utenti non tecnici   |
 
 ### 2.3 Decisioni Architetturali
 
-| Decisione | Scelta | Motivazione |
-|-----------|--------|-------------|
-| Libreria LLM | node-llama-cpp | Flessibile, GPU support nativo, documentazione Electron completa |
-| Persistence Chat | Globale | Conversazioni indipendenti da note ma con riferimenti multi-space |
-| Hardware Support | Multi-platform | CPU + Metal (macOS) + CUDA (Win/Linux) per massima performance |
-| Model Selection | Curated List | Lista testata (2-3 per tier) con download integrato |
+| Decisione        | Scelta         | Motivazione                                                       |
+| ---------------- | -------------- | ----------------------------------------------------------------- |
+| Libreria LLM     | node-llama-cpp | Flessibile, GPU support nativo, documentazione Electron completa  |
+| Persistence Chat | Globale        | Conversazioni indipendenti da note ma con riferimenti multi-space |
+| Hardware Support | Multi-platform | CPU + Metal (macOS) + CUDA (Win/Linux) per massima performance    |
+| Model Selection  | Curated List   | Lista testata (2-3 per tier) con download integrato               |
 
 ---
 
@@ -82,17 +83,18 @@ L'architettura segue i pattern esistenti nel codebase (Manager classes, IPC hand
 
 ### 3.2 Descrizione Librerie
 
-| Libreria | Scopo | Note |
-|----------|-------|------|
-| **node-llama-cpp** | Binding Node.js per llama.cpp | Supporta Metal/CUDA/Vulkan, embeddings, streaming |
-| **better-sqlite3** | Database SQLite sincronico | Base per sqlite-vec extension |
-| **sqlite-vec** | Estensione SQLite per vector search | Loaded come extension nativa |
-| **systeminformation** | Rilevamento hardware | CPU, RAM, GPU, VRAM detection |
-| **@huggingface/gguf** | Parsing metadata GGUF | Validazione modelli, info quantizzazione |
+| Libreria              | Scopo                               | Note                                              |
+| --------------------- | ----------------------------------- | ------------------------------------------------- |
+| **node-llama-cpp**    | Binding Node.js per llama.cpp       | Supporta Metal/CUDA/Vulkan, embeddings, streaming |
+| **better-sqlite3**    | Database SQLite sincronico          | Base per sqlite-vec extension                     |
+| **sqlite-vec**        | Estensione SQLite per vector search | Loaded come extension nativa                      |
+| **systeminformation** | Rilevamento hardware                | CPU, RAM, GPU, VRAM detection                     |
+| **@huggingface/gguf** | Parsing metadata GGUF               | Validazione modelli, info quantizzazione          |
 
 ### 3.3 Native Modules
 
 I seguenti moduli richiedono build nativi:
+
 - `node-llama-cpp` - Binari precompilati per Metal/CUDA/Vulkan
 - `better-sqlite3` - Binding SQLite nativi
 - `sqlite-vec` - Extension nativa per ogni piattaforma
@@ -149,12 +151,12 @@ I seguenti moduli richiedono build nativi:
 
 ### 4.1 Pattern Chiave
 
-| Pattern | Applicazione | Motivazione |
-|---------|--------------|-------------|
-| **Singleton** | AIManager | Modelli condivisi tra space, gestione memoria centralizzata |
-| **Per-Space** | VectorDBManager | Isolamento dati, ogni space ha il suo vector DB |
-| **Global** | ConversationManager | Conversazioni possono referenziare note da space diversi |
-| **Lazy Init** | Tutti i manager | Inizializzazione on-demand per performance |
+| Pattern       | Applicazione        | Motivazione                                                 |
+| ------------- | ------------------- | ----------------------------------------------------------- |
+| **Singleton** | AIManager           | Modelli condivisi tra space, gestione memoria centralizzata |
+| **Per-Space** | VectorDBManager     | Isolamento dati, ogni space ha il suo vector DB             |
+| **Global**    | ConversationManager | Conversazioni possono referenziare note da space diversi    |
+| **Lazy Init** | Tutti i manager     | Inizializzazione on-demand per performance                  |
 
 ---
 
@@ -223,7 +225,14 @@ Il componente centrale che orchestra tutte le operazioni AI.
 ```typescript
 // src/main/ai/AIManager.ts
 
-import { getLlama, Llama, LlamaModel, LlamaContext, LlamaChat, LlamaEmbeddingContext } from 'node-llama-cpp'
+import {
+  getLlama,
+  Llama,
+  LlamaModel,
+  LlamaContext,
+  LlamaChat,
+  LlamaEmbeddingContext
+} from 'node-llama-cpp'
 import { app } from 'electron'
 import { join } from 'path'
 import { HardwareDetector, HardwareInfo } from './HardwareDetector'
@@ -521,7 +530,7 @@ export class AIManager {
    * Convert messages to llama.cpp chat history format
    */
   private convertToChatHistory(messages: ChatMessage[]): any[] {
-    return messages.map(msg => ({
+    return messages.map((msg) => ({
       role: msg.role,
       text: msg.content
     }))
@@ -612,11 +621,7 @@ export class HardwareDetector {
       return this.cachedInfo
     }
 
-    const [cpu, mem, graphics] = await Promise.all([
-      si.cpu(),
-      si.mem(),
-      si.graphics()
-    ])
+    const [cpu, mem, graphics] = await Promise.all([si.cpu(), si.mem(), si.graphics()])
 
     const primaryGpu = graphics.controllers[0]
 
@@ -667,7 +672,7 @@ export class HardwareDetector {
           estimatedPerformance: 'fast',
           gpuLayersRecommended: -1
         })
-        // fallthrough
+      // fallthrough
       case 'high':
         recommendations.push({
           modelId: 'llama-3.1-8b-q8',
@@ -675,7 +680,7 @@ export class HardwareDetector {
           estimatedPerformance: hardware.tier === 'ultra' ? 'very-fast' : 'fast',
           gpuLayersRecommended: -1
         })
-        // fallthrough
+      // fallthrough
       case 'medium':
         recommendations.push({
           modelId: 'llama-3.1-8b-q4',
@@ -683,7 +688,7 @@ export class HardwareDetector {
           estimatedPerformance: hardware.tier === 'high' ? 'very-fast' : 'moderate',
           gpuLayersRecommended: hardware.tier === 'medium' ? 20 : -1
         })
-        // fallthrough
+      // fallthrough
       case 'low':
         recommendations.push({
           modelId: 'phi-3-mini-q4',
@@ -739,9 +744,7 @@ export class HardwareDetector {
   /**
    * Detect CUDA support (NVIDIA GPU)
    */
-  private static detectCuda(
-    gpu: si.Systeminformation.GraphicsControllerData | undefined
-  ): boolean {
+  private static detectCuda(gpu: si.Systeminformation.GraphicsControllerData | undefined): boolean {
     if (!gpu) return false
     return gpu.vendor?.toLowerCase().includes('nvidia') || false
   }
@@ -826,11 +829,7 @@ export class ModelDownloader extends EventEmitter {
   /**
    * Start downloading a model
    */
-  async downloadModel(
-    modelId: string,
-    url: string,
-    filename: string
-  ): Promise<void> {
+  async downloadModel(modelId: string, url: string, filename: string): Promise<void> {
     if (this.downloads.has(modelId)) {
       throw new Error(`Download already in progress for ${modelId}`)
     }
@@ -944,7 +943,6 @@ export class ModelDownloader extends EventEmitter {
         eta: 0,
         status: 'completed'
       } as DownloadProgress)
-
     } catch (error) {
       if ((error as Error).name === 'AbortError') {
         // Download was paused
@@ -1037,8 +1035,8 @@ export class ModelDownloader extends EventEmitter {
   async getDownloadedModels(): Promise<string[]> {
     const files = await fs.readdir(this.modelsDir)
     return files
-      .filter(f => f.endsWith('.gguf'))
-      .map(f => ModelRegistry.getModelByFilename(f)?.id)
+      .filter((f) => f.endsWith('.gguf'))
+      .map((f) => ModelRegistry.getModelByFilename(f)?.id)
       .filter((id): id is string => id !== undefined)
   }
 
@@ -1113,9 +1111,10 @@ const CURATED_MODELS: ModelDefinition[] = [
   {
     id: 'phi-3-mini-q4',
     name: 'Phi-3 Mini (Q4)',
-    description: 'Microsoft\'s efficient 3.8B model, great for basic tasks',
+    description: "Microsoft's efficient 3.8B model, great for basic tasks",
     filename: 'Phi-3-mini-4k-instruct-Q4_K_M.gguf',
-    downloadUrl: 'https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf/resolve/main/Phi-3-mini-4k-instruct-Q4_K_M.gguf',
+    downloadUrl:
+      'https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf/resolve/main/Phi-3-mini-4k-instruct-Q4_K_M.gguf',
     sizeBytes: 2.3 * 1024 * 1024 * 1024,
     layers: 32,
     contextLength: 4096,
@@ -1127,9 +1126,10 @@ const CURATED_MODELS: ModelDefinition[] = [
   {
     id: 'qwen2-1.5b-q8',
     name: 'Qwen2 1.5B (Q8)',
-    description: 'Alibaba\'s compact model with good multilingual support',
+    description: "Alibaba's compact model with good multilingual support",
     filename: 'qwen2-1_5b-instruct-q8_0.gguf',
-    downloadUrl: 'https://huggingface.co/Qwen/Qwen2-1.5B-Instruct-GGUF/resolve/main/qwen2-1_5b-instruct-q8_0.gguf',
+    downloadUrl:
+      'https://huggingface.co/Qwen/Qwen2-1.5B-Instruct-GGUF/resolve/main/qwen2-1_5b-instruct-q8_0.gguf',
     sizeBytes: 1.6 * 1024 * 1024 * 1024,
     layers: 28,
     contextLength: 32768,
@@ -1145,9 +1145,10 @@ const CURATED_MODELS: ModelDefinition[] = [
   {
     id: 'llama-3.1-8b-q4',
     name: 'Llama 3.1 8B (Q4)',
-    description: 'Meta\'s flagship 8B model with excellent general capabilities',
+    description: "Meta's flagship 8B model with excellent general capabilities",
     filename: 'Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf',
-    downloadUrl: 'https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf',
+    downloadUrl:
+      'https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf',
     sizeBytes: 4.9 * 1024 * 1024 * 1024,
     layers: 32,
     contextLength: 131072,
@@ -1161,7 +1162,8 @@ const CURATED_MODELS: ModelDefinition[] = [
     name: 'Mistral 7B (Q4)',
     description: 'Fast and efficient 7B model with strong performance',
     filename: 'mistral-7b-instruct-v0.3-Q4_K_M.gguf',
-    downloadUrl: 'https://huggingface.co/bartowski/Mistral-7B-Instruct-v0.3-GGUF/resolve/main/Mistral-7B-Instruct-v0.3-Q4_K_M.gguf',
+    downloadUrl:
+      'https://huggingface.co/bartowski/Mistral-7B-Instruct-v0.3-GGUF/resolve/main/Mistral-7B-Instruct-v0.3-Q4_K_M.gguf',
     sizeBytes: 4.4 * 1024 * 1024 * 1024,
     layers: 32,
     contextLength: 32768,
@@ -1179,7 +1181,8 @@ const CURATED_MODELS: ModelDefinition[] = [
     name: 'Llama 3.1 8B (Q8)',
     description: 'Higher quality quantization of Llama 3.1 8B',
     filename: 'Meta-Llama-3.1-8B-Instruct-Q8_0.gguf',
-    downloadUrl: 'https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-8B-Instruct-Q8_0.gguf',
+    downloadUrl:
+      'https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-8B-Instruct-Q8_0.gguf',
     sizeBytes: 8.5 * 1024 * 1024 * 1024,
     layers: 32,
     contextLength: 131072,
@@ -1193,7 +1196,8 @@ const CURATED_MODELS: ModelDefinition[] = [
     name: 'DeepSeek Coder 6.7B (Q8)',
     description: 'Specialized coding model with strong performance',
     filename: 'deepseek-coder-6.7b-instruct-Q8_0.gguf',
-    downloadUrl: 'https://huggingface.co/TheBloke/deepseek-coder-6.7B-instruct-GGUF/resolve/main/deepseek-coder-6.7b-instruct.Q8_0.gguf',
+    downloadUrl:
+      'https://huggingface.co/TheBloke/deepseek-coder-6.7B-instruct-GGUF/resolve/main/deepseek-coder-6.7b-instruct.Q8_0.gguf',
     sizeBytes: 7.2 * 1024 * 1024 * 1024,
     layers: 32,
     contextLength: 16384,
@@ -1209,9 +1213,10 @@ const CURATED_MODELS: ModelDefinition[] = [
   {
     id: 'llama-3.1-70b-q4',
     name: 'Llama 3.1 70B (Q4)',
-    description: 'Meta\'s most capable open model',
+    description: "Meta's most capable open model",
     filename: 'Meta-Llama-3.1-70B-Instruct-Q4_K_M.gguf',
-    downloadUrl: 'https://huggingface.co/bartowski/Meta-Llama-3.1-70B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-70B-Instruct-Q4_K_M.gguf',
+    downloadUrl:
+      'https://huggingface.co/bartowski/Meta-Llama-3.1-70B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-70B-Instruct-Q4_K_M.gguf',
     sizeBytes: 42.5 * 1024 * 1024 * 1024,
     layers: 80,
     contextLength: 131072,
@@ -1229,7 +1234,8 @@ const CURATED_MODELS: ModelDefinition[] = [
     name: 'Nomic Embed Text v1.5',
     description: 'High-quality text embeddings for RAG',
     filename: 'nomic-embed-text-v1.5.Q8_0.gguf',
-    downloadUrl: 'https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5.Q8_0.gguf',
+    downloadUrl:
+      'https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5.Q8_0.gguf',
     sizeBytes: 137 * 1024 * 1024,
     layers: 12,
     contextLength: 8192,
@@ -1243,7 +1249,8 @@ const CURATED_MODELS: ModelDefinition[] = [
     name: 'BGE Small EN v1.5',
     description: 'Lightweight English embedding model',
     filename: 'bge-small-en-v1.5-q8_0.gguf',
-    downloadUrl: 'https://huggingface.co/ChristianAzinn/bge-small-en-v1.5-gguf/resolve/main/bge-small-en-v1.5-q8_0.gguf',
+    downloadUrl:
+      'https://huggingface.co/ChristianAzinn/bge-small-en-v1.5-gguf/resolve/main/bge-small-en-v1.5-q8_0.gguf',
     sizeBytes: 66 * 1024 * 1024,
     layers: 12,
     contextLength: 512,
@@ -1256,7 +1263,7 @@ const CURATED_MODELS: ModelDefinition[] = [
 
 export class ModelRegistry {
   private static models: Map<string, ModelDefinition> = new Map(
-    CURATED_MODELS.map(m => [m.id, m])
+    CURATED_MODELS.map((m) => [m.id, m])
   )
 
   /**
@@ -1290,7 +1297,7 @@ export class ModelRegistry {
     const tierOrder = ['low', 'medium', 'high', 'ultra']
     const tierIndex = tierOrder.indexOf(tier)
 
-    return Array.from(this.models.values()).filter(m => {
+    return Array.from(this.models.values()).filter((m) => {
       const modelTierIndex = tierOrder.indexOf(m.hardwareTier)
       return modelTierIndex <= tierIndex
     })
@@ -1300,18 +1307,14 @@ export class ModelRegistry {
    * Get chat-capable models
    */
   static getChatModels(): ModelDefinition[] {
-    return Array.from(this.models.values()).filter(m =>
-      m.capabilities.includes('chat')
-    )
+    return Array.from(this.models.values()).filter((m) => m.capabilities.includes('chat'))
   }
 
   /**
    * Get embedding models
    */
   static getEmbeddingModels(): ModelDefinition[] {
-    return Array.from(this.models.values()).filter(m =>
-      m.capabilities.includes('embedding')
-    )
+    return Array.from(this.models.values()).filter((m) => m.capabilities.includes('embedding'))
   }
 
   /**
@@ -1371,13 +1374,7 @@ export class VectorDBManager {
    * Initialize the database and create tables
    */
   async initialize(): Promise<void> {
-    const dbPath = join(
-      app.getPath('userData'),
-      'spaces',
-      this.spaceId,
-      'database',
-      'vectors.db'
-    )
+    const dbPath = join(app.getPath('userData'), 'spaces', this.spaceId, 'database', 'vectors.db')
 
     this.db = new Database(dbPath)
 
@@ -1422,12 +1419,7 @@ export class VectorDBManager {
     else ext = 'so'
 
     // Extension bundled with app
-    return join(
-      app.getAppPath(),
-      'resources',
-      'native',
-      `sqlite-vec-${platform}-${arch}.${ext}`
-    )
+    return join(app.getAppPath(), 'resources', 'native', `sqlite-vec-${platform}-${arch}.${ext}`)
   }
 
   /**
@@ -1468,14 +1460,12 @@ export class VectorDBManager {
     if (!this.db) throw new Error('Database not initialized')
 
     // Get document IDs first
-    const docs = this.db.prepare(
-      'SELECT id FROM documents WHERE note_id = ?'
-    ).all(noteId) as { id: string }[]
+    const docs = this.db.prepare('SELECT id FROM documents WHERE note_id = ?').all(noteId) as {
+      id: string
+    }[]
 
     // Delete from vector table
-    const deleteVec = this.db.prepare(
-      'DELETE FROM vec_documents WHERE id = ?'
-    )
+    const deleteVec = this.db.prepare('DELETE FROM vec_documents WHERE id = ?')
     for (const doc of docs) {
       deleteVec.run(doc.id)
     }
@@ -1529,7 +1519,7 @@ export class VectorDBManager {
       metadata: string
     }>
 
-    return results.map(r => ({
+    return results.map((r) => ({
       id: r.id,
       noteId: r.note_id,
       content: r.content,
@@ -1543,9 +1533,9 @@ export class VectorDBManager {
    */
   async getDocumentCount(): Promise<number> {
     if (!this.db) throw new Error('Database not initialized')
-    const result = this.db.prepare(
-      'SELECT COUNT(*) as count FROM documents'
-    ).get() as { count: number }
+    const result = this.db.prepare('SELECT COUNT(*) as count FROM documents').get() as {
+      count: number
+    }
     return result.count
   }
 
@@ -1554,10 +1544,10 @@ export class VectorDBManager {
    */
   async getIndexedNoteIds(): Promise<string[]> {
     if (!this.db) throw new Error('Database not initialized')
-    const results = this.db.prepare(
-      'SELECT DISTINCT note_id FROM documents'
-    ).all() as { note_id: string }[]
-    return results.map(r => r.note_id)
+    const results = this.db.prepare('SELECT DISTINCT note_id FROM documents').all() as {
+      note_id: string
+    }[]
+    return results.map((r) => r.note_id)
   }
 
   /**
@@ -1650,10 +1640,7 @@ export class ConversationManager {
       const files = await fs.readdir(this.conversationsDir)
       for (const file of files) {
         if (file.endsWith('.json')) {
-          const content = await fs.readFile(
-            join(this.conversationsDir, file),
-            'utf-8'
-          )
+          const content = await fs.readFile(join(this.conversationsDir, file), 'utf-8')
           const conversation = JSON.parse(content) as Conversation
           this.conversations.set(conversation.id, conversation)
         }
@@ -1729,7 +1716,7 @@ export class ConversationManager {
     // Track note references at conversation level
     if (noteReferences) {
       for (const ref of noteReferences) {
-        if (!conversation.noteContext.find(n => n.noteId === ref.noteId)) {
+        if (!conversation.noteContext.find((n) => n.noteId === ref.noteId)) {
           conversation.noteContext.push(ref)
         }
       }
@@ -1742,17 +1729,14 @@ export class ConversationManager {
   /**
    * Add a note to conversation context
    */
-  async addNoteToContext(
-    conversationId: string,
-    noteRef: NoteReference
-  ): Promise<void> {
+  async addNoteToContext(conversationId: string, noteRef: NoteReference): Promise<void> {
     const conversation = this.conversations.get(conversationId)
     if (!conversation) {
       throw new Error(`Conversation not found: ${conversationId}`)
     }
 
     // Avoid duplicates
-    if (!conversation.noteContext.find(n => n.noteId === noteRef.noteId)) {
+    if (!conversation.noteContext.find((n) => n.noteId === noteRef.noteId)) {
       conversation.noteContext.push(noteRef)
       conversation.updatedAt = new Date().toISOString()
       await this.saveConversation(conversation)
@@ -1762,18 +1746,13 @@ export class ConversationManager {
   /**
    * Remove a note from conversation context
    */
-  async removeNoteFromContext(
-    conversationId: string,
-    noteId: string
-  ): Promise<void> {
+  async removeNoteFromContext(conversationId: string, noteId: string): Promise<void> {
     const conversation = this.conversations.get(conversationId)
     if (!conversation) {
       throw new Error(`Conversation not found: ${conversationId}`)
     }
 
-    conversation.noteContext = conversation.noteContext.filter(
-      n => n.noteId !== noteId
-    )
+    conversation.noteContext = conversation.noteContext.filter((n) => n.noteId !== noteId)
     conversation.updatedAt = new Date().toISOString()
     await this.saveConversation(conversation)
   }
@@ -1790,7 +1769,7 @@ export class ConversationManager {
    */
   listConversations(): ConversationSummary[] {
     return Array.from(this.conversations.values())
-      .map(c => ({
+      .map((c) => ({
         id: c.id,
         title: c.title,
         modelId: c.modelId,
@@ -1799,9 +1778,7 @@ export class ConversationManager {
         createdAt: c.createdAt,
         updatedAt: c.updatedAt
       }))
-      .sort((a, b) =>
-        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-      )
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
   }
 
   /**
@@ -1837,11 +1814,7 @@ export class ConversationManager {
    */
   private async saveConversation(conversation: Conversation): Promise<void> {
     const filePath = join(this.conversationsDir, `${conversation.id}.json`)
-    await fs.writeFile(
-      filePath,
-      JSON.stringify(conversation, null, 2),
-      'utf-8'
-    )
+    await fs.writeFile(filePath, JSON.stringify(conversation, null, 2), 'utf-8')
   }
 
   /**
@@ -1860,7 +1833,8 @@ export class ConversationManager {
     }
 
     contextPrompt += '---\n\n'
-    contextPrompt += 'Use the above notes as context when relevant to answer the user\'s questions.\n'
+    contextPrompt +=
+      "Use the above notes as context when relevant to answer the user's questions.\n"
 
     return contextPrompt
   }
@@ -2093,9 +2067,7 @@ function getOrCreateVectorDB(spaceId: string): VectorDBManager {
   return vectorDBManagers.get(spaceId)!
 }
 
-export function registerAIHandlers(
-  getOrCreateFsManager: GetFsManager
-): void {
+export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
   const aiManager = AIManager.getInstance()
   const downloader = new ModelDownloader()
   const conversationManager = new ConversationManager()
@@ -2209,11 +2181,7 @@ export function registerAIHandlers(
       const window = BrowserWindow.fromWebContents(event.sender)
 
       let fullResponse = ''
-      const generator = aiManager.generateChatCompletion(
-        modelId,
-        messages as any,
-        options
-      )
+      const generator = aiManager.generateChatCompletion(modelId, messages as any, options)
 
       for await (const chunk of generator) {
         fullResponse += chunk
@@ -2256,30 +2224,19 @@ export function registerAIHandlers(
       content: string,
       noteRefs?: any[]
     ) => {
-      return await conversationManager.addMessage(
-        conversationId,
-        role,
-        content,
-        noteRefs
-      )
+      return await conversationManager.addMessage(conversationId, role, content, noteRefs)
     }
   )
 
-  ipcMain.handle(
-    'ai:updateConversationTitle',
-    async (_, conversationId: string, title: string) => {
-      await conversationManager.updateConversationTitle(conversationId, title)
-      return { success: true }
-    }
-  )
+  ipcMain.handle('ai:updateConversationTitle', async (_, conversationId: string, title: string) => {
+    await conversationManager.updateConversationTitle(conversationId, title)
+    return { success: true }
+  })
 
-  ipcMain.handle(
-    'ai:addNoteToConversation',
-    async (_, conversationId: string, noteRef: any) => {
-      await conversationManager.addNoteToContext(conversationId, noteRef)
-      return { success: true }
-    }
-  )
+  ipcMain.handle('ai:addNoteToConversation', async (_, conversationId: string, noteRef: any) => {
+    await conversationManager.addNoteToContext(conversationId, noteRef)
+    return { success: true }
+  })
 
   ipcMain.handle(
     'ai:removeNoteFromConversation',
@@ -2304,75 +2261,63 @@ export function registerAIHandlers(
     return { success: true }
   })
 
-  ipcMain.handle(
-    'ai:indexNote',
-    async (_, spaceId: string, noteId: string, folderId: string) => {
-      const fsManager = getOrCreateFsManager(spaceId)
-      const note = await fsManager.readNote(folderId, noteId)
+  ipcMain.handle('ai:indexNote', async (_, spaceId: string, noteId: string, folderId: string) => {
+    const fsManager = getOrCreateFsManager(spaceId)
+    const note = await fsManager.readNote(folderId, noteId)
 
-      const vectorDB = getOrCreateVectorDB(spaceId)
-      await vectorDB.initialize()
+    const vectorDB = getOrCreateVectorDB(spaceId)
+    await vectorDB.initialize()
 
-      await embeddingService.indexNote(note, vectorDB)
-      return { success: true }
-    }
-  )
+    await embeddingService.indexNote(note, vectorDB)
+    return { success: true }
+  })
 
-  ipcMain.handle(
-    'ai:indexAllNotes',
-    async (event: IpcMainInvokeEvent, spaceId: string) => {
-      const fsManager = getOrCreateFsManager(spaceId)
-      const vectorDB = getOrCreateVectorDB(spaceId)
-      await vectorDB.initialize()
+  ipcMain.handle('ai:indexAllNotes', async (event: IpcMainInvokeEvent, spaceId: string) => {
+    const fsManager = getOrCreateFsManager(spaceId)
+    const vectorDB = getOrCreateVectorDB(spaceId)
+    await vectorDB.initialize()
 
-      const window = BrowserWindow.fromWebContents(event.sender)
+    const window = BrowserWindow.fromWebContents(event.sender)
 
-      // Get folder tree to iterate all notes
-      const tree = await fsManager.getFolderTree()
-      const allNotes: Array<{ folderId: string; noteId: string }> = []
+    // Get folder tree to iterate all notes
+    const tree = await fsManager.getFolderTree()
+    const allNotes: Array<{ folderId: string; noteId: string }> = []
 
-      const collectNotes = (folder: any) => {
-        for (const noteId of folder.noteIds || []) {
-          allNotes.push({ folderId: folder.id, noteId })
-        }
-        for (const child of folder.children || []) {
-          collectNotes(child)
-        }
+    const collectNotes = (folder: any) => {
+      for (const noteId of folder.noteIds || []) {
+        allNotes.push({ folderId: folder.id, noteId })
       }
-      collectNotes(tree)
-
-      // Index each note with progress
-      let indexed = 0
-      for (const { folderId, noteId } of allNotes) {
-        try {
-          const note = await fsManager.readNote(folderId, noteId)
-          await embeddingService.indexNote(note, vectorDB)
-          indexed++
-
-          window?.webContents.send('ai:indexing-progress', {
-            current: indexed,
-            total: allNotes.length,
-            noteId,
-            noteTitle: note.title
-          })
-        } catch (error) {
-          console.error(`Failed to index note ${noteId}:`, error)
-        }
+      for (const child of folder.children || []) {
+        collectNotes(child)
       }
-
-      return { success: true, indexed, total: allNotes.length }
     }
-  )
+    collectNotes(tree)
+
+    // Index each note with progress
+    let indexed = 0
+    for (const { folderId, noteId } of allNotes) {
+      try {
+        const note = await fsManager.readNote(folderId, noteId)
+        await embeddingService.indexNote(note, vectorDB)
+        indexed++
+
+        window?.webContents.send('ai:indexing-progress', {
+          current: indexed,
+          total: allNotes.length,
+          noteId,
+          noteTitle: note.title
+        })
+      } catch (error) {
+        console.error(`Failed to index note ${noteId}:`, error)
+      }
+    }
+
+    return { success: true, indexed, total: allNotes.length }
+  })
 
   ipcMain.handle(
     'ai:searchNotes',
-    async (
-      _,
-      spaceId: string,
-      query: string,
-      limit?: number,
-      noteIds?: string[]
-    ) => {
+    async (_, spaceId: string, query: string, limit?: number, noteIds?: string[]) => {
       const vectorDB = getOrCreateVectorDB(spaceId)
       await vectorDB.initialize()
 
@@ -2387,15 +2332,12 @@ export function registerAIHandlers(
     return await vectorDB.getIndexedNoteIds()
   })
 
-  ipcMain.handle(
-    'ai:deleteNoteIndex',
-    async (_, spaceId: string, noteId: string) => {
-      const vectorDB = getOrCreateVectorDB(spaceId)
-      await vectorDB.initialize()
-      await vectorDB.deleteDocumentsForNote(noteId)
-      return { success: true }
-    }
-  )
+  ipcMain.handle('ai:deleteNoteIndex', async (_, spaceId: string, noteId: string) => {
+    const vectorDB = getOrCreateVectorDB(spaceId)
+    await vectorDB.initialize()
+    await vectorDB.deleteDocumentsForNote(noteId)
+    return { success: true }
+  })
 }
 ```
 
@@ -2418,23 +2360,15 @@ const aiAPI = {
   // Models
   listAvailableModels: () => ipcRenderer.invoke('ai:listAvailableModels'),
   listDownloadedModels: () => ipcRenderer.invoke('ai:listDownloadedModels'),
-  isModelDownloaded: (modelId: string) =>
-    ipcRenderer.invoke('ai:isModelDownloaded', modelId),
-  downloadModel: (modelId: string) =>
-    ipcRenderer.invoke('ai:downloadModel', modelId),
-  pauseDownload: (modelId: string) =>
-    ipcRenderer.invoke('ai:pauseDownload', modelId),
-  resumeDownload: (modelId: string) =>
-    ipcRenderer.invoke('ai:resumeDownload', modelId),
-  cancelDownload: (modelId: string) =>
-    ipcRenderer.invoke('ai:cancelDownload', modelId),
-  loadModel: (modelId: string) =>
-    ipcRenderer.invoke('ai:loadModel', modelId),
-  unloadModel: (modelId: string) =>
-    ipcRenderer.invoke('ai:unloadModel', modelId),
+  isModelDownloaded: (modelId: string) => ipcRenderer.invoke('ai:isModelDownloaded', modelId),
+  downloadModel: (modelId: string) => ipcRenderer.invoke('ai:downloadModel', modelId),
+  pauseDownload: (modelId: string) => ipcRenderer.invoke('ai:pauseDownload', modelId),
+  resumeDownload: (modelId: string) => ipcRenderer.invoke('ai:resumeDownload', modelId),
+  cancelDownload: (modelId: string) => ipcRenderer.invoke('ai:cancelDownload', modelId),
+  loadModel: (modelId: string) => ipcRenderer.invoke('ai:loadModel', modelId),
+  unloadModel: (modelId: string) => ipcRenderer.invoke('ai:unloadModel', modelId),
   getLoadedModels: () => ipcRenderer.invoke('ai:getLoadedModels'),
-  deleteModel: (modelId: string) =>
-    ipcRenderer.invoke('ai:deleteModel', modelId),
+  deleteModel: (modelId: string) => ipcRenderer.invoke('ai:deleteModel', modelId),
 
   // Download progress listener
   onDownloadProgress: (callback: (progress: DownloadProgress) => void) => {
@@ -2450,9 +2384,7 @@ const aiAPI = {
     options?: { maxTokens?: number; temperature?: number }
   ) => ipcRenderer.invoke('ai:generateResponse', modelId, messages, options),
 
-  onResponseChunk: (
-    callback: (data: { chunk: string; fullResponse: string }) => void
-  ) => {
+  onResponseChunk: (callback: (data: { chunk: string; fullResponse: string }) => void) => {
     const handler = (_: any, data: any) => callback(data)
     ipcRenderer.on('ai:response-chunk', handler)
     return () => ipcRenderer.removeListener('ai:response-chunk', handler)
@@ -2461,10 +2393,8 @@ const aiAPI = {
   // Conversations
   createConversation: (title: string, modelId: string, systemPrompt?: string) =>
     ipcRenderer.invoke('ai:createConversation', title, modelId, systemPrompt),
-  getConversation: (id: string) =>
-    ipcRenderer.invoke('ai:getConversation', id),
-  listConversations: () =>
-    ipcRenderer.invoke('ai:listConversations'),
+  getConversation: (id: string) => ipcRenderer.invoke('ai:getConversation', id),
+  listConversations: () => ipcRenderer.invoke('ai:listConversations'),
   addMessage: (
     conversationId: string,
     role: 'user' | 'assistant',
@@ -2477,35 +2407,22 @@ const aiAPI = {
     ipcRenderer.invoke('ai:addNoteToConversation', conversationId, noteRef),
   removeNoteFromConversation: (conversationId: string, noteId: string) =>
     ipcRenderer.invoke('ai:removeNoteFromConversation', conversationId, noteId),
-  deleteConversation: (id: string) =>
-    ipcRenderer.invoke('ai:deleteConversation', id),
+  deleteConversation: (id: string) => ipcRenderer.invoke('ai:deleteConversation', id),
 
   // Vector Search / RAG
-  initializeVectorDB: (spaceId: string) =>
-    ipcRenderer.invoke('ai:initializeVectorDB', spaceId),
+  initializeVectorDB: (spaceId: string) => ipcRenderer.invoke('ai:initializeVectorDB', spaceId),
   indexNote: (spaceId: string, noteId: string, folderId: string) =>
     ipcRenderer.invoke('ai:indexNote', spaceId, noteId, folderId),
-  indexAllNotes: (spaceId: string) =>
-    ipcRenderer.invoke('ai:indexAllNotes', spaceId),
-  searchNotes: (
-    spaceId: string,
-    query: string,
-    limit?: number,
-    noteIds?: string[]
-  ) => ipcRenderer.invoke('ai:searchNotes', spaceId, query, limit, noteIds),
-  getIndexedNotes: (spaceId: string) =>
-    ipcRenderer.invoke('ai:getIndexedNotes', spaceId),
+  indexAllNotes: (spaceId: string) => ipcRenderer.invoke('ai:indexAllNotes', spaceId),
+  searchNotes: (spaceId: string, query: string, limit?: number, noteIds?: string[]) =>
+    ipcRenderer.invoke('ai:searchNotes', spaceId, query, limit, noteIds),
+  getIndexedNotes: (spaceId: string) => ipcRenderer.invoke('ai:getIndexedNotes', spaceId),
   deleteNoteIndex: (spaceId: string, noteId: string) =>
     ipcRenderer.invoke('ai:deleteNoteIndex', spaceId, noteId),
 
   // Indexing progress listener
   onIndexingProgress: (
-    callback: (data: {
-      current: number
-      total: number
-      noteId: string
-      noteTitle: string
-    }) => void
+    callback: (data: { current: number; total: number; noteId: string; noteTitle: string }) => void
   ) => {
     const handler = (_: any, data: any) => callback(data)
     ipcRenderer.on('ai:indexing-progress', handler)
@@ -2580,7 +2497,7 @@ export const useModelDownload = () => {
 
   useEffect(() => {
     const unsubscribe = window.ai.onDownloadProgress((p) => {
-      setProgress(prev => ({ ...prev, [p.modelId]: p }))
+      setProgress((prev) => ({ ...prev, [p.modelId]: p }))
 
       if (p.status === 'completed') {
         queryClient.invalidateQueries({ queryKey: ['ai', 'models', 'downloaded'] })
@@ -2632,20 +2549,23 @@ export const useAIChat = (modelId: string) => {
     return unsubscribe
   }, [])
 
-  const sendMessage = useCallback(async (
-    messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>,
-    options?: { maxTokens?: number; temperature?: number }
-  ): Promise<string> => {
-    setIsGenerating(true)
-    setCurrentResponse('')
+  const sendMessage = useCallback(
+    async (
+      messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>,
+      options?: { maxTokens?: number; temperature?: number }
+    ): Promise<string> => {
+      setIsGenerating(true)
+      setCurrentResponse('')
 
-    try {
-      const result = await window.ai.generateResponse(modelId, messages, options)
-      return result.response
-    } finally {
-      setIsGenerating(false)
-    }
-  }, [modelId])
+      try {
+        const result = await window.ai.generateResponse(modelId, messages, options)
+        return result.response
+      } finally {
+        setIsGenerating(false)
+      }
+    },
+    [modelId]
+  )
 
   return {
     sendMessage,
@@ -2719,8 +2639,7 @@ export const useDeleteConversation = () => {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: (conversationId: string) =>
-      window.ai.deleteConversation(conversationId),
+    mutationFn: (conversationId: string) => window.ai.deleteConversation(conversationId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ai', 'conversations'] })
     }
@@ -3052,10 +2971,7 @@ export class ModelNotFoundError extends AIError {
 
 export class ModelNotDownloadedError extends AIError {
   constructor(modelId: string) {
-    super(
-      `Model not downloaded: ${modelId}. Please download it first.`,
-      'MODEL_NOT_DOWNLOADED'
-    )
+    super(`Model not downloaded: ${modelId}. Please download it first.`, 'MODEL_NOT_DOWNLOADED')
   }
 }
 
@@ -3070,37 +2986,25 @@ export class InsufficientMemoryError extends AIError {
 
 export class GPUNotAvailableError extends AIError {
   constructor() {
-    super(
-      'No compatible GPU found. The model will run on CPU (slower).',
-      'GPU_NOT_AVAILABLE'
-    )
+    super('No compatible GPU found. The model will run on CPU (slower).', 'GPU_NOT_AVAILABLE')
   }
 }
 
 export class ContextSizeExceededError extends AIError {
   constructor(requested: number, max: number) {
-    super(
-      `Context size ${requested} exceeds maximum ${max}`,
-      'CONTEXT_SIZE_EXCEEDED'
-    )
+    super(`Context size ${requested} exceeds maximum ${max}`, 'CONTEXT_SIZE_EXCEEDED')
   }
 }
 
 export class DownloadFailedError extends AIError {
   constructor(modelId: string, reason: string) {
-    super(
-      `Failed to download model ${modelId}: ${reason}`,
-      'DOWNLOAD_FAILED'
-    )
+    super(`Failed to download model ${modelId}: ${reason}`, 'DOWNLOAD_FAILED')
   }
 }
 
 export class EmbeddingFailedError extends AIError {
   constructor(noteId: string, reason: string) {
-    super(
-      `Failed to generate embeddings for note ${noteId}: ${reason}`,
-      'EMBEDDING_FAILED'
-    )
+    super(`Failed to generate embeddings for note ${noteId}: ${reason}`, 'EMBEDDING_FAILED')
   }
 }
 
@@ -3156,6 +3060,7 @@ const { mutate: loadModel } = useMutation({
 **Obiettivo**: Setup infrastruttura e hardware detection
 
 **Tasks**:
+
 1. Installare dipendenze (`node-llama-cpp`, `systeminformation`, `better-sqlite3`)
 2. Configurare `electron.vite.config.ts` per esternalizzare moduli nativi
 3. Creare struttura directory `src/main/ai/`
@@ -3171,6 +3076,7 @@ const { mutate: loadModel } = useMutation({
 **Obiettivo**: Download e gestione modelli
 
 **Tasks**:
+
 1. Implementare `ModelDownloader.ts` con progress/pause/resume
 2. Implementare `AIManager.ts` (versione base senza chat)
 3. Creare IPC handlers per model management
@@ -3184,6 +3090,7 @@ const { mutate: loadModel } = useMutation({
 **Obiettivo**: Chat funzionante con streaming
 
 **Tasks**:
+
 1. Completare `AIManager.ts` con chat completion
 2. Implementare streaming via IPC events
 3. Creare hooks React per chat con streaming
@@ -3197,6 +3104,7 @@ const { mutate: loadModel } = useMutation({
 **Obiettivo**: Ricerca semantica nelle note
 
 **Tasks**:
+
 1. Setup sqlite-vec (bundling extension nativa)
 2. Implementare `VectorDBManager.ts`
 3. Implementare `EmbeddingService.ts`
@@ -3211,6 +3119,7 @@ const { mutate: loadModel } = useMutation({
 **Obiettivo**: Persistenza conversazioni con context
 
 **Tasks**:
+
 1. Implementare `ConversationManager.ts`
 2. Creare IPC handlers per conversations
 3. Creare hooks React per conversations
@@ -3224,6 +3133,7 @@ const { mutate: loadModel } = useMutation({
 **Obiettivo**: UX completa per primo utilizzo
 
 **Tasks**:
+
 1. Creare wizard onboarding (hardware → model selection → download)
 2. Creare settings panel per AI
 3. Error handling e fallback UX
@@ -3251,12 +3161,12 @@ const { mutate: loadModel } = useMutation({
 
 ### Modelli Consigliati
 
-| Modello | Size | Use Case | HuggingFace |
-|---------|------|----------|-------------|
-| Phi-3 Mini Q4 | 2.3GB | Low tier, tasks base | [microsoft/Phi-3-mini-4k-instruct-gguf](https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf) |
-| Llama 3.1 8B Q4 | 4.9GB | Medium tier, general | [bartowski/Meta-Llama-3.1-8B-Instruct-GGUF](https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF) |
-| Llama 3.1 8B Q8 | 8.5GB | High tier, qualità | [bartowski/Meta-Llama-3.1-8B-Instruct-GGUF](https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF) |
-| Nomic Embed v1.5 | 137MB | Embeddings RAG | [nomic-ai/nomic-embed-text-v1.5-GGUF](https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF) |
+| Modello          | Size  | Use Case             | HuggingFace                                                                                                   |
+| ---------------- | ----- | -------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Phi-3 Mini Q4    | 2.3GB | Low tier, tasks base | [microsoft/Phi-3-mini-4k-instruct-gguf](https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf)         |
+| Llama 3.1 8B Q4  | 4.9GB | Medium tier, general | [bartowski/Meta-Llama-3.1-8B-Instruct-GGUF](https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF) |
+| Llama 3.1 8B Q8  | 8.5GB | High tier, qualità   | [bartowski/Meta-Llama-3.1-8B-Instruct-GGUF](https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF) |
+| Nomic Embed v1.5 | 137MB | Embeddings RAG       | [nomic-ai/nomic-embed-text-v1.5-GGUF](https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF)             |
 
 ---
 
@@ -3376,4 +3286,4 @@ export interface GenerationOptions {
 
 ---
 
-*Documento creato per TaacNotes - AI Architecture Specification v1.0*
+_Documento creato per TaacNotes - AI Architecture Specification v1.0_

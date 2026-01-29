@@ -102,12 +102,7 @@ export const MDXNoteEditor: FC<MDXNoteEditorProps> = ({
         const uint8Array = new Uint8Array(arrayBuffer)
 
         // Save asset to file system
-        const asset = await window.fileSystem.saveAsset(
-          spaceId,
-          file.name,
-          uint8Array,
-          'image'
-        )
+        const asset = await window.fileSystem.saveAsset(spaceId, file.name, uint8Array, 'image')
 
         // Extract filename from the full path
         const filename = asset.path.split('/').pop() || asset.id

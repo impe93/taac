@@ -24,6 +24,7 @@ Documento di pianificazione per l'implementazione delle funzionalità AI in Taac
 **Descrizione**: Installare tutte le dipendenze npm necessarie per l'integrazione AI locale: `node-llama-cpp`, `systeminformation`, `better-sqlite3`, e `@huggingface/gguf`. Verificare che le dipendenze siano installate correttamente.
 
 **Prompt**:
+
 ```
 Installa le dipendenze necessarie per l'integrazione AI in TaacNotes:
 - node-llama-cpp (^3.0.0) - per inference LLM locale
@@ -42,6 +43,7 @@ Dopo l'installazione, verifica che non ci siano conflitti di dipendenze e aggior
 **Descrizione**: Configurare `electron.vite.config.ts` per gestire correttamente i moduli nativi (`node-llama-cpp`, `better-sqlite3`). Questi moduli devono essere esternalizzati dal bundler per funzionare in Electron.
 
 **Prompt**:
+
 ```
 Modifica electron.vite.config.ts per supportare i moduli nativi AI:
 
@@ -61,6 +63,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 10.2. Assicurati che la configurazi
 **Descrizione**: Creare la struttura di directory per i moduli AI nel main process. Creare i file placeholder con export vuoti per definire l'architettura.
 
 **Prompt**:
+
 ```
 Crea la struttura directory per i moduli AI in src/main/ai/:
 
@@ -87,6 +90,7 @@ Per ora crea solo la struttura con commenti TODO. Riferimento: docs/AI_ARCHITECT
 **Descrizione**: Implementare tutte le interfacce e tipi TypeScript condivisi per il modulo AI, come definito nell'architettura.
 
 **Prompt**:
+
 ```
 Implementa src/main/ai/types.ts con tutte le interfacce TypeScript per il modulo AI:
 
@@ -113,6 +117,7 @@ Riferimento completo: docs/AI_ARCHITECTURE.md Appendice A.
 **Descrizione**: Implementare le classi di errore custom per una gestione errori consistente nel modulo AI.
 
 **Prompt**:
+
 ```
 Implementa src/main/ai/errors.ts con le classi di errore custom:
 
@@ -135,6 +140,7 @@ Includi anche una utility function formatBytes(). Riferimento: docs/AI_ARCHITECT
 **Descrizione**: Implementare il modulo HardwareDetector che rileva CPU, RAM, GPU e classifica il sistema in tier hardware (low, medium, high, ultra).
 
 **Prompt**:
+
 ```
 Implementa src/main/ai/HardwareDetector.ts:
 
@@ -163,6 +169,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 6.2.
 **Descrizione**: Implementare il registro dei modelli curati con la lista di modelli testati per ogni tier hardware.
 
 **Prompt**:
+
 ```
 Implementa src/main/ai/ModelRegistry.ts:
 
@@ -192,6 +199,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 6.4.
 **Descrizione**: Creare gli IPC handlers per esporre le funzionalità di hardware detection al renderer process.
 
 **Prompt**:
+
 ```
 Crea src/main/ipc/aiHandlers.ts con gli IPC handlers base:
 
@@ -214,6 +222,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 7, handlers HARDWARE DETECTION e pa
 **Descrizione**: Estendere il preload script per esporre le API di hardware detection al renderer.
 
 **Prompt**:
+
 ```
 Estendi src/preload/index.ts per esporre l'API AI:
 
@@ -236,6 +245,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 8.
 **Descrizione**: Creare i React hooks con TanStack Query per accedere alle informazioni hardware e ai modelli disponibili.
 
 **Prompt**:
+
 ```
 Crea src/renderer/src/hooks/useHardware.ts con i seguenti hooks:
 
@@ -255,6 +265,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 9.
 **Descrizione**: Creare un componente UI per visualizzare le informazioni hardware rilevate e il tier assegnato.
 
 **Prompt**:
+
 ```
 Crea src/renderer/src/components/ai/HardwareInfoCard.tsx:
 
@@ -280,6 +291,7 @@ Questo componente sarà usato nella pagina settings e nell'onboarding.
 **Descrizione**: Implementare il modulo per il download dei modelli con supporto per progress reporting, pause e resume.
 
 **Prompt**:
+
 ```
 Implementa src/main/ai/ModelDownloader.ts:
 
@@ -310,6 +322,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 6.3.
 **Descrizione**: Aggiungere gli IPC handlers per gestire download, caricamento e rimozione modelli.
 
 **Prompt**:
+
 ```
 Estendi src/main/ipc/aiHandlers.ts con gli handlers per model management:
 
@@ -337,6 +350,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 7, MODEL MANAGEMENT handlers.
 **Descrizione**: Estendere la preload API con le funzioni per gestire i modelli.
 
 **Prompt**:
+
 ```
 Estendi src/preload/index.ts con le API per model management:
 
@@ -362,6 +376,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 8.
 **Descrizione**: Creare gli hooks React per gestire download e stato dei modelli.
 
 **Prompt**:
+
 ```
 Crea src/renderer/src/hooks/useModels.ts con:
 
@@ -385,6 +400,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 9.
 **Descrizione**: Creare il componente per visualizzare un singolo modello con stato download e azioni.
 
 **Prompt**:
+
 ```
 Crea src/renderer/src/components/ai/ModelCard.tsx:
 
@@ -408,6 +424,7 @@ Crea src/renderer/src/components/ai/ModelCard.tsx:
 **Descrizione**: Creare la vista completa della libreria modelli con filtri per tier e capabilities.
 
 **Prompt**:
+
 ```
 Crea src/renderer/src/components/ai/ModelLibrary.tsx:
 
@@ -431,6 +448,7 @@ Questo componente sarà la pagina principale per gestire i modelli.
 **Descrizione**: Creare la route per le impostazioni AI con la libreria modelli integrata.
 
 **Prompt**:
+
 ```
 Crea src/renderer/src/routes/settings/ai.tsx (o modifica settings se esiste):
 
@@ -453,6 +471,7 @@ Assicurati che la route sia registrata in TanStack Router.
 **Descrizione**: Implementare il singleton AIManager che gestisce l'inizializzazione di llama.cpp e il caricamento modelli.
 
 **Prompt**:
+
 ```
 Implementa src/main/ai/AIManager.ts (versione base senza chat):
 
@@ -487,6 +506,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 6.1 (prima parte).
 **Descrizione**: Estendere AIManager con le funzionalità di chat completion e streaming.
 
 **Prompt**:
+
 ```
 Estendi src/main/ai/AIManager.ts con chat completion:
 
@@ -514,6 +534,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 6.1 (metodo generateChatCompletion)
 **Descrizione**: Aggiungere gli IPC handlers per l'inizializzazione AI e la generazione risposte con streaming.
 
 **Prompt**:
+
 ```
 Estendi src/main/ipc/aiHandlers.ts con handlers inference:
 
@@ -540,6 +561,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 7, INITIALIZATION e CHAT/INFERENCE.
 **Descrizione**: Estendere la preload API con le funzioni per chat e streaming.
 
 **Prompt**:
+
 ```
 Estendi src/preload/index.ts con API inference:
 
@@ -564,6 +586,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 8.
 **Descrizione**: Creare l'hook principale per gestire chat AI con streaming delle risposte.
 
 **Prompt**:
+
 ```
 Crea src/renderer/src/hooks/useAI.ts:
 
@@ -591,6 +614,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 9.
 **Descrizione**: Creare il componente per visualizzare un singolo messaggio nella chat.
 
 **Prompt**:
+
 ```
 Crea src/renderer/src/components/ai/ChatMessage.tsx:
 
@@ -613,6 +637,7 @@ Crea src/renderer/src/components/ai/ChatMessage.tsx:
 **Descrizione**: Creare il componente input per inviare messaggi alla chat.
 
 **Prompt**:
+
 ```
 Crea src/renderer/src/components/ai/ChatInput.tsx:
 
@@ -634,6 +659,7 @@ Crea src/renderer/src/components/ai/ChatInput.tsx:
 **Descrizione**: Creare l'interfaccia chat completa che integra messaggi, input e gestione stato.
 
 **Prompt**:
+
 ```
 Crea src/renderer/src/components/ai/ChatInterface.tsx:
 
@@ -661,6 +687,7 @@ Questo è il componente base per la chat, verrà integrato con conversazioni per
 **Descrizione**: Creare una route per testare la chat AI standalone, utile per development e debug.
 
 **Prompt**:
+
 ```
 Crea src/renderer/src/routes/ai/chat.tsx:
 
@@ -685,6 +712,7 @@ Questa pagina è per testing, la chat principale sarà nella sidebar.
 **Descrizione**: Configurare il bundling dell'extension nativa sqlite-vec per ogni piattaforma.
 
 **Prompt**:
+
 ```
 Configura sqlite-vec per TaacNotes:
 
@@ -707,6 +735,7 @@ Se sqlite-vec non è disponibile come npm package, valuta alternative come inclu
 **Descrizione**: Implementare il manager per il database vettoriale per-space usando better-sqlite3 e sqlite-vec.
 
 **Prompt**:
+
 ```
 Implementa src/main/ai/VectorDBManager.ts:
 
@@ -738,6 +767,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 6.5.
 **Descrizione**: Implementare il servizio per generare embeddings e indicizzare note.
 
 **Prompt**:
+
 ```
 Implementa src/main/ai/EmbeddingService.ts:
 
@@ -771,6 +801,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 6.7.
 **Descrizione**: Estendere AIManager per supportare embedding context oltre a chat context.
 
 **Prompt**:
+
 ```
 Estendi src/main/ai/AIManager.ts per embedding:
 
@@ -794,6 +825,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 6.1, metodo getEmbeddingContext.
 **Descrizione**: Aggiungere gli IPC handlers per indicizzazione e ricerca semantica.
 
 **Prompt**:
+
 ```
 Estendi src/main/ipc/aiHandlers.ts con handlers RAG:
 
@@ -824,6 +856,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 7, VECTOR SEARCH / RAG.
 **Descrizione**: Estendere la preload API con le funzioni per RAG.
 
 **Prompt**:
+
 ```
 Estendi src/preload/index.ts con API vector search:
 
@@ -848,6 +881,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 8.
 **Descrizione**: Creare gli hooks React per gestire indicizzazione e ricerca semantica.
 
 **Prompt**:
+
 ```
 Crea src/renderer/src/hooks/useVectorSearch.ts:
 
@@ -873,6 +907,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 9.
 **Descrizione**: Integrare l'auto-indexing quando una nota viene salvata.
 
 **Prompt**:
+
 ```
 Modifica il flusso di salvataggio note per auto-indexing:
 
@@ -893,6 +928,7 @@ Considera di usare un worker o debouncing per evitare indicizzazioni troppo freq
 **Descrizione**: Creare il componente per visualizzare i risultati della ricerca semantica.
 
 **Prompt**:
+
 ```
 Crea src/renderer/src/components/ai/SearchResults.tsx:
 
@@ -916,6 +952,7 @@ Questo componente sarà usato nella chat per mostrare note rilevanti.
 **Descrizione**: Integrare la ricerca semantica nel flusso di chat per arricchire il contesto.
 
 **Prompt**:
+
 ```
 Estendi ChatInterface per supportare RAG:
 
@@ -944,6 +981,7 @@ Pattern: "Given the following notes as context:\n[notes]\n\nUser question: [mess
 **Descrizione**: Implementare il manager per la persistenza delle conversazioni globali.
 
 **Prompt**:
+
 ```
 Implementa src/main/ai/ConversationManager.ts:
 
@@ -972,6 +1010,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 6.6.
 **Descrizione**: Aggiungere gli IPC handlers per gestire le conversazioni.
 
 **Prompt**:
+
 ```
 Estendi src/main/ipc/aiHandlers.ts con handlers conversazioni:
 
@@ -997,6 +1036,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 7, CONVERSATIONS.
 **Descrizione**: Estendere la preload API con le funzioni per gestire conversazioni.
 
 **Prompt**:
+
 ```
 Estendi src/preload/index.ts con API conversations:
 
@@ -1022,6 +1062,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 8.
 **Descrizione**: Creare gli hooks React per gestire le conversazioni.
 
 **Prompt**:
+
 ```
 Crea src/renderer/src/hooks/useConversations.ts:
 
@@ -1046,6 +1087,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 9.
 **Descrizione**: Creare il componente per visualizzare la lista delle conversazioni.
 
 **Prompt**:
+
 ```
 Crea src/renderer/src/components/ai/ConversationList.tsx:
 
@@ -1070,6 +1112,7 @@ Crea src/renderer/src/components/ai/ConversationList.tsx:
 **Descrizione**: Creare l'header della conversazione con titolo editabile e azioni.
 
 **Prompt**:
+
 ```
 Crea src/renderer/src/components/ai/ConversationHeader.tsx:
 
@@ -1091,6 +1134,7 @@ Crea src/renderer/src/components/ai/ConversationHeader.tsx:
 **Descrizione**: Modificare ChatInterface per supportare conversazioni persistenti.
 
 **Prompt**:
+
 ```
 Modifica ChatInterface per integrazione con conversazioni:
 
@@ -1119,6 +1163,7 @@ Modifica ChatInterface per integrazione con conversazioni:
 **Descrizione**: Creare il pannello chat completo con lista conversazioni e chat interface.
 
 **Prompt**:
+
 ```
 Crea src/renderer/src/components/ai/AIChatPanel.tsx:
 
@@ -1144,6 +1189,7 @@ Questo sarà il componente principale per l'esperienza AI.
 **Descrizione**: Integrare il pannello chat AI nella sidebar dell'applicazione.
 
 **Prompt**:
+
 ```
 Integra AIChatPanel nella UI principale:
 
@@ -1169,6 +1215,7 @@ Valuta quale opzione si integra meglio con il design esistente della sidebar not
 **Descrizione**: Aggiungere azioni rapide per inviare contenuto nota alla chat AI.
 
 **Prompt**:
+
 ```
 Aggiungi quick actions per AI dalla nota attiva:
 
@@ -1195,6 +1242,7 @@ Aggiungi quick actions per AI dalla nota attiva:
 **Descrizione**: Creare uno slice Redux per gestire lo stato globale AI (se necessario per stato UI).
 
 **Prompt**:
+
 ```
 Valuta se serve Redux slice per AI state:
 
@@ -1219,6 +1267,7 @@ Obiettivo: evitare duplicazione stato tra Redux e TanStack Query.
 **Descrizione**: Implementare la configurazione AI persistente con electron-store.
 
 **Prompt**:
+
 ```
 Estendi il sistema di configurazione per AI:
 
@@ -1253,6 +1302,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 10.1.
 **Descrizione**: Creare il pannello impostazioni AI completo.
 
 **Prompt**:
+
 ```
 Crea src/renderer/src/components/ai/AISettingsPanel.tsx:
 
@@ -1282,6 +1332,7 @@ Integra in /settings/ai route.
 **Descrizione**: Creare il primo step dell'onboarding AI wizard.
 
 **Prompt**:
+
 ```
 Crea src/renderer/src/components/ai/onboarding/OnboardingWelcome.tsx:
 
@@ -1305,6 +1356,7 @@ Crea src/renderer/src/components/ai/onboarding/OnboardingWelcome.tsx:
 **Descrizione**: Creare lo step di hardware detection dell'onboarding.
 
 **Prompt**:
+
 ```
 Crea src/renderer/src/components/ai/onboarding/OnboardingHardware.tsx:
 
@@ -1326,6 +1378,7 @@ Crea src/renderer/src/components/ai/onboarding/OnboardingHardware.tsx:
 **Descrizione**: Creare lo step di selezione modello dell'onboarding.
 
 **Prompt**:
+
 ```
 Crea src/renderer/src/components/ai/onboarding/OnboardingModelSelect.tsx:
 
@@ -1348,6 +1401,7 @@ Crea src/renderer/src/components/ai/onboarding/OnboardingModelSelect.tsx:
 **Descrizione**: Creare lo step di download modello dell'onboarding.
 
 **Prompt**:
+
 ```
 Crea src/renderer/src/components/ai/onboarding/OnboardingDownload.tsx:
 
@@ -1372,6 +1426,7 @@ Crea src/renderer/src/components/ai/onboarding/OnboardingDownload.tsx:
 **Descrizione**: Creare il container wizard che orchestra tutti gli step.
 
 **Prompt**:
+
 ```
 Crea src/renderer/src/components/ai/onboarding/OnboardingWizard.tsx:
 
@@ -1395,6 +1450,7 @@ Crea src/renderer/src/components/ai/onboarding/OnboardingWizard.tsx:
 **Descrizione**: Integrare il wizard onboarding nel flusso dell'app.
 
 **Prompt**:
+
 ```
 Integra OnboardingWizard nell'app:
 
@@ -1421,6 +1477,7 @@ Integra OnboardingWizard nell'app:
 **Descrizione**: Implementare gestione errori robusta per componenti AI.
 
 **Prompt**:
+
 ```
 Implementa error handling per componenti AI:
 
@@ -1451,6 +1508,7 @@ Implementa error handling per componenti AI:
 **Descrizione**: Creare componenti skeleton per tutti gli stati di caricamento AI.
 
 **Prompt**:
+
 ```
 Crea skeletons per componenti AI:
 
@@ -1473,6 +1531,7 @@ Pattern consistente: stessa struttura del componente reale ma con elementi skele
 **Descrizione**: Implementare shortcuts da tastiera per funzionalità AI.
 
 **Prompt**:
+
 ```
 Implementa keyboard shortcuts per AI:
 
@@ -1500,6 +1559,7 @@ Implementa keyboard shortcuts per AI:
 **Descrizione**: Ottimizzare le performance dei componenti AI.
 
 **Prompt**:
+
 ```
 Ottimizza performance componenti AI:
 
@@ -1530,6 +1590,7 @@ Ottimizza performance componenti AI:
 **Descrizione**: Creare test end-to-end per i flussi principali AI.
 
 **Prompt**:
+
 ```
 Crea test per flussi AI (se test framework presente):
 
@@ -1561,6 +1622,7 @@ Se non c'è test framework, crea checklist manuale QA in docs/AI_QA_CHECKLIST.md
 **Descrizione**: Creare documentazione per le funzionalità AI.
 
 **Prompt**:
+
 ```
 Aggiorna documentazione con sezione AI:
 
@@ -1603,13 +1665,13 @@ Non creare documentazione eccessiva, mantienila concisa e utile.
 
 ### Rischi e mitigazioni
 
-| Rischio | Mitigazione |
-|---------|-------------|
-| Build nativi falliscono | Documentare processo build, CI/CD per ogni platform |
-| Memoria insufficiente | Limiti conservativi, warning chiari |
-| Download modelli lenti | Progress UI, pause/resume, retry automatico |
-| sqlite-vec incompatibilità | Fallback a ricerca full-text se necessario |
+| Rischio                    | Mitigazione                                         |
+| -------------------------- | --------------------------------------------------- |
+| Build nativi falliscono    | Documentare processo build, CI/CD per ogni platform |
+| Memoria insufficiente      | Limiti conservativi, warning chiari                 |
+| Download modelli lenti     | Progress UI, pause/resume, retry automatico         |
+| sqlite-vec incompatibilità | Fallback a ricerca full-text se necessario          |
 
 ---
 
-*Documento generato per TaacNotes AI Implementation - v1.0*
+_Documento generato per TaacNotes AI Implementation - v1.0_

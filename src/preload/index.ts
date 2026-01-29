@@ -47,7 +47,8 @@ const fileSystemAPI = {
     targetSpaceId: string,
     noteId: string,
     sourceFolderId: string
-  ) => ipcRenderer.invoke('fs:moveNoteToSpace', sourceSpaceId, targetSpaceId, noteId, sourceFolderId),
+  ) =>
+    ipcRenderer.invoke('fs:moveNoteToSpace', sourceSpaceId, targetSpaceId, noteId, sourceFolderId),
 
   moveFolderToSpace: (sourceSpaceId: string, targetSpaceId: string, folderId: string) =>
     ipcRenderer.invoke('fs:moveFolderToSpace', sourceSpaceId, targetSpaceId, folderId),

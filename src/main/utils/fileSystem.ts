@@ -318,11 +318,7 @@ export class FileSystemManager {
   }
 
   // Move operations
-  async moveNote(
-    noteId: string,
-    sourceFolderId: string,
-    targetFolderId: string
-  ): Promise<Note> {
+  async moveNote(noteId: string, sourceFolderId: string, targetFolderId: string): Promise<Note> {
     // 1. VALIDATION
     if (sourceFolderId === targetFolderId) {
       throw new Error('Source and target folders are the same')

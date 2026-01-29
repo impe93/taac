@@ -59,9 +59,9 @@ export const DeleteSpaceDialog: FC<DeleteSpaceDialogProps> = ({ space, open, onO
 
         // 3. Remove from electron-store cache
         try {
-          const currentCache = (await window.config.get(
-            'reduxSpacesCaches'
-          )) as SpacesCacheStructure | undefined
+          const currentCache = (await window.config.get('reduxSpacesCaches')) as
+            | SpacesCacheStructure
+            | undefined
           if (currentCache && currentCache[space.id]) {
             delete currentCache[space.id]
             await window.config.set('reduxSpacesCaches', currentCache)

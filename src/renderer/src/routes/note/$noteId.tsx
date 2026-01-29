@@ -105,19 +105,13 @@ function NoteView(): ReactElement {
         <NoteTitle title={title} onChange={handleTitleChange} placeholder="Untitled" />
         <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
           <span>Last updated: {new Date(note.updatedAt).toLocaleString()}</span>
-          {isSaving && (
-            <span className="text-primary animate-pulse">Saving...</span>
-          )}
+          {isSaving && <span className="text-primary animate-pulse">Saving...</span>}
         </div>
       </div>
 
       {/* Editor */}
       <div className="flex-1 overflow-auto p-6">
-        <MDXNoteEditor
-          markdown={content}
-          onChange={handleContentChange}
-          spaceId={activeSpaceId}
-        />
+        <MDXNoteEditor markdown={content} onChange={handleContentChange} spaceId={activeSpaceId} />
       </div>
     </div>
   )

@@ -108,12 +108,7 @@ export const loadTree = createAsyncThunk(
 // Crea nota
 export const createNote = createAsyncThunk(
   'notesTree/createNote',
-  async (payload: {
-    spaceId: string
-    folderId: string
-    title: string
-    content: string
-  }) => {
+  async (payload: { spaceId: string; folderId: string; title: string; content: string }) => {
     const { spaceId, folderId, title, content } = payload
 
     const note = await window.fileSystem.createNote(spaceId, folderId, content, title)
@@ -245,18 +240,10 @@ export const moveNoteToSpace = createAsyncThunk(
 // Cross-space move: Sposta cartella in un altro spazio
 export const moveFolderToSpace = createAsyncThunk(
   'notesTree/moveFolderToSpace',
-  async (payload: {
-    sourceSpaceId: string
-    targetSpaceId: string
-    folderId: string
-  }) => {
+  async (payload: { sourceSpaceId: string; targetSpaceId: string; folderId: string }) => {
     const { sourceSpaceId, targetSpaceId, folderId } = payload
 
-    const result = await window.fileSystem.moveFolderToSpace(
-      sourceSpaceId,
-      targetSpaceId,
-      folderId
-    )
+    const result = await window.fileSystem.moveFolderToSpace(sourceSpaceId, targetSpaceId, folderId)
 
     return {
       sourceSpaceId,
@@ -839,9 +826,7 @@ const notesTreeSlice = createSlice({
         if (!sourceSpace) return
 
         // Helper to collect all folder IDs and note IDs in subtree
-        const collectSubtreeIds = (
-          fId: string
-        ): { folderIds: string[]; noteIds: string[] } => {
+        const collectSubtreeIds = (fId: string): { folderIds: string[]; noteIds: string[] } => {
           const folder = sourceSpace.folders[fId]
           if (!folder) return { folderIds: [], noteIds: [] }
 

@@ -81,9 +81,7 @@ export const CreateItemDialog: FC<CreateItemDialogProps> = ({
 
   const title = type === 'note' ? 'Create New Note' : 'Create New Folder'
   const description =
-    type === 'note'
-      ? 'Enter a title for your new note.'
-      : 'Enter a name for your new folder.'
+    type === 'note' ? 'Enter a title for your new note.' : 'Enter a name for your new folder.'
   const placeholder = type === 'note' ? 'e.g., Meeting Notes' : 'e.g., Work Projects'
   const label = type === 'note' ? 'Note Title' : 'Folder Name'
 

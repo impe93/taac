@@ -61,9 +61,7 @@ const DroppableSpaceButton: FC<DroppableSpaceButtonProps> = ({
       </TooltipTrigger>
       <TooltipContent side="top">
         <p>{space.name}</p>
-        {isOver && !isActive && (
-          <p className="text-xs text-muted-foreground">Drop to move here</p>
-        )}
+        {isOver && !isActive && <p className="text-xs text-muted-foreground">Drop to move here</p>}
       </TooltipContent>
     </Tooltip>
   )

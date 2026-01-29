@@ -35,11 +35,13 @@ pnpm ui-add             # Add new Shadcn/UI components
 ### Electron Three-Process Model
 
 1. **Main Process** (`src/main/`)
+
    - Entry: `src/main/index.ts`
    - Managers: `FileSystemManager`, `SpaceManager`, `configStore`
    - IPC handlers in `src/main/ipc/` (fileHandlers, configHandlers, spaceHandlers)
 
 2. **Preload Scripts** (`src/preload/`)
+
    - Exposes `window.fileSystem`, `window.config`, `window.space`, `window.platform`
    - Types in `src/preload/types.ts` and `src/preload/index.d.ts`
 
@@ -51,6 +53,7 @@ pnpm ui-add             # Add new Shadcn/UI components
 ### Multi-Space Architecture
 
 Notes are organized into **Spaces** (max 5), each with isolated data:
+
 - `SpaceManager` (`src/main/utils/spaceManager.ts`) handles CRUD, stores metadata in `spaces/spaces.json`
 - Each space has its own `FileSystemManager` instance operating on `{userData}/spaces/{spaceId}/`
 - Redux state is per-space in `notesTreeSlice.ts` with `spaces: Record<string, SpaceTreeState>`
@@ -59,6 +62,7 @@ Notes are organized into **Spaces** (max 5), each with isolated data:
 ### State Management
 
 **Redux Toolkit** (`src/renderer/src/store/`):
+
 - `notesTreeSlice.ts` - Normalized notes/folders state with async thunks for IPC operations
 - Multi-space state: each space has its own folders, notes, expandedFolders, selectedNoteId
 - Optimistic updates with rollback for move operations
@@ -69,6 +73,7 @@ Notes are organized into **Spaces** (max 5), each with isolated data:
 ### File System Layer
 
 **Directory Structure** (`{userData}/`):
+
 ```
 spaces/
 ├── spaces.json          # Space metadata
@@ -88,6 +93,7 @@ spaces/
 ### Drag-and-Drop System
 
 Notes tree (`src/renderer/src/components/notes-tree/`) uses @dnd-kit/core:
+
 - 10px threshold before drag activates (allows normal clicks)
 - Auto-expand folders after 1.5s hover
 - Optimistic Redux updates with automatic rollback on errors
@@ -97,6 +103,7 @@ Notes tree (`src/renderer/src/components/notes-tree/`) uses @dnd-kit/core:
 ### AI Architecture (In Development)
 
 See `docs/AI_ARCHITECTURE.md` for full details. Key components:
+
 - `node-llama-cpp` for local LLM inference
 - `better-sqlite3` + sqlite-vec for vector search
 - `systeminformation` for hardware detection
@@ -105,6 +112,7 @@ See `docs/AI_ARCHITECTURE.md` for full details. Key components:
 ### TypeScript Configuration
 
 Three tsconfig files:
+
 - `tsconfig.node.json` - Main process/Node.js
 - `tsconfig.web.json` - Renderer/React
 - `tsconfig.app.json` - Application-specific

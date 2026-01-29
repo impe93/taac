@@ -33,8 +33,8 @@
 
   /* Font settings */
   font-family: inherit;
-  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas,
-    'Liberation Mono', monospace;
+  --font-mono:
+    ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
 
   color: var(--foreground);
   background: var(--background);
@@ -173,26 +173,67 @@
 }
 
 /* Token colors for syntax highlighting */
-.mdx-note-editor.dark-editor .ͼ1 .tok-keyword { color: #c678dd; }
-.mdx-note-editor.dark-editor .ͼ1 .tok-operator { color: #56b6c2; }
-.mdx-note-editor.dark-editor .ͼ1 .tok-number { color: #d19a66; }
-.mdx-note-editor.dark-editor .ͼ1 .tok-string { color: #98c379; }
-.mdx-note-editor.dark-editor .ͼ1 .tok-comment { color: #5c6370; font-style: italic; }
-.mdx-note-editor.dark-editor .ͼ1 .tok-variableName { color: #e06c75; }
-.mdx-note-editor.dark-editor .ͼ1 .tok-definition { color: #61afef; }
-.mdx-note-editor.dark-editor .ͼ1 .tok-function { color: #61afef; }
-.mdx-note-editor.dark-editor .ͼ1 .tok-typeName { color: #e5c07b; }
-.mdx-note-editor.dark-editor .ͼ1 .tok-className { color: #e5c07b; }
-.mdx-note-editor.dark-editor .ͼ1 .tok-propertyName { color: #e06c75; }
-.mdx-note-editor.dark-editor .ͼ1 .tok-punctuation { color: #abb2bf; }
-.mdx-note-editor.dark-editor .ͼ1 .tok-meta { color: #abb2bf; }
-.mdx-note-editor.dark-editor .ͼ1 .tok-bool { color: #d19a66; }
-.mdx-note-editor.dark-editor .ͼ1 .tok-null { color: #d19a66; }
-.mdx-note-editor.dark-editor .ͼ1 .tok-atom { color: #d19a66; }
-.mdx-note-editor.dark-editor .ͼ1 .tok-attributeName { color: #d19a66; }
-.mdx-note-editor.dark-editor .ͼ1 .tok-attributeValue { color: #98c379; }
-.mdx-note-editor.dark-editor .ͼ1 .tok-tagName { color: #e06c75; }
-.mdx-note-editor.dark-editor .ͼ1 .tok-angleBracket { color: #abb2bf; }
+.mdx-note-editor.dark-editor .ͼ1 .tok-keyword {
+  color: #c678dd;
+}
+.mdx-note-editor.dark-editor .ͼ1 .tok-operator {
+  color: #56b6c2;
+}
+.mdx-note-editor.dark-editor .ͼ1 .tok-number {
+  color: #d19a66;
+}
+.mdx-note-editor.dark-editor .ͼ1 .tok-string {
+  color: #98c379;
+}
+.mdx-note-editor.dark-editor .ͼ1 .tok-comment {
+  color: #5c6370;
+  font-style: italic;
+}
+.mdx-note-editor.dark-editor .ͼ1 .tok-variableName {
+  color: #e06c75;
+}
+.mdx-note-editor.dark-editor .ͼ1 .tok-definition {
+  color: #61afef;
+}
+.mdx-note-editor.dark-editor .ͼ1 .tok-function {
+  color: #61afef;
+}
+.mdx-note-editor.dark-editor .ͼ1 .tok-typeName {
+  color: #e5c07b;
+}
+.mdx-note-editor.dark-editor .ͼ1 .tok-className {
+  color: #e5c07b;
+}
+.mdx-note-editor.dark-editor .ͼ1 .tok-propertyName {
+  color: #e06c75;
+}
+.mdx-note-editor.dark-editor .ͼ1 .tok-punctuation {
+  color: #abb2bf;
+}
+.mdx-note-editor.dark-editor .ͼ1 .tok-meta {
+  color: #abb2bf;
+}
+.mdx-note-editor.dark-editor .ͼ1 .tok-bool {
+  color: #d19a66;
+}
+.mdx-note-editor.dark-editor .ͼ1 .tok-null {
+  color: #d19a66;
+}
+.mdx-note-editor.dark-editor .ͼ1 .tok-atom {
+  color: #d19a66;
+}
+.mdx-note-editor.dark-editor .ͼ1 .tok-attributeName {
+  color: #d19a66;
+}
+.mdx-note-editor.dark-editor .ͼ1 .tok-attributeValue {
+  color: #98c379;
+}
+.mdx-note-editor.dark-editor .ͼ1 .tok-tagName {
+  color: #e06c75;
+}
+.mdx-note-editor.dark-editor .ͼ1 .tok-angleBracket {
+  color: #abb2bf;
+}
 
 /* Inline code */
 .mdx-note-editor :not(pre) > code {
@@ -366,7 +407,9 @@
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  box-shadow:
+    0 4px 6px -1px rgba(0, 0, 0, 0.1),
+    0 2px 4px -1px rgba(0, 0, 0, 0.06);
   z-index: 9999 !important;
 }
 

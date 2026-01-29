@@ -50,9 +50,7 @@ const queryClient = new QueryClient()
 /**
  * Migra cache legacy (reduxTreeCache + reduxUIState) alla nuova struttura multi-spazio
  */
-async function migrateFromLegacy(
-  activeSpaceId: string
-): Promise<SpacesCacheStructure | undefined> {
+async function migrateFromLegacy(activeSpaceId: string): Promise<SpacesCacheStructure | undefined> {
   try {
     const [legacyTree, legacyUI] = await Promise.all([
       window.config.get('reduxTreeCache'),

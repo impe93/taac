@@ -10,75 +10,72 @@
  * Reference: docs/AI_ARCHITECTURE.md section 6.2
  */
 
-import type { HardwareInfo, HardwareTier, CPUInfo, MemoryInfo, GPUInfo } from './types'
-
-// TODO: Import systeminformation when implementing
-// import si from 'systeminformation'
+import si from 'systeminformation'
+import type {
+  HardwareInfo,
+  HardwareTier,
+  CPUInfo,
+  MemoryInfo,
+  GPUInfo,
+  ModelRecommendation,
+  EstimatedPerformance
+} from './types'
+import { ModelRegistry } from './ModelRegistry'
 
 /**
- * Hardware tier thresholds
+ * Tier score thresholds
+ * - Ultra: score >= 8 (CPU 8+ cores, RAM 32GB+, VRAM 16GB+)
+ * - High: score >= 5
+ * - Medium: score >= 3
+ * - Low: score < 3
  */
 const TIER_THRESHOLDS = {
-  // RAM thresholds in GB
-  ram: {
-    low: 8,
-    medium: 16,
-    high: 32,
-    ultra: 64
-  },
-  // VRAM thresholds in GB
-  vram: {
-    low: 0,
-    medium: 4,
-    high: 8,
-    ultra: 16
-  }
-}
+  ultra: 8,
+  high: 5,
+  medium: 3
+} as const
 
+/**
+ * Hardware Detector class for system capability detection
+ */
 export class HardwareDetector {
   private static cachedInfo: HardwareInfo | null = null
-  private static cacheTimestamp: number = 0
-  private static readonly CACHE_TTL = 60000 // 1 minute
 
   /**
-   * Detect hardware capabilities
-   * TODO: Implement with systeminformation
+   * Detect system hardware and classify tier
    */
   static async detect(): Promise<HardwareInfo> {
-    // Return cached if valid
-    const now = Date.now()
-    if (this.cachedInfo && now - this.cacheTimestamp < this.CACHE_TTL) {
+    if (this.cachedInfo) {
       return this.cachedInfo
     }
 
-    // TODO: Implement actual hardware detection using systeminformation
-    // const cpu = await si.cpu()
-    // const mem = await si.mem()
-    // const graphics = await si.graphics()
+    const [cpu, mem, graphics] = await Promise.all([si.cpu(), si.mem(), si.graphics()])
+
+    const primaryGpu = graphics.controllers[0]
+
+    const gpuInfo: GPUInfo = {
+      name: primaryGpu?.name || 'Unknown',
+      vendor: primaryGpu?.vendor || 'Unknown',
+      vramBytes: primaryGpu?.vram ? primaryGpu.vram * 1024 * 1024 : null,
+      hasCuda: this.detectCuda(primaryGpu),
+      hasMetal: process.platform === 'darwin',
+      hasVulkan: this.detectVulkan(primaryGpu),
+      driverVersion: primaryGpu?.driverVersion || null
+    }
 
     const cpuInfo: CPUInfo = {
-      brand: 'Unknown',
-      cores: 4,
-      physicalCores: 4,
-      speed: 2400
+      brand: cpu.brand,
+      cores: cpu.cores,
+      physicalCores: cpu.physicalCores,
+      speed: cpu.speed
     }
 
     const memoryInfo: MemoryInfo = {
-      totalBytes: 16 * 1024 * 1024 * 1024, // 16GB placeholder
-      availableBytes: 8 * 1024 * 1024 * 1024
+      totalBytes: mem.total,
+      availableBytes: mem.available
     }
 
-    const gpuInfo: GPUInfo = {
-      name: 'Unknown',
-      vendor: 'Unknown',
-      vramBytes: null,
-      hasCuda: false,
-      hasMetal: process.platform === 'darwin',
-      hasVulkan: false,
-      driverVersion: null
-    }
-
-    const tier = this.calculateTier(memoryInfo, gpuInfo)
+    const tier = this.calculateTier(cpuInfo, memoryInfo, gpuInfo)
 
     this.cachedInfo = {
       cpu: cpuInfo,
@@ -87,29 +84,159 @@ export class HardwareDetector {
       platform: process.platform,
       tier
     }
-    this.cacheTimestamp = now
 
     return this.cachedInfo
   }
 
   /**
-   * Calculate hardware tier based on RAM and VRAM
+   * Get model recommendations based on detected hardware tier
    */
-  static calculateTier(memory: MemoryInfo, gpu: GPUInfo): HardwareTier {
-    const ramGB = memory.totalBytes / (1024 * 1024 * 1024)
-    const vramGB = gpu.vramBytes ? gpu.vramBytes / (1024 * 1024 * 1024) : 0
+  static async getModelRecommendations(): Promise<ModelRecommendation[]> {
+    const hardware = await this.detect()
+    const recommendations: ModelRecommendation[] = []
 
-    // Determine tier based on the limiting factor
-    if (ramGB >= TIER_THRESHOLDS.ram.ultra && vramGB >= TIER_THRESHOLDS.vram.ultra) {
-      return 'ultra'
+    // Get compatible models from registry
+    const compatibleModels = ModelRegistry.getModelsForTier(hardware.tier)
+    const chatModels = compatibleModels.filter((m) => m.capabilities.includes('chat'))
+    const embeddingModels = compatibleModels.filter((m) => m.capabilities.includes('embedding'))
+
+    // Add chat model recommendations based on tier (from highest applicable down)
+    switch (hardware.tier) {
+      case 'ultra':
+        // Ultra tier: can run large models with full GPU offload
+        if (chatModels.find((m) => m.id === 'mistral-7b-q4')) {
+          recommendations.push({
+            modelId: 'mistral-7b-q4',
+            reason: 'Your high-end GPU can handle 7B+ parameter models with excellent performance',
+            estimatedPerformance: 'very-fast',
+            gpuLayersRecommended: -1
+          })
+        }
+      // fallthrough
+      case 'high':
+        // High tier: best quality 7B with full GPU offload
+        if (chatModels.find((m) => m.id === 'mistral-7b-q4') && hardware.tier !== 'ultra') {
+          recommendations.push({
+            modelId: 'mistral-7b-q4',
+            reason: 'Best quality 7B model with full GPU acceleration',
+            estimatedPerformance: 'fast',
+            gpuLayersRecommended: -1
+          })
+        }
+      // fallthrough
+      case 'medium':
+        // Medium tier: smaller models with partial GPU offload
+        if (chatModels.find((m) => m.id === 'llama-3.2-3b-q4')) {
+          const perf: EstimatedPerformance =
+            hardware.tier === 'high' || hardware.tier === 'ultra' ? 'very-fast' : 'fast'
+          recommendations.push({
+            modelId: 'llama-3.2-3b-q4',
+            reason: 'Great balance of quality and speed for most systems',
+            estimatedPerformance: perf,
+            gpuLayersRecommended: hardware.tier === 'medium' ? 20 : -1
+          })
+        }
+      // fallthrough
+      case 'low':
+        // Low tier: lightweight models with minimal GPU usage
+        if (chatModels.find((m) => m.id === 'phi-3-mini-4k-q4')) {
+          const perf: EstimatedPerformance = hardware.tier === 'low' ? 'moderate' : 'fast'
+          recommendations.push({
+            modelId: 'phi-3-mini-4k-q4',
+            reason: 'Lightweight model optimized for limited hardware',
+            estimatedPerformance: perf,
+            gpuLayersRecommended: hardware.tier === 'low' ? 0 : 16
+          })
+        }
+        break
     }
-    if (ramGB >= TIER_THRESHOLDS.ram.high && vramGB >= TIER_THRESHOLDS.vram.high) {
-      return 'high'
+
+    // Always recommend embedding model if available
+    if (embeddingModels.length > 0) {
+      const embedModel = embeddingModels[0]
+      recommendations.push({
+        modelId: embedModel.id,
+        reason: 'Required for semantic search and RAG functionality',
+        estimatedPerformance: 'fast',
+        gpuLayersRecommended: -1
+      })
     }
-    if (ramGB >= TIER_THRESHOLDS.ram.medium && vramGB >= TIER_THRESHOLDS.vram.medium) {
-      return 'medium'
+
+    return recommendations
+  }
+
+  /**
+   * Calculate hardware tier based on CPU, RAM, and GPU specs
+   *
+   * Scoring:
+   * - CPU: max 2 points (8+ physical cores = 2, 4+ = 1)
+   * - RAM: max 2 points (32GB+ = 2, 16GB+ = 1)
+   * - VRAM: max 4 points (16GB+ = 4, 8GB+ = 3, 4GB+ = 2)
+   * - Apple Silicon bonus: +2 for Metal with Apple GPU (unified memory advantage)
+   */
+  private static calculateTier(cpu: CPUInfo, memory: MemoryInfo, gpu: GPUInfo): HardwareTier {
+    let score = 0
+
+    // CPU scoring (max 2 points)
+    if (cpu.physicalCores >= 8) {
+      score += 2
+    } else if (cpu.physicalCores >= 4) {
+      score += 1
     }
+
+    // RAM scoring (max 2 points)
+    const ramGB = memory.totalBytes / (1024 * 1024 * 1024)
+    if (ramGB >= 32) {
+      score += 2
+    } else if (ramGB >= 16) {
+      score += 1
+    }
+
+    // GPU/VRAM scoring (max 4 points)
+    if (gpu.vramBytes) {
+      const vramGB = gpu.vramBytes / (1024 * 1024 * 1024)
+      if (vramGB >= 16) {
+        score += 4
+      } else if (vramGB >= 8) {
+        score += 3
+      } else if (vramGB >= 4) {
+        score += 2
+      }
+    }
+
+    // Bonus for Apple Silicon with unified memory
+    if (gpu.hasMetal && gpu.name.toLowerCase().includes('apple')) {
+      score += 2
+    }
+
+    // Classify tier based on score
+    if (score >= TIER_THRESHOLDS.ultra) return 'ultra'
+    if (score >= TIER_THRESHOLDS.high) return 'high'
+    if (score >= TIER_THRESHOLDS.medium) return 'medium'
     return 'low'
+  }
+
+  /**
+   * Detect CUDA support (NVIDIA GPU)
+   */
+  private static detectCuda(gpu: si.Systeminformation.GraphicsControllerData | undefined): boolean {
+    if (!gpu) return false
+    return gpu.vendor?.toLowerCase().includes('nvidia') || false
+  }
+
+  /**
+   * Detect Vulkan support (AMD/Intel GPU)
+   */
+  private static detectVulkan(
+    gpu: si.Systeminformation.GraphicsControllerData | undefined
+  ): boolean {
+    if (!gpu) return false
+    // Most modern AMD and Intel GPUs support Vulkan
+    return (
+      gpu.vendor?.toLowerCase().includes('amd') ||
+      gpu.vendor?.toLowerCase().includes('intel') ||
+      false
+    )
   }
 
   /**
@@ -120,7 +247,7 @@ export class HardwareDetector {
   }
 
   /**
-   * Get recommended GPU backend
+   * Get recommended GPU backend for the current hardware
    */
   static getRecommendedGpuBackend(info: HardwareInfo): 'cuda' | 'metal' | 'vulkan' | false {
     if (info.gpu.hasCuda) return 'cuda'
@@ -130,10 +257,9 @@ export class HardwareDetector {
   }
 
   /**
-   * Clear cached hardware info
+   * Clear cached hardware info (useful for testing)
    */
   static clearCache(): void {
     this.cachedInfo = null
-    this.cacheTimestamp = 0
   }
 }

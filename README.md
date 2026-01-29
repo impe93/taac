@@ -28,6 +28,7 @@ TaacNotes includes a comprehensive file system management layer for handling not
 ### Architecture
 
 **Main Process** (`src/main/utils/fileSystem.ts`):
+
 - `FileSystemManager` class handles all file operations
 - Stores data in platform-specific `userData` directory
 - Provides CRUD operations for notes, folders, and assets
@@ -35,16 +36,19 @@ TaacNotes includes a comprehensive file system management layer for handling not
 - UUID-based file naming for security
 
 **IPC Handlers** (`src/main/ipc/`):
+
 - `fileHandlers.ts` - Exposes file operations to renderer via IPC
 - `configHandlers.ts` - Exposes configuration operations
 - All operations use async `ipcMain.handle()` for request/response pattern
 
 **Preload Bridge** (`src/preload/index.ts`):
+
 - Exposes `window.fileSystem` and `window.config` APIs via `contextBridge`
 - Maintains context isolation for security
 - Full TypeScript type definitions in `src/preload/index.d.ts`
 
 **React Hooks** (`src/renderer/src/hooks/`):
+
 - `useFileSystem.ts` - TanStack Query hooks for notes, folders, and assets
 - `useConfig.ts` - Configuration management hooks
 - Automatic cache invalidation and optimistic updates
@@ -73,6 +77,7 @@ TaacNotes includes a comprehensive file system management layer for handling not
 ### Usage Examples
 
 **Creating a Note:**
+
 ```typescript
 import { useCreateNote } from '@renderer/hooks/useFileSystem'
 
@@ -86,6 +91,7 @@ createNote({
 ```
 
 **Listing Notes:**
+
 ```typescript
 import { useNotes } from '@renderer/hooks/useFileSystem'
 
@@ -93,6 +99,7 @@ const { data: notes, isLoading } = useNotes(folderId)
 ```
 
 **Managing Config:**
+
 ```typescript
 import { useConfig, useSetConfig } from '@renderer/hooks/useConfig'
 
@@ -105,6 +112,7 @@ setTheme({ key: 'theme', value: 'dark' })
 ### Type Safety
 
 All file operations are fully typed with TypeScript interfaces:
+
 - `Note` - Lexical editor state with metadata
 - `FolderMetadata` - Folder tree structure
 - `Asset` - File attachment metadata

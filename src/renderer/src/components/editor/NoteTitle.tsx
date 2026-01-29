@@ -1,4 +1,11 @@
-import { type FC, useState, useCallback, useEffect, type ChangeEvent, type KeyboardEvent } from 'react'
+import {
+  type FC,
+  useState,
+  useCallback,
+  useEffect,
+  type ChangeEvent,
+  type KeyboardEvent
+} from 'react'
 import { cn } from '@renderer/lib/utils'
 
 interface NoteTitleProps {

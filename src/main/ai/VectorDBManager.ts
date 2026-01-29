@@ -92,10 +92,7 @@ export class VectorDBManager {
    * Search for similar notes
    * TODO: Implement vector similarity search
    */
-  async search(
-    _queryEmbedding: number[],
-    _limit: number = 10
-  ): Promise<SearchResult[]> {
+  async search(_queryEmbedding: number[], _limit: number = 10): Promise<SearchResult[]> {
     // TODO: Implement KNN search using sqlite-vec
     throw new Error('Not implemented')
   }

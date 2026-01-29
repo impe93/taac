@@ -83,7 +83,10 @@ export class SpaceManager {
       await fsManager.initialize()
       console.log(`[SpaceManager] Initialized FileSystemManager for new space: ${spaceId}`)
     } catch (error) {
-      console.error(`[SpaceManager] Failed to initialize FileSystemManager for space ${spaceId}:`, error)
+      console.error(
+        `[SpaceManager] Failed to initialize FileSystemManager for space ${spaceId}:`,
+        error
+      )
       // Don't fail space creation if FileSystemManager init fails
     }
 

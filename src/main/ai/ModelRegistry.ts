@@ -98,7 +98,9 @@ export class ModelRegistry {
   /**
    * Get models filtered by capability
    */
-  static getModelsByCapability(capability: 'chat' | 'embedding' | 'code' | 'reasoning'): ModelDefinition[] {
+  static getModelsByCapability(
+    capability: 'chat' | 'embedding' | 'code' | 'reasoning'
+  ): ModelDefinition[] {
     return MODELS.filter((m) => m.capabilities.includes(capability))
   }
 

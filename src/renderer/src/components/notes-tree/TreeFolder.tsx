@@ -9,7 +9,11 @@ import {
 } from '@renderer/store/slices/notesTreeSlice'
 import { useDraggable, useDroppable } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@renderer/components/ui/collapsible'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger
+} from '@renderer/components/ui/collapsible'
 import { ChevronRight, Folder, FolderOpen, MoreHorizontal } from 'lucide-react'
 import { cn } from '@renderer/lib/utils'
 import { TreeNote } from './TreeNote'
