@@ -135,7 +135,7 @@ Includi anche una utility function formatBytes(). Riferimento: docs/AI_ARCHITECT
 
 ---
 
-### Task 1.6: Implementazione HardwareDetector
+### Task 1.6: Implementazione HardwareDetector (FATTO)
 
 **Descrizione**: Implementare il modulo HardwareDetector che rileva CPU, RAM, GPU e classifica il sistema in tier hardware (low, medium, high, ultra).
 
@@ -164,7 +164,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 6.2.
 
 ---
 
-### Task 1.7: Implementazione ModelRegistry
+### Task 1.7: Implementazione ModelRegistry (FATTO)
 
 **Descrizione**: Implementare il registro dei modelli curati con la lista di modelli testati per ogni tier hardware.
 
