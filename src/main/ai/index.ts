@@ -1,0 +1,31 @@
+/**
+ * AI Module - Barrel Export
+ *
+ * Central export point for all AI-related modules.
+ * Reference: docs/AI_ARCHITECTURE.md section 5
+ */
+
+// Types
+export * from './types'
+
+// Error classes
+export * from './errors'
+
+// Core managers
+export { AIManager } from './AIManager'
+export type { AIManagerConfig } from './AIManager'
+
+export { HardwareDetector } from './HardwareDetector'
+
+export { ModelRegistry } from './ModelRegistry'
+
+export { ModelDownloader } from './ModelDownloader'
+export type { DownloadCallbacks } from './ModelDownloader'
+
+export { VectorDBManager } from './VectorDBManager'
+export type { VectorDBConfig } from './VectorDBManager'
+
+export { ConversationManager } from './ConversationManager'
+
+export { EmbeddingService } from './EmbeddingService'
+export type { ChunkingOptions, TextChunk } from './EmbeddingService'
