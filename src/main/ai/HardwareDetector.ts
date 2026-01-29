@@ -10,7 +10,7 @@
  * Reference: docs/AI_ARCHITECTURE.md section 6.2
  */
 
-import type { HardwareInfo, HardwareTier, CPUInfo, RAMInfo, GPUInfo } from './types'
+import type { HardwareInfo, HardwareTier, CPUInfo, MemoryInfo, GPUInfo } from './types'
 
 // TODO: Import systeminformation when implementing
 // import si from 'systeminformation'
@@ -57,30 +57,34 @@ export class HardwareDetector {
     // const graphics = await si.graphics()
 
     const cpuInfo: CPUInfo = {
-      model: 'Unknown',
+      brand: 'Unknown',
       cores: 4,
-      threads: 8
+      physicalCores: 4,
+      speed: 2400
     }
 
-    const ramInfo: RAMInfo = {
-      total: 16 * 1024 * 1024 * 1024, // 16GB placeholder
-      available: 8 * 1024 * 1024 * 1024
+    const memoryInfo: MemoryInfo = {
+      totalBytes: 16 * 1024 * 1024 * 1024, // 16GB placeholder
+      availableBytes: 8 * 1024 * 1024 * 1024
     }
 
     const gpuInfo: GPUInfo = {
-      model: null,
-      vram: null,
+      name: 'Unknown',
+      vendor: 'Unknown',
+      vramBytes: null,
       hasCuda: false,
       hasMetal: process.platform === 'darwin',
-      hasVulkan: false
+      hasVulkan: false,
+      driverVersion: null
     }
 
-    const tier = this.calculateTier(ramInfo, gpuInfo)
+    const tier = this.calculateTier(memoryInfo, gpuInfo)
 
     this.cachedInfo = {
       cpu: cpuInfo,
-      ram: ramInfo,
+      memory: memoryInfo,
       gpu: gpuInfo,
+      platform: process.platform,
       tier
     }
     this.cacheTimestamp = now
@@ -91,9 +95,9 @@ export class HardwareDetector {
   /**
    * Calculate hardware tier based on RAM and VRAM
    */
-  static calculateTier(ram: RAMInfo, gpu: GPUInfo): HardwareTier {
-    const ramGB = ram.total / (1024 * 1024 * 1024)
-    const vramGB = gpu.vram ? gpu.vram / (1024 * 1024 * 1024) : 0
+  static calculateTier(memory: MemoryInfo, gpu: GPUInfo): HardwareTier {
+    const ramGB = memory.totalBytes / (1024 * 1024 * 1024)
+    const vramGB = gpu.vramBytes ? gpu.vramBytes / (1024 * 1024 * 1024) : 0
 
     // Determine tier based on the limiting factor
     if (ramGB >= TIER_THRESHOLDS.ram.ultra && vramGB >= TIER_THRESHOLDS.vram.ultra) {

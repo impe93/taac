@@ -2,65 +2,170 @@
  * AI Module - Shared TypeScript Types
  *
  * Contains all shared type definitions for the AI subsystem.
- * Reference: docs/AI_ARCHITECTURE.md
+ * Reference: docs/AI_ARCHITECTURE.md Appendix A
  */
 
-// TODO: Implement hardware detection types
-export interface HardwareInfo {
-  cpu: CPUInfo
-  ram: RAMInfo
-  gpu: GPUInfo
-  tier: HardwareTier
-}
+// ============================================================================
+// HARDWARE TYPES
+// ============================================================================
 
+/**
+ * Hardware tier classification for model recommendations
+ */
+export type HardwareTier = 'low' | 'medium' | 'high' | 'ultra'
+
+/**
+ * CPU information
+ */
 export interface CPUInfo {
-  model: string
+  brand: string
   cores: number
-  threads: number
+  physicalCores: number
+  speed: number
 }
 
-export interface RAMInfo {
-  total: number // bytes
-  available: number // bytes
+/**
+ * Memory information
+ */
+export interface MemoryInfo {
+  totalBytes: number
+  availableBytes: number
 }
 
+/**
+ * GPU information for hardware detection
+ */
 export interface GPUInfo {
-  model: string | null
-  vram: number | null // bytes
+  name: string
+  vendor: string
+  vramBytes: number | null
   hasCuda: boolean
   hasMetal: boolean
   hasVulkan: boolean
+  driverVersion: string | null
 }
 
-export type HardwareTier = 'low' | 'medium' | 'high' | 'ultra'
+/**
+ * Complete hardware information for the system
+ */
+export interface HardwareInfo {
+  cpu: CPUInfo
+  memory: MemoryInfo
+  gpu: GPUInfo
+  platform: NodeJS.Platform
+  tier: HardwareTier
+}
 
-// TODO: Implement model types
+// ============================================================================
+// MODEL TYPES
+// ============================================================================
+
+/**
+ * Model capability types
+ */
+export type ModelCapability = 'chat' | 'embedding' | 'code' | 'reasoning'
+
+/**
+ * Performance estimation levels
+ */
+export type EstimatedPerformance = 'slow' | 'moderate' | 'fast' | 'very-fast'
+
+/**
+ * Definition of an AI model available for download
+ */
 export interface ModelDefinition {
   id: string
   name: string
+  description: string
   filename: string
-  sizeBytes: number
-  quantization: string
-  contextSize: number
-  type: 'chat' | 'embedding'
-  minTier: HardwareTier
   downloadUrl: string
-  sha256?: string
+  sizeBytes: number
+  layers: number
+  contextLength: number
+  quantization: string
+  capabilities: ModelCapability[]
+  hardwareTier: HardwareTier
+  license: string
 }
 
+/**
+ * Model recommendation based on hardware capabilities
+ */
+export interface ModelRecommendation {
+  modelId: string
+  reason: string
+  estimatedPerformance: EstimatedPerformance
+  gpuLayersRecommended: number // -1 = all layers
+}
+
+/**
+ * Information about a loaded model in memory
+ */
 export interface LoadedModel {
   id: string
   lastUsed: number
   memoryUsage: number
 }
 
-// TODO: Implement chat types
-export interface ChatMessage {
-  role: 'user' | 'assistant' | 'system'
-  content: string
-  timestamp?: number
+// ============================================================================
+// DOWNLOAD TYPES
+// ============================================================================
+
+/**
+ * Download status for model downloads
+ */
+export type DownloadStatus = 'pending' | 'downloading' | 'paused' | 'completed' | 'error'
+
+/**
+ * Progress information for model downloads
+ */
+export interface DownloadProgress {
+  modelId: string
+  filename: string
+  bytesDownloaded: number
+  totalBytes: number
+  percentage: number
+  speed: number // bytes per second
+  eta: number // seconds remaining
+  status: DownloadStatus
+  error?: string
 }
 
+// ============================================================================
+// CHAT TYPES
+// ============================================================================
+
+/**
+ * Role in a chat conversation
+ */
+export type ChatRole = 'user' | 'assistant' | 'system'
+
+/**
+ * A single message in a conversation
+ */
+export interface ChatMessage {
+  id: string
+  role: ChatRole
+  content: string
+  timestamp: string
+  noteReferences?: NoteReference[]
+  metadata?: Record<string, unknown>
+}
+
+/**
+ * Reference to a note used in conversation context
+ */
+export interface NoteReference {
+  noteId: string
+  spaceId: string
+  title: string
+  excerpt: string
+  relevanceScore?: number
+}
+
+/**
+ * Options for text generation
+ */
 export interface GenerationOptions {
   maxTokens?: number
   temperature?: number
@@ -68,29 +173,84 @@ export interface GenerationOptions {
   stopSequences?: string[]
 }
 
+/**
+ * Result from a chat completion
+ */
 export interface ChatCompletionResult {
   response: string
   tokensUsed: number
 }
 
-// TODO: Implement conversation types
+// ============================================================================
+// CONVERSATION TYPES
+// ============================================================================
+
+/**
+ * Metadata associated with a conversation
+ */
+export interface ConversationMetadata {
+  totalTokens: number
+  lastModelResponse?: string
+}
+
+/**
+ * Full conversation with all messages
+ */
 export interface Conversation {
   id: string
   title: string
-  messages: ChatMessage[]
   modelId: string
-  createdAt: number
-  updatedAt: number
-  noteReferences: NoteReference[]
+  systemPrompt?: string
+  messages: ChatMessage[]
+  noteContext: NoteReference[]
+  createdAt: string
+  updatedAt: string
+  metadata: ConversationMetadata
 }
 
-export interface NoteReference {
-  spaceId: string
+/**
+ * Summary of a conversation for listing
+ */
+export interface ConversationSummary {
+  id: string
+  title: string
+  modelId: string
+  messageCount: number
+  noteCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+// ============================================================================
+// VECTOR DATABASE TYPES
+// ============================================================================
+
+/**
+ * A document stored in the vector database
+ */
+export interface VectorDocument {
+  id: string
   noteId: string
-  notePath: string
+  chunkIndex: number
+  content: string
+  embedding?: number[]
+  metadata?: Record<string, unknown>
 }
 
-// TODO: Implement vector DB types
+/**
+ * Result from a vector similarity search
+ */
+export interface SearchResult {
+  id: string
+  noteId: string
+  content: string
+  distance: number
+  metadata: Record<string, unknown>
+}
+
+/**
+ * Result from embedding generation
+ */
 export interface EmbeddingResult {
   noteId: string
   chunkIndex: number
@@ -98,21 +258,24 @@ export interface EmbeddingResult {
   text: string
 }
 
-export interface SearchResult {
-  noteId: string
-  notePath: string
-  spaceId: string
-  chunkText: string
-  score: number
+// ============================================================================
+// CHUNKING TYPES
+// ============================================================================
+
+/**
+ * Options for text chunking during indexing
+ */
+export interface ChunkingOptions {
+  maxChunkSize: number
+  overlapSize: number
+  splitOnParagraph: boolean
 }
 
-// TODO: Implement download types
-export interface DownloadProgress {
-  modelId: string
-  downloadedBytes: number
-  totalBytes: number
-  percentage: number
-  speed: number // bytes per second
-  status: 'pending' | 'downloading' | 'paused' | 'completed' | 'error'
-  error?: string
+/**
+ * Default chunking options
+ */
+export const DEFAULT_CHUNKING_OPTIONS: ChunkingOptions = {
+  maxChunkSize: 512,
+  overlapSize: 50,
+  splitOnParagraph: true
 }

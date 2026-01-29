@@ -55,7 +55,7 @@ export class ConversationManager {
     initialMessage?: ChatMessage
   ): Promise<Conversation> {
     const id = this.generateId()
-    const now = Date.now()
+    const now = new Date().toISOString()
 
     const conversation: Conversation = {
       id,
@@ -64,7 +64,10 @@ export class ConversationManager {
       modelId,
       createdAt: now,
       updatedAt: now,
-      noteReferences: []
+      noteContext: [],
+      metadata: {
+        totalTokens: 0
+      }
     }
 
     this.conversations.set(id, conversation)
@@ -89,7 +92,9 @@ export class ConversationManager {
    * Get all conversations
    */
   getAll(): Conversation[] {
-    return Array.from(this.conversations.values()).sort((a, b) => b.updatedAt - a.updatedAt)
+    return Array.from(this.conversations.values()).sort(
+      (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    )
   }
 
   /**
@@ -99,7 +104,7 @@ export class ConversationManager {
   async addMessage(conversationId: string, message: ChatMessage): Promise<void> {
     const conversation = this.get(conversationId)
     conversation.messages.push(message)
-    conversation.updatedAt = Date.now()
+    conversation.updatedAt = new Date().toISOString()
 
     // TODO: Persist to disk
   }
@@ -112,12 +117,12 @@ export class ConversationManager {
     const conversation = this.get(conversationId)
 
     // Avoid duplicates
-    const exists = conversation.noteReferences.some(
+    const exists = conversation.noteContext.some(
       (r) => r.spaceId === reference.spaceId && r.noteId === reference.noteId
     )
     if (!exists) {
-      conversation.noteReferences.push(reference)
-      conversation.updatedAt = Date.now()
+      conversation.noteContext.push(reference)
+      conversation.updatedAt = new Date().toISOString()
     }
 
     // TODO: Persist to disk
@@ -130,7 +135,7 @@ export class ConversationManager {
   async updateTitle(conversationId: string, title: string): Promise<void> {
     const conversation = this.get(conversationId)
     conversation.title = title
-    conversation.updatedAt = Date.now()
+    conversation.updatedAt = new Date().toISOString()
 
     // TODO: Persist to disk
   }

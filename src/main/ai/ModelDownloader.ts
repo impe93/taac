@@ -11,12 +11,12 @@
  */
 
 import type { ModelDefinition, DownloadProgress } from './types'
-import { DownloadError } from './errors'
+import { DownloadFailedError } from './errors'
 
 export interface DownloadCallbacks {
   onProgress?: (progress: DownloadProgress) => void
   onComplete?: (modelId: string) => void
-  onError?: (error: DownloadError) => void
+  onError?: (error: DownloadFailedError) => void
 }
 
 export class ModelDownloader {
@@ -46,17 +46,19 @@ export class ModelDownloader {
       // Placeholder progress
       callbacks?.onProgress?.({
         modelId: model.id,
-        downloadedBytes: 0,
+        filename: model.filename,
+        bytesDownloaded: 0,
         totalBytes: model.sizeBytes,
         percentage: 0,
         speed: 0,
+        eta: 0,
         status: 'pending'
       })
 
       // TODO: Implement actual download
       throw new Error('Not implemented')
     } catch (error) {
-      const downloadError = new DownloadError(
+      const downloadError = new DownloadFailedError(
         model.id,
         error instanceof Error ? error.message : 'Unknown error'
       )

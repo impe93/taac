@@ -20,47 +20,63 @@ const MODELS: ModelDefinition[] = [
   {
     id: 'phi-3-mini-4k-q4',
     name: 'Phi-3 Mini 4K (Q4_K_M)',
+    description: 'Microsoft Phi-3 Mini optimized for resource-constrained environments',
     filename: 'Phi-3-mini-4k-instruct-Q4_K_M.gguf',
     sizeBytes: 2.4 * 1024 * 1024 * 1024, // ~2.4GB
+    layers: 32,
     quantization: 'Q4_K_M',
-    contextSize: 4096,
-    type: 'chat',
-    minTier: 'low',
-    downloadUrl: 'https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf/resolve/main/Phi-3-mini-4k-instruct-Q4_K_M.gguf'
+    contextLength: 4096,
+    capabilities: ['chat'],
+    hardwareTier: 'low',
+    downloadUrl:
+      'https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf/resolve/main/Phi-3-mini-4k-instruct-Q4_K_M.gguf',
+    license: 'MIT'
   },
   {
     id: 'llama-3.2-3b-q4',
     name: 'Llama 3.2 3B (Q4_K_M)',
+    description: 'Meta Llama 3.2 3B parameter model for general chat tasks',
     filename: 'Llama-3.2-3B-Instruct-Q4_K_M.gguf',
     sizeBytes: 2.0 * 1024 * 1024 * 1024, // ~2GB
+    layers: 28,
     quantization: 'Q4_K_M',
-    contextSize: 8192,
-    type: 'chat',
-    minTier: 'low',
-    downloadUrl: 'https://huggingface.co/lmstudio-community/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf'
+    contextLength: 8192,
+    capabilities: ['chat'],
+    hardwareTier: 'low',
+    downloadUrl:
+      'https://huggingface.co/lmstudio-community/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf',
+    license: 'Llama 3.2 Community License'
   },
   {
     id: 'mistral-7b-q4',
     name: 'Mistral 7B (Q4_K_M)',
+    description: 'Mistral 7B instruction-tuned model for advanced chat capabilities',
     filename: 'mistral-7b-instruct-v0.2.Q4_K_M.gguf',
     sizeBytes: 4.4 * 1024 * 1024 * 1024, // ~4.4GB
+    layers: 32,
     quantization: 'Q4_K_M',
-    contextSize: 8192,
-    type: 'chat',
-    minTier: 'medium',
-    downloadUrl: 'https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.2-GGUF/resolve/main/mistral-7b-instruct-v0.2.Q4_K_M.gguf'
+    contextLength: 8192,
+    capabilities: ['chat', 'code'],
+    hardwareTier: 'medium',
+    downloadUrl:
+      'https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.2-GGUF/resolve/main/mistral-7b-instruct-v0.2.Q4_K_M.gguf',
+    license: 'Apache 2.0'
   },
   // Embedding models
   {
     id: 'nomic-embed-text-v1.5',
     name: 'Nomic Embed Text v1.5 (Q8_0)',
+    description: 'High-quality text embedding model for semantic search',
     filename: 'nomic-embed-text-v1.5.Q8_0.gguf',
     sizeBytes: 140 * 1024 * 1024, // ~140MB
+    layers: 12,
     quantization: 'Q8_0',
-    contextSize: 8192,
-    type: 'embedding',
-    minTier: 'low',
-    downloadUrl: 'https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5.Q8_0.gguf'
+    contextLength: 8192,
+    capabilities: ['embedding'],
+    hardwareTier: 'low',
+    downloadUrl:
+      'https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5.Q8_0.gguf',
+    license: 'Apache 2.0'
   }
 ]
 
@@ -80,10 +96,10 @@ export class ModelRegistry {
   }
 
   /**
-   * Get models filtered by type
+   * Get models filtered by capability
    */
-  static getModelsByType(type: 'chat' | 'embedding'): ModelDefinition[] {
-    return MODELS.filter((m) => m.type === type)
+  static getModelsByCapability(capability: 'chat' | 'embedding' | 'code' | 'reasoning'): ModelDefinition[] {
+    return MODELS.filter((m) => m.capabilities.includes(capability))
   }
 
   /**
@@ -94,7 +110,7 @@ export class ModelRegistry {
     const tierIndex = tierOrder.indexOf(tier)
 
     return MODELS.filter((m) => {
-      const modelTierIndex = tierOrder.indexOf(m.minTier)
+      const modelTierIndex = tierOrder.indexOf(m.hardwareTier)
       return modelTierIndex <= tierIndex
     })
   }
@@ -109,8 +125,8 @@ export class ModelRegistry {
     const compatible = this.getModelsForTier(tier)
 
     // Get the most capable compatible model of each type
-    const chatModels = compatible.filter((m) => m.type === 'chat')
-    const embeddingModels = compatible.filter((m) => m.type === 'embedding')
+    const chatModels = compatible.filter((m) => m.capabilities.includes('chat'))
+    const embeddingModels = compatible.filter((m) => m.capabilities.includes('embedding'))
 
     return {
       chat: chatModels[chatModels.length - 1], // Last one is most capable
@@ -126,6 +142,6 @@ export class ModelRegistry {
     if (!model) return false
 
     const tierOrder: HardwareTier[] = ['low', 'medium', 'high', 'ultra']
-    return tierOrder.indexOf(model.minTier) <= tierOrder.indexOf(tier)
+    return tierOrder.indexOf(model.hardwareTier) <= tierOrder.indexOf(tier)
   }
 }

@@ -56,7 +56,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 10.2. Assicurati che la configurazi
 
 ---
 
-### Task 1.3: Creazione struttura directory AI
+### Task 1.3: Creazione struttura directory AI (FATTO)
 
 **Descrizione**: Creare la struttura di directory per i moduli AI nel main process. Creare i file placeholder con export vuoti per definire l'architettura.
 
@@ -82,7 +82,7 @@ Per ora crea solo la struttura con commenti TODO. Riferimento: docs/AI_ARCHITECT
 
 ---
 
-### Task 1.4: Implementazione types.ts
+### Task 1.4: Implementazione types.ts (FATTO)
 
 **Descrizione**: Implementare tutte le interfacce e tipi TypeScript condivisi per il modulo AI, come definito nell'architettura.
 
@@ -108,7 +108,7 @@ Riferimento completo: docs/AI_ARCHITECTURE.md Appendice A.
 
 ---
 
-### Task 1.5: Implementazione errors.ts
+### Task 1.5: Implementazione errors.ts (FATTO)
 
 **Descrizione**: Implementare le classi di errore custom per una gestione errori consistente nel modulo AI.
 
