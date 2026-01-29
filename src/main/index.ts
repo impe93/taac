@@ -9,6 +9,7 @@ import { configStore } from './utils/configStore'
 import { registerFileHandlers } from './ipc/fileHandlers'
 import { registerConfigHandlers } from './ipc/configHandlers'
 import { registerSpaceHandlers } from './ipc/spaceHandlers'
+import { registerAIHandlers } from './ipc/aiHandlers'
 
 // Register custom protocol for serving local assets
 // Must be called before app is ready
@@ -145,6 +146,7 @@ app.whenReady().then(async () => {
   registerSpaceHandlers(spaceManager)
   registerFileHandlers(getOrCreateFsManager)
   registerConfigHandlers()
+  registerAIHandlers(getOrCreateFsManager)
 
   // Default open or close DevTools by F12 in development
   // and ignore CommandOrControl + R in production.

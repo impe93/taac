@@ -194,7 +194,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 6.4.
 
 ---
 
-### Task 1.8: IPC Handlers base per Hardware
+### Task 1.8: IPC Handlers base per Hardware (FATTO)
 
 **Descrizione**: Creare gli IPC handlers per esporre le funzionalità di hardware detection al renderer process.
 
