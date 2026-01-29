@@ -7,9 +7,13 @@ import type {
   Space,
   MoveFolderToSpaceResult
 } from './types'
+import type { HardwareInfo, ModelRecommendation, ModelDefinition } from '../main/ai/types'
 
 // Re-export types from types.ts for convenience
 export type { Note, FolderMetadata, Asset, AppConfig, Space, MoveFolderToSpaceResult }
+
+// Re-export AI types for convenience
+export type { HardwareInfo, ModelRecommendation, ModelDefinition }
 
 // File System API interface
 export interface FileSystemAPI {
@@ -101,6 +105,13 @@ export interface ConfigAPI {
   ) => void
 }
 
+// AI API interface
+export interface AIAPI {
+  getHardwareInfo: () => Promise<HardwareInfo>
+  getModelRecommendations: () => Promise<ModelRecommendation[]>
+  listAvailableModels: () => Promise<ModelDefinition[]>
+}
+
 // Global window interface
 declare global {
   interface Window {
@@ -109,5 +120,6 @@ declare global {
     config: ConfigAPI
     space: SpaceAPI
     platform: NodeJS.Platform
+    ai: AIAPI
   }
 }

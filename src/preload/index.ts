@@ -104,6 +104,15 @@ const configAPI = {
   }
 }
 
+// AI API
+const aiAPI = {
+  getHardwareInfo: () => ipcRenderer.invoke('ai:getHardwareInfo'),
+
+  getModelRecommendations: () => ipcRenderer.invoke('ai:getModelRecommendations'),
+
+  listAvailableModels: () => ipcRenderer.invoke('ai:listAvailableModels')
+}
+
 // Use `contextBridge` APIs to expose Electron APIs to
 // renderer only if context isolation is enabled, otherwise
 // just add to the DOM global.
@@ -114,6 +123,7 @@ if (process.contextIsolated) {
     contextBridge.exposeInMainWorld('config', configAPI)
     contextBridge.exposeInMainWorld('space', spaceAPI)
     contextBridge.exposeInMainWorld('platform', process.platform)
+    contextBridge.exposeInMainWorld('ai', aiAPI)
   } catch (error) {
     console.error(error)
   }
@@ -128,4 +138,6 @@ if (process.contextIsolated) {
   window.space = spaceAPI
   // @ts-ignore (define in dts)
   window.platform = process.platform
+  // @ts-ignore (define in dts)
+  window.ai = aiAPI
 }

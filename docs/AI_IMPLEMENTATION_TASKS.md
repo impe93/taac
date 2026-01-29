@@ -217,7 +217,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 7, handlers HARDWARE DETECTION e pa
 
 ---
 
-### Task 1.9: Preload API per Hardware
+### Task 1.9: Preload API per Hardware (FATTO)
 
 **Descrizione**: Estendere il preload script per esporre le API di hardware detection al renderer.
 
