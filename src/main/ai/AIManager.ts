@@ -9,13 +9,18 @@
  * Reference: docs/AI_ARCHITECTURE.md section 6.1
  */
 
-import { getLlama, Llama, LlamaModel, LlamaContext, LlamaEmbeddingContext } from 'node-llama-cpp'
+// Use type-only imports for node-llama-cpp (erased at compile time)
+// The actual module is loaded dynamically in initialize() to avoid ESM/CJS issues
+import type { Llama, LlamaModel, LlamaContext, LlamaEmbeddingContext } from 'node-llama-cpp'
 import { app } from 'electron'
 import { join } from 'path'
 import { HardwareDetector } from './HardwareDetector'
 import { ModelRegistry } from './ModelRegistry'
 import type { HardwareInfo, ModelDefinition } from './types'
 import { AINotInitializedError, ModelNotFoundError, ModelLoadError } from './errors'
+
+// Type for the dynamically imported node-llama-cpp module
+type NodeLlamaCpp = typeof import('node-llama-cpp')
 
 /**
  * Configuration for the AI Manager
@@ -47,6 +52,8 @@ interface InternalLoadedModel {
 export class AIManager {
   private static instance: AIManager | null = null
 
+  // Dynamically imported node-llama-cpp module (loaded in initialize())
+  private nodeLlamaCpp: NodeLlamaCpp | null = null
   private llama: Llama | null = null
   private loadedModels: Map<string, InternalLoadedModel> = new Map()
   private config: AIManagerConfig
@@ -87,6 +94,10 @@ export class AIManager {
   async initialize(): Promise<void> {
     if (this.initialized) return
 
+    // Dynamically import node-llama-cpp (ESM module with top-level await)
+    // This must be done with dynamic import() to avoid CJS/ESM compatibility issues
+    this.nodeLlamaCpp = await import('node-llama-cpp')
+
     // Detect hardware first
     const hardware = await HardwareDetector.detect()
     this.hardwareInfo = hardware
@@ -95,7 +106,7 @@ export class AIManager {
     const gpuBackend = HardwareDetector.getRecommendedGpuBackend(hardware)
 
     // Initialize llama.cpp with detected backend
-    this.llama = await getLlama({
+    this.llama = await this.nodeLlamaCpp.getLlama({
       gpu: gpuBackend
     })
 
@@ -262,6 +273,7 @@ export class AIManager {
 
     this.initialized = false
     this.llama = null
+    this.nodeLlamaCpp = null
     this.hardwareInfo = null
   }
 
