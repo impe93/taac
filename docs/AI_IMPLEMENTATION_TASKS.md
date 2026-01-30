@@ -395,7 +395,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 9.
 
 ---
 
-### Task 2.5: Componente ModelCard
+### Task 2.5: Componente ModelCard (FATTO)
 
 **Descrizione**: Creare il componente per visualizzare un singolo modello con stato download e azioni.
 
