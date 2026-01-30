@@ -556,7 +556,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 7, INITIALIZATION e CHAT/INFERENCE.
 
 ---
 
-### Task 3.4: Preload API per Inference
+### Task 3.4: Preload API per Inference (FATTO)
 
 **Descrizione**: Estendere la preload API con le funzioni per chat e streaming.
 

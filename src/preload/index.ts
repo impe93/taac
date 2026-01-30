@@ -106,6 +106,11 @@ const configAPI = {
 
 // AI API
 const aiAPI = {
+  // Initialization
+  initialize: () => ipcRenderer.invoke('ai:initialize'),
+
+  isInitialized: () => ipcRenderer.invoke('ai:isInitialized'),
+
   // Hardware
   getHardwareInfo: () => ipcRenderer.invoke('ai:getHardwareInfo'),
 
@@ -126,6 +131,12 @@ const aiAPI = {
 
   cancelDownload: (modelId: string) => ipcRenderer.invoke('ai:cancelDownload', modelId),
 
+  loadModel: (modelId: string) => ipcRenderer.invoke('ai:loadModel', modelId),
+
+  unloadModel: (modelId: string) => ipcRenderer.invoke('ai:unloadModel', modelId),
+
+  getLoadedModels: () => ipcRenderer.invoke('ai:getLoadedModels'),
+
   deleteModel: (modelId: string) => ipcRenderer.invoke('ai:deleteModel', modelId),
 
   // Download progress listener
@@ -134,6 +145,22 @@ const aiAPI = {
     ipcRenderer.on('ai:download-progress', handler)
     return (): void => {
       ipcRenderer.removeListener('ai:download-progress', handler)
+    }
+  },
+
+  // Chat / Inference
+  generateResponse: (
+    modelId: string,
+    messages: Array<{ role: string; content: string }>,
+    options?: { maxTokens?: number; temperature?: number }
+  ) => ipcRenderer.invoke('ai:generateResponse', modelId, messages, options),
+
+  onResponseChunk: (callback: (data: { chunk: string; fullResponse: string }) => void) => {
+    const handler = (_: unknown, data: { chunk: string; fullResponse: string }): void =>
+      callback(data)
+    ipcRenderer.on('ai:response-chunk', handler)
+    return (): void => {
+      ipcRenderer.removeListener('ai:response-chunk', handler)
     }
   }
 }

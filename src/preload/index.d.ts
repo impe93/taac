@@ -11,14 +11,25 @@ import type {
   HardwareInfo,
   ModelRecommendation,
   ModelDefinition,
-  DownloadProgress
+  DownloadProgress,
+  LoadedModel,
+  GenerationOptions,
+  ChatCompletionResult
 } from '../main/ai/types'
 
 // Re-export types from types.ts for convenience
 export type { Note, FolderMetadata, Asset, AppConfig, Space, MoveFolderToSpaceResult }
 
 // Re-export AI types for convenience
-export type { HardwareInfo, ModelRecommendation, ModelDefinition, DownloadProgress }
+export type {
+  HardwareInfo,
+  ModelRecommendation,
+  ModelDefinition,
+  DownloadProgress,
+  LoadedModel,
+  GenerationOptions,
+  ChatCompletionResult
+}
 
 // File System API interface
 export interface FileSystemAPI {
@@ -110,8 +121,24 @@ export interface ConfigAPI {
   ) => void
 }
 
+// Chat message type for inference
+export interface ChatMessageInput {
+  role: string
+  content: string
+}
+
+// Response chunk data for streaming
+export interface ResponseChunkData {
+  chunk: string
+  fullResponse: string
+}
+
 // AI API interface
 export interface AIAPI {
+  // Initialization
+  initialize: () => Promise<void>
+  isInitialized: () => Promise<boolean>
+
   // Hardware
   getHardwareInfo: () => Promise<HardwareInfo>
   getModelRecommendations: () => Promise<ModelRecommendation[]>
@@ -124,10 +151,21 @@ export interface AIAPI {
   pauseDownload: (modelId: string) => Promise<void>
   resumeDownload: (modelId: string) => Promise<void>
   cancelDownload: (modelId: string) => Promise<void>
+  loadModel: (modelId: string) => Promise<void>
+  unloadModel: (modelId: string) => Promise<void>
+  getLoadedModels: () => Promise<LoadedModel[]>
   deleteModel: (modelId: string) => Promise<void>
 
   // Download progress listener
   onDownloadProgress: (callback: (progress: DownloadProgress) => void) => () => void
+
+  // Chat / Inference
+  generateResponse: (
+    modelId: string,
+    messages: ChatMessageInput[],
+    options?: { maxTokens?: number; temperature?: number }
+  ) => Promise<ChatCompletionResult>
+  onResponseChunk: (callback: (data: ResponseChunkData) => void) => () => void
 }
 
 // Global window interface
