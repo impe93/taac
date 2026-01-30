@@ -466,7 +466,7 @@ Assicurati che la route sia registrata in TanStack Router.
 
 ## Fase 3: Chat / Inference
 
-### Task 3.1: Implementazione AIManager base
+### Task 3.1: Implementazione AIManager base (FATTO)
 
 **Descrizione**: Implementare il singleton AIManager che gestisce l'inizializzazione di llama.cpp e il caricamento modelli.
 

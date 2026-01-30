@@ -4,46 +4,66 @@
  * Central component that orchestrates all AI operations including:
  * - LLM initialization with optimal GPU backend
  * - Model loading/unloading with memory management
- * - Chat completion with streaming support
- * - Embedding generation
+ * - GPU layer optimization based on available VRAM
  *
  * Reference: docs/AI_ARCHITECTURE.md section 6.1
  */
 
-import type {
-  HardwareInfo,
-  LoadedModel,
-  ChatMessage,
-  GenerationOptions,
-  ChatCompletionResult
-} from './types'
+import { getLlama, Llama, LlamaModel, LlamaContext, LlamaEmbeddingContext } from 'node-llama-cpp'
+import { app } from 'electron'
+import { join } from 'path'
+import { HardwareDetector } from './HardwareDetector'
+import { ModelRegistry } from './ModelRegistry'
+import type { HardwareInfo, ModelDefinition } from './types'
+import { AINotInitializedError, ModelNotFoundError, ModelLoadError } from './errors'
 
-// TODO: Import from node-llama-cpp when implementing
-// import { getLlama, Llama, LlamaModel, LlamaContext, LlamaChat, LlamaEmbeddingContext } from 'node-llama-cpp'
-
+/**
+ * Configuration for the AI Manager
+ */
 export interface AIManagerConfig {
   modelsDir: string
   maxContextSize: number
   defaultGpuLayers: number | 'auto'
 }
 
+/**
+ * Internal representation of a loaded model with llama.cpp references
+ */
+interface InternalLoadedModel {
+  id: string
+  model: LlamaModel
+  context: LlamaContext | null
+  embeddingContext: LlamaEmbeddingContext | null
+  lastUsed: number
+  memoryUsage: number
+}
+
+/**
+ * AIManager singleton class
+ *
+ * Manages LLM lifecycle including initialization, model loading/unloading,
+ * and memory management with automatic cleanup of idle models.
+ */
 export class AIManager {
   private static instance: AIManager | null = null
 
-  // TODO: Implement with actual llama.cpp types
-  // private llama: Llama | null = null
-  private loadedModels: Map<string, LoadedModel> = new Map()
-  private _config: AIManagerConfig | null = null
+  private llama: Llama | null = null
+  private loadedModels: Map<string, InternalLoadedModel> = new Map()
+  private config: AIManagerConfig
   private hardwareInfo: HardwareInfo | null = null
   private initialized: boolean = false
 
   // Memory management constants
-  private readonly _MAX_LOADED_MODELS = 2
-  private readonly _IDLE_UNLOAD_TIMEOUT = 5 * 60 * 1000 // 5 minutes
+  private readonly MAX_LOADED_MODELS = 2
+  private readonly IDLE_UNLOAD_TIMEOUT = 5 * 60 * 1000 // 5 minutes
   private cleanupInterval: NodeJS.Timeout | null = null
 
   private constructor() {
-    // Private constructor for singleton
+    this.config = {
+      modelsDir: join(app.getPath('userData'), 'models'),
+      maxContextSize: 4096,
+      defaultGpuLayers: 'auto'
+    }
   }
 
   /**
@@ -58,66 +78,136 @@ export class AIManager {
 
   /**
    * Initialize llama.cpp with detected GPU backend
-   * TODO: Implement with actual initialization logic
+   *
+   * Detects system hardware and initializes llama.cpp with the optimal
+   * GPU backend (CUDA, Metal, or Vulkan). Starts the idle model cleanup interval.
+   *
+   * @throws {Error} If initialization fails
    */
   async initialize(): Promise<void> {
     if (this.initialized) return
 
-    // TODO: Implement hardware detection
-    // TODO: Initialize llama.cpp with optimal GPU backend
-    // TODO: Start idle model cleanup interval
+    // Detect hardware first
+    const hardware = await HardwareDetector.detect()
+    this.hardwareInfo = hardware
+
+    // Determine optimal GPU backend using HardwareDetector
+    const gpuBackend = HardwareDetector.getRecommendedGpuBackend(hardware)
+
+    // Initialize llama.cpp with detected backend
+    this.llama = await getLlama({
+      gpu: gpuBackend
+    })
 
     this.initialized = true
+
+    // Start idle model cleanup interval (check every minute)
+    this.cleanupInterval = setInterval(() => this.cleanupIdleModels(), 60000)
   }
 
   /**
    * Load a model with automatic GPU layer optimization
-   * TODO: Implement model loading
+   *
+   * If the model is already loaded, updates lastUsed timestamp and returns it.
+   * Enforces MAX_LOADED_MODELS limit by unloading least recently used models.
+   *
+   * @param modelId - The ID of the model to load (from ModelRegistry)
+   * @returns Information about the loaded model
+   * @throws {AINotInitializedError} If AIManager is not initialized
+   * @throws {ModelNotFoundError} If the model is not in the registry
+   * @throws {ModelLoadError} If loading the model fails
    */
-  async loadModel(_modelId: string): Promise<LoadedModel> {
-    // TODO: Implement model loading with:
-    // - Check if already loaded (return cached)
-    // - Enforce MAX_LOADED_MODELS limit
-    // - Calculate optimal GPU layers
-    // - Load model and create contexts
-    throw new Error('Not implemented')
+  async loadModel(modelId: string): Promise<{ id: string; lastUsed: number; memoryUsage: number }> {
+    if (!this.llama) {
+      throw new AINotInitializedError()
+    }
+
+    // Return cached if already loaded
+    const existing = this.loadedModels.get(modelId)
+    if (existing) {
+      existing.lastUsed = Date.now()
+      return {
+        id: existing.id,
+        lastUsed: existing.lastUsed,
+        memoryUsage: existing.memoryUsage
+      }
+    }
+
+    // Enforce max loaded models limit
+    if (this.loadedModels.size >= this.MAX_LOADED_MODELS) {
+      await this.unloadLeastRecentlyUsed()
+    }
+
+    // Get model definition from registry
+    const modelDef = ModelRegistry.getModel(modelId)
+    if (!modelDef) {
+      throw new ModelNotFoundError(modelId)
+    }
+
+    const modelPath = join(this.config.modelsDir, modelDef.filename)
+
+    // Calculate optimal GPU layers based on available VRAM
+    const gpuLayers = this.calculateOptimalGpuLayers(modelDef)
+
+    try {
+      // Load the model with optimized settings
+      const model = await this.llama.loadModel({
+        modelPath,
+        gpuLayers,
+        defaultContextFlashAttention: true
+      })
+
+      const loadedModel: InternalLoadedModel = {
+        id: modelId,
+        model,
+        context: null,
+        embeddingContext: null,
+        lastUsed: Date.now(),
+        memoryUsage: modelDef.sizeBytes
+      }
+
+      this.loadedModels.set(modelId, loadedModel)
+
+      return {
+        id: loadedModel.id,
+        lastUsed: loadedModel.lastUsed,
+        memoryUsage: loadedModel.memoryUsage
+      }
+    } catch (error) {
+      throw new ModelLoadError(modelId, error instanceof Error ? error.message : String(error))
+    }
   }
 
   /**
-   * Generate chat completion with streaming support
-   * TODO: Implement chat generation
+   * Unload a specific model and free memory
+   *
+   * Disposes of all contexts and the model itself, then removes from cache.
+   *
+   * @param modelId - The ID of the model to unload
    */
-  async *generateChatCompletion(
-    _modelId: string,
-    _messages: ChatMessage[],
-    _options?: GenerationOptions
-  ): AsyncGenerator<string, ChatCompletionResult> {
-    // TODO: Implement streaming chat completion
-    throw new Error('Not implemented')
+  async unloadModel(modelId: string): Promise<void> {
+    const loaded = this.loadedModels.get(modelId)
+    if (!loaded) return
+
+    // Dispose contexts first (must be done before model disposal)
+    if (loaded.embeddingContext) {
+      await loaded.embeddingContext.dispose()
+    }
+    if (loaded.context) {
+      await loaded.context.dispose()
+    }
+
+    // Dispose model
+    await loaded.model.dispose()
+
+    this.loadedModels.delete(modelId)
   }
 
   /**
-   * Generate embeddings for text
-   * TODO: Implement embedding generation
+   * Get list of currently loaded model IDs
    */
-  async generateEmbedding(_modelId: string, _text: string): Promise<number[]> {
-    // TODO: Implement embedding generation
-    throw new Error('Not implemented')
-  }
-
-  /**
-   * Unload a specific model
-   * TODO: Implement model unloading
-   */
-  async unloadModel(_modelId: string): Promise<void> {
-    // TODO: Implement model unloading with context disposal
-  }
-
-  /**
-   * Get current hardware info
-   */
-  getHardwareInfo(): HardwareInfo | null {
-    return this.hardwareInfo
+  getLoadedModels(): string[] {
+    return Array.from(this.loadedModels.keys())
   }
 
   /**
@@ -128,17 +218,17 @@ export class AIManager {
   }
 
   /**
-   * Get list of loaded models
+   * Get current hardware info
    */
-  getLoadedModels(): string[] {
-    return Array.from(this.loadedModels.keys())
+  getHardwareInfo(): HardwareInfo | null {
+    return this.hardwareInfo
   }
 
   /**
    * Get current configuration
    */
-  getConfig(): AIManagerConfig | null {
-    return this._config
+  getConfig(): AIManagerConfig {
+    return { ...this.config }
   }
 
   /**
@@ -146,22 +236,162 @@ export class AIManager {
    */
   getLimits(): { maxModels: number; idleTimeout: number } {
     return {
-      maxModels: this._MAX_LOADED_MODELS,
-      idleTimeout: this._IDLE_UNLOAD_TIMEOUT
+      maxModels: this.MAX_LOADED_MODELS,
+      idleTimeout: this.IDLE_UNLOAD_TIMEOUT
     }
   }
 
   /**
-   * Shutdown and cleanup
-   * TODO: Implement cleanup
+   * Cleanup and dispose all resources
+   *
+   * Unloads all models, clears the cleanup interval, and resets state.
+   * Should be called on app quit.
    */
-  async shutdown(): Promise<void> {
-    // TODO: Unload all models
-    // TODO: Clear cleanup interval
-    // TODO: Dispose llama instance
+  async dispose(): Promise<void> {
+    // Clear cleanup interval
     if (this.cleanupInterval) {
       clearInterval(this.cleanupInterval)
+      this.cleanupInterval = null
     }
+
+    // Unload all models
+    const modelIds = Array.from(this.loadedModels.keys())
+    for (const id of modelIds) {
+      await this.unloadModel(id)
+    }
+
     this.initialized = false
+    this.llama = null
+    this.hardwareInfo = null
+  }
+
+  /**
+   * Get or create chat context for a model
+   *
+   * Used internally for chat operations.
+   *
+   * @param modelId - The model ID
+   * @param contextSize - Optional context size override
+   * @returns The LlamaContext instance
+   */
+  async getChatContext(modelId: string, contextSize?: number): Promise<LlamaContext> {
+    const loaded = this.loadedModels.get(modelId)
+    if (!loaded) {
+      // Load the model first
+      await this.loadModel(modelId)
+      return this.getChatContext(modelId, contextSize)
+    }
+
+    // Update last used
+    loaded.lastUsed = Date.now()
+
+    if (!loaded.context) {
+      loaded.context = await loaded.model.createContext({
+        contextSize: contextSize || this.config.maxContextSize
+      })
+    }
+
+    return loaded.context
+  }
+
+  /**
+   * Get or create embedding context for a model
+   *
+   * Used internally for embedding generation.
+   *
+   * @param modelId - The model ID
+   * @returns The LlamaEmbeddingContext instance
+   */
+  async getEmbeddingContext(modelId: string): Promise<LlamaEmbeddingContext> {
+    const loaded = this.loadedModels.get(modelId)
+    if (!loaded) {
+      // Load the model first
+      await this.loadModel(modelId)
+      return this.getEmbeddingContext(modelId)
+    }
+
+    // Update last used
+    loaded.lastUsed = Date.now()
+
+    if (!loaded.embeddingContext) {
+      loaded.embeddingContext = await loaded.model.createEmbeddingContext()
+    }
+
+    return loaded.embeddingContext
+  }
+
+  /**
+   * Unload the least recently used model
+   *
+   * Called when MAX_LOADED_MODELS limit is reached.
+   */
+  private async unloadLeastRecentlyUsed(): Promise<void> {
+    let oldest: InternalLoadedModel | null = null
+    let oldestTime = Infinity
+
+    for (const [, model] of this.loadedModels) {
+      if (model.lastUsed < oldestTime) {
+        oldestTime = model.lastUsed
+        oldest = model
+      }
+    }
+
+    if (oldest) {
+      await this.unloadModel(oldest.id)
+    }
+  }
+
+  /**
+   * Cleanup idle models that haven't been used recently
+   *
+   * Called periodically by the cleanup interval.
+   */
+  private cleanupIdleModels(): void {
+    const now = Date.now()
+    for (const [id, model] of this.loadedModels) {
+      if (now - model.lastUsed > this.IDLE_UNLOAD_TIMEOUT) {
+        // Fire and forget - don't block cleanup
+        this.unloadModel(id).catch((error) => {
+          console.error(`Failed to unload idle model ${id}:`, error)
+        })
+      }
+    }
+  }
+
+  /**
+   * Calculate optimal GPU layers based on available VRAM
+   *
+   * Uses 80% of available VRAM as safety margin to prevent OOM errors.
+   *
+   * @param modelDef - The model definition with size and layer info
+   * @returns Number of layers to offload to GPU (0 for CPU only)
+   */
+  private calculateOptimalGpuLayers(modelDef: ModelDefinition): number {
+    // CPU only if no VRAM info available
+    if (!this.hardwareInfo?.gpu.vramBytes) {
+      return 0
+    }
+
+    const availableVram = this.hardwareInfo.gpu.vramBytes
+    const modelSize = modelDef.sizeBytes
+    const totalLayers = modelDef.layers
+
+    // Estimate: each layer uses roughly modelSize / totalLayers
+    const layerSize = modelSize / totalLayers
+
+    // Use 80% of VRAM as safety margin
+    const maxLayersInVram = Math.floor((availableVram * 0.8) / layerSize)
+
+    // Return the minimum of calculated layers and total layers
+    return Math.min(maxLayersInVram, totalLayers)
+  }
+
+  /**
+   * Get internal loaded model (for advanced operations)
+   *
+   * @internal
+   */
+  getInternalModel(modelId: string): InternalLoadedModel | undefined {
+    return this.loadedModels.get(modelId)
   }
 }
