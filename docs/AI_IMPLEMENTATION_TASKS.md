@@ -240,7 +240,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 8.
 
 ---
 
-### Task 1.10: React Hooks per Hardware
+### Task 1.10: React Hooks per Hardware (FATTO)
 
 **Descrizione**: Creare i React hooks con TanStack Query per accedere alle informazioni hardware e ai modelli disponibili.
 
