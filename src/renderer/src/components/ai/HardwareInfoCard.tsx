@@ -1,7 +1,13 @@
 import { type FC } from 'react'
 import { Cpu, HardDrive, Monitor, AlertCircle, Loader2 } from 'lucide-react'
 import { useHardwareInfo } from '@renderer/hooks/useHardware'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@renderer/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle
+} from '@renderer/components/ui/card'
 import { Badge } from '@renderer/components/ui/badge'
 import { cn } from '@renderer/lib/utils'
 import type { HardwareTier } from '@main/ai/types'
@@ -11,10 +17,22 @@ interface HardwareInfoCardProps {
 }
 
 const tierConfig: Record<HardwareTier, { label: string; className: string }> = {
-  low: { label: 'Low', className: 'bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/20' },
-  medium: { label: 'Medium', className: 'bg-yellow-500/15 text-yellow-700 dark:text-yellow-400 border-yellow-500/20' },
-  high: { label: 'High', className: 'bg-green-500/15 text-green-700 dark:text-green-400 border-green-500/20' },
-  ultra: { label: 'Ultra', className: 'bg-purple-500/15 text-purple-700 dark:text-purple-400 border-purple-500/20' }
+  low: {
+    label: 'Low',
+    className: 'bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/20'
+  },
+  medium: {
+    label: 'Medium',
+    className: 'bg-yellow-500/15 text-yellow-700 dark:text-yellow-400 border-yellow-500/20'
+  },
+  high: {
+    label: 'High',
+    className: 'bg-green-500/15 text-green-700 dark:text-green-400 border-green-500/20'
+  },
+  ultra: {
+    label: 'Ultra',
+    className: 'bg-purple-500/15 text-purple-700 dark:text-purple-400 border-purple-500/20'
+  }
 }
 
 const formatBytes = (bytes: number): string => {
@@ -26,7 +44,11 @@ const formatSpeed = (speed: number): string => {
   return `${speed.toFixed(2)} GHz`
 }
 
-const getSupportedBackends = (gpu: { hasCuda: boolean; hasMetal: boolean; hasVulkan: boolean }): string[] => {
+const getSupportedBackends = (gpu: {
+  hasCuda: boolean
+  hasMetal: boolean
+  hasVulkan: boolean
+}): string[] => {
   const backends: string[] = []
   if (gpu.hasCuda) backends.push('CUDA')
   if (gpu.hasMetal) backends.push('Metal')
