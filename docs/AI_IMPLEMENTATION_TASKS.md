@@ -419,7 +419,7 @@ Crea src/renderer/src/components/ai/ModelCard.tsx:
 
 ---
 
-### Task 2.6: Componente ModelLibrary
+### Task 2.6: Componente ModelLibrary (FATTO)
 
 **Descrizione**: Creare la vista completa della libreria modelli con filtri per tier e capabilities.
 
