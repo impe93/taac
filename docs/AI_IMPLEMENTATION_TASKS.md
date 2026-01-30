@@ -345,7 +345,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 7, MODEL MANAGEMENT handlers.
 
 ---
 
-### Task 2.3: Preload API per Model Management
+### Task 2.3: Preload API per Model Management (FATTO)
 
 **Descrizione**: Estendere la preload API con le funzioni per gestire i modelli.
 

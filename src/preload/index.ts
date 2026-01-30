@@ -106,11 +106,36 @@ const configAPI = {
 
 // AI API
 const aiAPI = {
+  // Hardware
   getHardwareInfo: () => ipcRenderer.invoke('ai:getHardwareInfo'),
 
   getModelRecommendations: () => ipcRenderer.invoke('ai:getModelRecommendations'),
 
-  listAvailableModels: () => ipcRenderer.invoke('ai:listAvailableModels')
+  // Models
+  listAvailableModels: () => ipcRenderer.invoke('ai:listAvailableModels'),
+
+  listDownloadedModels: () => ipcRenderer.invoke('ai:listDownloadedModels'),
+
+  isModelDownloaded: (modelId: string) => ipcRenderer.invoke('ai:isModelDownloaded', modelId),
+
+  downloadModel: (modelId: string) => ipcRenderer.invoke('ai:downloadModel', modelId),
+
+  pauseDownload: (modelId: string) => ipcRenderer.invoke('ai:pauseDownload', modelId),
+
+  resumeDownload: (modelId: string) => ipcRenderer.invoke('ai:resumeDownload', modelId),
+
+  cancelDownload: (modelId: string) => ipcRenderer.invoke('ai:cancelDownload', modelId),
+
+  deleteModel: (modelId: string) => ipcRenderer.invoke('ai:deleteModel', modelId),
+
+  // Download progress listener
+  onDownloadProgress: (callback: (progress: unknown) => void) => {
+    const handler = (_: unknown, progress: unknown): void => callback(progress)
+    ipcRenderer.on('ai:download-progress', handler)
+    return (): void => {
+      ipcRenderer.removeListener('ai:download-progress', handler)
+    }
+  }
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

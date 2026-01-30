@@ -7,13 +7,18 @@ import type {
   Space,
   MoveFolderToSpaceResult
 } from './types'
-import type { HardwareInfo, ModelRecommendation, ModelDefinition } from '../main/ai/types'
+import type {
+  HardwareInfo,
+  ModelRecommendation,
+  ModelDefinition,
+  DownloadProgress
+} from '../main/ai/types'
 
 // Re-export types from types.ts for convenience
 export type { Note, FolderMetadata, Asset, AppConfig, Space, MoveFolderToSpaceResult }
 
 // Re-export AI types for convenience
-export type { HardwareInfo, ModelRecommendation, ModelDefinition }
+export type { HardwareInfo, ModelRecommendation, ModelDefinition, DownloadProgress }
 
 // File System API interface
 export interface FileSystemAPI {
@@ -107,9 +112,22 @@ export interface ConfigAPI {
 
 // AI API interface
 export interface AIAPI {
+  // Hardware
   getHardwareInfo: () => Promise<HardwareInfo>
   getModelRecommendations: () => Promise<ModelRecommendation[]>
+
+  // Models
   listAvailableModels: () => Promise<ModelDefinition[]>
+  listDownloadedModels: () => Promise<ModelDefinition[]>
+  isModelDownloaded: (modelId: string) => Promise<boolean>
+  downloadModel: (modelId: string) => Promise<void>
+  pauseDownload: (modelId: string) => Promise<void>
+  resumeDownload: (modelId: string) => Promise<void>
+  cancelDownload: (modelId: string) => Promise<void>
+  deleteModel: (modelId: string) => Promise<void>
+
+  // Download progress listener
+  onDownloadProgress: (callback: (progress: DownloadProgress) => void) => () => void
 }
 
 // Global window interface
