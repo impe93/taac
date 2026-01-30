@@ -581,7 +581,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 8.
 
 ---
 
-### Task 3.5: React Hook useAIChat
+### Task 3.5: React Hook useAIChat (FATTO)
 
 **Descrizione**: Creare l'hook principale per gestire chat AI con streaming delle risposte.
 
