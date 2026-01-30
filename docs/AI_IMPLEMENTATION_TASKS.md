@@ -501,7 +501,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 6.1 (prima parte).
 
 ---
 
-### Task 3.2: AIManager - Chat Completion con streaming
+### Task 3.2: AIManager - Chat Completion con streaming (FATTO)
 
 **Descrizione**: Estendere AIManager con le funzionalità di chat completion e streaming.
 
@@ -529,7 +529,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 6.1 (metodo generateChatCompletion)
 
 ---
 
-### Task 3.3: IPC Handlers per Inference
+### Task 3.3: IPC Handlers per Inference (FATTO)
 
 **Descrizione**: Aggiungere gli IPC handlers per l'inizializzazione AI e la generazione risposte con streaming.
 

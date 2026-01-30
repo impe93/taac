@@ -10,13 +10,29 @@
  */
 
 import { ipcMain, BrowserWindow, type IpcMainInvokeEvent } from 'electron'
-import { HardwareDetector, ModelRegistry, ModelDownloader } from '../ai'
+import { app } from 'electron'
+import { join } from 'path'
+import {
+  HardwareDetector,
+  ModelRegistry,
+  ModelDownloader,
+  AIManager,
+  ConversationManager
+} from '../ai'
+import type { GenerationOptions } from '../ai'
 import type { FileSystemManager } from '../utils/fileSystem'
 
 type GetFsManager = (spaceId: string) => FileSystemManager
 
-// Singleton instance of the model downloader
+// Singleton instances
 let downloader: ModelDownloader | null = null
+let aiManager: AIManager | null = null
+let conversationManager: ConversationManager | null = null
+
+/**
+ * Flag to track initialization state
+ */
+let isAIInitialized = false
 
 /**
  * Get or create the ModelDownloader singleton
@@ -27,6 +43,27 @@ async function getDownloader(): Promise<ModelDownloader> {
     await downloader.initialize()
   }
   return downloader
+}
+
+/**
+ * Get the AIManager singleton
+ */
+function getAIManager(): AIManager {
+  if (!aiManager) {
+    aiManager = AIManager.getInstance()
+  }
+  return aiManager
+}
+
+/**
+ * Get the ConversationManager singleton
+ */
+function getConversationManager(): ConversationManager {
+  if (!conversationManager) {
+    const conversationsDir = join(app.getPath('userData'), 'conversations')
+    conversationManager = ConversationManager.getInstance(conversationsDir)
+  }
+  return conversationManager
 }
 
 /**
@@ -182,4 +219,121 @@ export function registerAIHandlers(_getOrCreateFsManager: GetFsManager): void {
       throw new Error(`Failed to delete model: ${(error as Error).message}`)
     }
   })
+
+  // ============================================================================
+  // INITIALIZATION
+  // ============================================================================
+
+  /**
+   * Initialize all AI components (AIManager, ModelDownloader, ConversationManager)
+   */
+  ipcMain.handle('ai:initialize', async (_event: IpcMainInvokeEvent) => {
+    try {
+      const manager = getAIManager()
+      await manager.initialize()
+
+      // Ensure downloader is initialized (already happens in getDownloader())
+      await getDownloader()
+
+      const convManager = getConversationManager()
+      await convManager.initialize()
+
+      isAIInitialized = true
+      return { success: true }
+    } catch (error) {
+      throw new Error(`Failed to initialize AI: ${(error as Error).message}`)
+    }
+  })
+
+  /**
+   * Check if AI system is initialized
+   */
+  ipcMain.handle('ai:isInitialized', (_event: IpcMainInvokeEvent) => {
+    return isAIInitialized && getAIManager().isInitialized()
+  })
+
+  // ============================================================================
+  // MODEL LOADING
+  // ============================================================================
+
+  /**
+   * Load a model into memory
+   */
+  ipcMain.handle('ai:loadModel', async (_event: IpcMainInvokeEvent, modelId: string) => {
+    try {
+      const manager = getAIManager()
+      const result = await manager.loadModel(modelId)
+      return { success: true, ...result }
+    } catch (error) {
+      throw new Error(`Failed to load model: ${(error as Error).message}`)
+    }
+  })
+
+  /**
+   * Unload a model from memory
+   */
+  ipcMain.handle('ai:unloadModel', async (_event: IpcMainInvokeEvent, modelId: string) => {
+    try {
+      const manager = getAIManager()
+      await manager.unloadModel(modelId)
+      return { success: true }
+    } catch (error) {
+      throw new Error(`Failed to unload model: ${(error as Error).message}`)
+    }
+  })
+
+  /**
+   * Get list of currently loaded models
+   */
+  ipcMain.handle('ai:getLoadedModels', (_event: IpcMainInvokeEvent) => {
+    try {
+      const manager = getAIManager()
+      return manager.getLoadedModels()
+    } catch (error) {
+      throw new Error(`Failed to get loaded models: ${(error as Error).message}`)
+    }
+  })
+
+  // ============================================================================
+  // CHAT / INFERENCE
+  // ============================================================================
+
+  /**
+   * Generate a response from the model with streaming support
+   *
+   * Iterates over the AsyncGenerator from AIManager.generateChatCompletion,
+   * sending chunks via webContents.send('ai:response-chunk', { chunk, fullResponse })
+   */
+  ipcMain.handle(
+    'ai:generateResponse',
+    async (
+      event: IpcMainInvokeEvent,
+      modelId: string,
+      messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>,
+      options?: GenerationOptions
+    ) => {
+      try {
+        const manager = getAIManager()
+
+        let fullResponse = ''
+
+        // Iterate over the async generator for streaming
+        const generator = manager.generateChatCompletion(modelId, messages, options)
+
+        for await (const chunk of generator) {
+          fullResponse += chunk
+
+          // Send chunk to renderer via webContents
+          event.sender.send('ai:response-chunk', {
+            chunk,
+            fullResponse
+          })
+        }
+
+        return { response: fullResponse }
+      } catch (error) {
+        throw new Error(`Failed to generate response: ${(error as Error).message}`)
+      }
+    }
+  )
 }
