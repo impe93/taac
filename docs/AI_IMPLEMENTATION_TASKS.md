@@ -317,7 +317,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 6.3.
 
 ---
 
-### Task 2.2: IPC Handlers per Model Management
+### Task 2.2: IPC Handlers per Model Management (FATTO)
 
 **Descrizione**: Aggiungere gli IPC handlers per gestire download, caricamento e rimozione modelli.
 
