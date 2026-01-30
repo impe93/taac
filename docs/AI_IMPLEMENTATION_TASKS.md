@@ -286,7 +286,7 @@ Questo componente sarà usato nella pagina settings e nell'onboarding.
 
 ## Fase 2: Model Management
 
-### Task 2.1: Implementazione ModelDownloader
+### Task 2.1: Implementazione ModelDownloader (FATTO)
 
 **Descrizione**: Implementare il modulo per il download dei modelli con supporto per progress reporting, pause e resume.
 

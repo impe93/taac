@@ -20,7 +20,7 @@ export { HardwareDetector } from './HardwareDetector'
 export { ModelRegistry } from './ModelRegistry'
 
 export { ModelDownloader } from './ModelDownloader'
-export type { DownloadCallbacks } from './ModelDownloader'
+export type { ProgressListener } from './ModelDownloader'
 
 export { VectorDBManager } from './VectorDBManager'
 export type { VectorDBConfig } from './VectorDBManager'
