@@ -443,7 +443,7 @@ Questo componente sarà la pagina principale per gestire i modelli.
 
 ---
 
-### Task 2.7: Route Settings AI
+### Task 2.7: Route Settings AI (FATTO)
 
 **Descrizione**: Creare la route per le impostazioni AI con la libreria modelli integrata.
 
