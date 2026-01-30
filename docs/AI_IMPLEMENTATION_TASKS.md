@@ -260,7 +260,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 9.
 
 ---
 
-### Task 1.11: Componente HardwareInfoCard
+### Task 1.11: Componente HardwareInfoCard (FATTO)
 
 **Descrizione**: Creare un componente UI per visualizzare le informazioni hardware rilevate e il tier assegnato.
 
