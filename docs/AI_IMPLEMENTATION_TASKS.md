@@ -371,7 +371,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 8.
 
 ---
 
-### Task 2.4: React Hooks per Model Management
+### Task 2.4: React Hooks per Model Management (FATTO)
 
 **Descrizione**: Creare gli hooks React per gestire download e stato dei modelli.
 
