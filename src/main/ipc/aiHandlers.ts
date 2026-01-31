@@ -5,6 +5,7 @@
  * - Hardware detection
  * - Model recommendations
  * - Model management
+ * - RAG / Vector Search
  *
  * Reference: docs/AI_ARCHITECTURE.md section 7
  */
@@ -17,10 +18,12 @@ import {
   ModelRegistry,
   ModelDownloader,
   AIManager,
-  ConversationManager
+  ConversationManager,
+  VectorDBManager,
+  EmbeddingService
 } from '../ai'
-import type { GenerationOptions } from '../ai'
-import type { FileSystemManager } from '../utils/fileSystem'
+import type { GenerationOptions, SearchResult } from '../ai'
+import type { FileSystemManager, Note, FolderMetadata } from '../utils/fileSystem'
 
 type GetFsManager = (spaceId: string) => FileSystemManager
 
@@ -28,6 +31,10 @@ type GetFsManager = (spaceId: string) => FileSystemManager
 let downloader: ModelDownloader | null = null
 let aiManager: AIManager | null = null
 let conversationManager: ConversationManager | null = null
+let embeddingService: EmbeddingService | null = null
+
+// Per-space VectorDBManager instances
+const vectorDBManagers: Map<string, VectorDBManager> = new Map()
 
 /**
  * Flag to track initialization state
@@ -67,6 +74,30 @@ function getConversationManager(): ConversationManager {
 }
 
 /**
+ * Get the EmbeddingService singleton
+ */
+function getEmbeddingService(): EmbeddingService {
+  if (!embeddingService) {
+    embeddingService = new EmbeddingService(getAIManager())
+  }
+  return embeddingService
+}
+
+/**
+ * Get or create VectorDBManager for a space
+ */
+function getOrCreateVectorDB(spaceId: string, getFsManager: GetFsManager): VectorDBManager {
+  const existing = vectorDBManagers.get(spaceId)
+  if (existing) return existing
+
+  const fsManager = getFsManager(spaceId)
+  const dbPath = fsManager.getDatabasePath()
+  const instance = VectorDBManager.getInstance(spaceId, dbPath)
+  vectorDBManagers.set(spaceId, instance)
+  return instance
+}
+
+/**
  * Forward progress events to all BrowserWindows
  */
 function setupProgressForwarding(dl: ModelDownloader): void {
@@ -81,7 +112,7 @@ function setupProgressForwarding(dl: ModelDownloader): void {
 /**
  * Register AI-related IPC handlers
  */
-export function registerAIHandlers(_getOrCreateFsManager: GetFsManager): void {
+export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
   // Initialize downloader and setup progress forwarding
   getDownloader().then(setupProgressForwarding).catch(console.error)
 
@@ -336,4 +367,303 @@ export function registerAIHandlers(_getOrCreateFsManager: GetFsManager): void {
       }
     }
   )
+
+  // ============================================================================
+  // VECTOR SEARCH / RAG
+  // ============================================================================
+
+  /**
+   * Initialize vector database for a space
+   */
+  ipcMain.handle('ai:initializeVectorDB', async (_event: IpcMainInvokeEvent, spaceId: string) => {
+    try {
+      const vectorDB = getOrCreateVectorDB(spaceId, getOrCreateFsManager)
+      await vectorDB.initialize()
+      return { success: true }
+    } catch (error) {
+      throw new Error(`Failed to initialize vector DB: ${(error as Error).message}`)
+    }
+  })
+
+  /**
+   * Index a single note
+   */
+  ipcMain.handle(
+    'ai:indexNote',
+    async (_event: IpcMainInvokeEvent, spaceId: string, noteId: string, folderId: string) => {
+      try {
+        const vectorDB = getOrCreateVectorDB(spaceId, getOrCreateFsManager)
+        if (!vectorDB.isInitialized()) {
+          await vectorDB.initialize()
+        }
+
+        const fsManager = getOrCreateFsManager(spaceId)
+        const note = await fsManager.readNote(folderId, noteId)
+
+        // Convert Lexical content to markdown text
+        const textContent = extractTextFromLexicalContent(note.content)
+
+        const service = getEmbeddingService()
+        await service.indexNote(
+          {
+            id: note.id,
+            folderId: note.folderId,
+            content: textContent,
+            title: note.title,
+            createdAt: note.createdAt,
+            updatedAt: note.updatedAt
+          },
+          vectorDB
+        )
+
+        return { success: true, noteId }
+      } catch (error) {
+        throw new Error(`Failed to index note: ${(error as Error).message}`)
+      }
+    }
+  )
+
+  /**
+   * Index all notes in a space
+   * Sends progress events via 'ai:indexing-progress'
+   */
+  ipcMain.handle('ai:indexAllNotes', async (event: IpcMainInvokeEvent, spaceId: string) => {
+    try {
+      const vectorDB = getOrCreateVectorDB(spaceId, getOrCreateFsManager)
+      if (!vectorDB.isInitialized()) {
+        await vectorDB.initialize()
+      }
+
+      const fsManager = getOrCreateFsManager(spaceId)
+      const service = getEmbeddingService()
+
+      // Collect all notes recursively from folder tree
+      const allNotes: Array<{ note: Note; folderId: string }> = []
+      await collectNotesRecursively(fsManager, 'root', allNotes)
+
+      const totalNotes = allNotes.length
+      let completedNotes = 0
+      let erroredNotes = 0
+
+      // Send initial progress
+      event.sender.send('ai:indexing-progress', {
+        spaceId,
+        completed: 0,
+        total: totalNotes,
+        currentNote: null,
+        status: 'started'
+      })
+
+      // Index each note
+      for (const { note, folderId } of allNotes) {
+        try {
+          // Send progress update for current note
+          event.sender.send('ai:indexing-progress', {
+            spaceId,
+            completed: completedNotes,
+            total: totalNotes,
+            currentNote: { id: note.id, title: note.title },
+            status: 'indexing'
+          })
+
+          // Convert Lexical content to markdown text
+          const textContent = extractTextFromLexicalContent(note.content)
+
+          await service.indexNote(
+            {
+              id: note.id,
+              folderId,
+              content: textContent,
+              title: note.title,
+              createdAt: note.createdAt,
+              updatedAt: note.updatedAt
+            },
+            vectorDB
+          )
+
+          completedNotes++
+        } catch (error) {
+          console.error(`[ai:indexAllNotes] Failed to index note ${note.id}:`, error)
+          erroredNotes++
+          completedNotes++
+        }
+      }
+
+      // Send completion progress
+      event.sender.send('ai:indexing-progress', {
+        spaceId,
+        completed: totalNotes,
+        total: totalNotes,
+        currentNote: null,
+        status: 'completed'
+      })
+
+      return {
+        success: true,
+        totalNotes,
+        indexedNotes: completedNotes - erroredNotes,
+        erroredNotes
+      }
+    } catch (error) {
+      throw new Error(`Failed to index all notes: ${(error as Error).message}`)
+    }
+  })
+
+  /**
+   * Search notes using semantic similarity
+   */
+  ipcMain.handle(
+    'ai:searchNotes',
+    async (
+      _event: IpcMainInvokeEvent,
+      spaceId: string,
+      query: string,
+      limit?: number,
+      noteIds?: string[]
+    ): Promise<SearchResult[]> => {
+      try {
+        const vectorDB = getOrCreateVectorDB(spaceId, getOrCreateFsManager)
+        if (!vectorDB.isInitialized()) {
+          await vectorDB.initialize()
+        }
+
+        const service = getEmbeddingService()
+        const queryEmbedding = await service.embedQuery(query)
+
+        return await vectorDB.search(queryEmbedding, limit ?? 10, noteIds)
+      } catch (error) {
+        throw new Error(`Failed to search notes: ${(error as Error).message}`)
+      }
+    }
+  )
+
+  /**
+   * Get list of indexed note IDs for a space
+   */
+  ipcMain.handle(
+    'ai:getIndexedNotes',
+    async (_event: IpcMainInvokeEvent, spaceId: string): Promise<string[]> => {
+      try {
+        const vectorDB = getOrCreateVectorDB(spaceId, getOrCreateFsManager)
+        if (!vectorDB.isInitialized()) {
+          await vectorDB.initialize()
+        }
+
+        return await vectorDB.getIndexedNoteIds()
+      } catch (error) {
+        throw new Error(`Failed to get indexed notes: ${(error as Error).message}`)
+      }
+    }
+  )
+
+  /**
+   * Delete index for a specific note
+   */
+  ipcMain.handle(
+    'ai:deleteNoteIndex',
+    async (_event: IpcMainInvokeEvent, spaceId: string, noteId: string) => {
+      try {
+        const vectorDB = getOrCreateVectorDB(spaceId, getOrCreateFsManager)
+        if (!vectorDB.isInitialized()) {
+          await vectorDB.initialize()
+        }
+
+        await vectorDB.deleteDocumentsForNote(noteId)
+        return { success: true, noteId }
+      } catch (error) {
+        throw new Error(`Failed to delete note index: ${(error as Error).message}`)
+      }
+    }
+  )
+}
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+/**
+ * Recursively collect all notes from a folder and its subfolders
+ */
+async function collectNotesRecursively(
+  fsManager: FileSystemManager,
+  folderId: string,
+  result: Array<{ note: Note; folderId: string }>
+): Promise<void> {
+  const folderMeta: FolderMetadata = await fsManager.readFolderMetadata(folderId)
+
+  // Get all notes in this folder
+  for (const noteId of folderMeta.noteIds) {
+    try {
+      const note = await fsManager.readNote(folderId, noteId)
+      result.push({ note, folderId })
+    } catch (error) {
+      console.error(`[collectNotesRecursively] Failed to read note ${noteId}:`, error)
+    }
+  }
+
+  // Recurse into child folders
+  for (const childFolderId of folderMeta.children) {
+    await collectNotesRecursively(fsManager, childFolderId, result)
+  }
+}
+
+/**
+ * Extract plain text from Lexical editor serialized state
+ *
+ * Recursively walks the Lexical node tree and extracts text content.
+ * Handles paragraph nodes, text nodes, heading nodes, list nodes, etc.
+ */
+function extractTextFromLexicalContent(content: unknown): string {
+  if (!content || typeof content !== 'object') {
+    return ''
+  }
+
+  const state = content as { root?: { children?: unknown[] } }
+  if (!state.root?.children) {
+    return ''
+  }
+
+  const textParts: string[] = []
+
+  function extractFromNode(node: unknown): void {
+    if (!node || typeof node !== 'object') return
+
+    const n = node as { type?: string; text?: string; children?: unknown[] }
+
+    // Direct text node
+    if (n.type === 'text' && typeof n.text === 'string') {
+      textParts.push(n.text)
+      return
+    }
+
+    // Block-level elements that should add newlines
+    const blockTypes = ['paragraph', 'heading', 'quote', 'list', 'listitem']
+    if (n.type && blockTypes.includes(n.type)) {
+      if (textParts.length > 0 && !textParts[textParts.length - 1].endsWith('\n')) {
+        textParts.push('\n')
+      }
+    }
+
+    // Recurse into children
+    if (Array.isArray(n.children)) {
+      for (const child of n.children) {
+        extractFromNode(child)
+      }
+    }
+
+    // Add double newline after paragraphs for proper chunking
+    if (n.type === 'paragraph' || n.type === 'heading') {
+      textParts.push('\n')
+    }
+  }
+
+  for (const child of state.root.children) {
+    extractFromNode(child)
+  }
+
+  // Clean up: normalize whitespace and trim
+  return textParts
+    .join('')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
 }

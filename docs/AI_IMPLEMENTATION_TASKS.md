@@ -762,7 +762,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 6.5.
 
 ---
 
-### Task 4.3: Implementazione EmbeddingService
+### Task 4.3: Implementazione EmbeddingService (FATTO)
 
 **Descrizione**: Implementare il servizio per generare embeddings e indicizzare note.
 
@@ -796,7 +796,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 6.7.
 
 ---
 
-### Task 4.4: AIManager - Embedding Context
+### Task 4.4: AIManager - Embedding Context (FATTO)
 
 **Descrizione**: Estendere AIManager per supportare embedding context oltre a chat context.
 
@@ -820,7 +820,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 6.1, metodo getEmbeddingContext.
 
 ---
 
-### Task 4.5: IPC Handlers per Vector Search
+### Task 4.5: IPC Handlers per Vector Search (FATTO)
 
 **Descrizione**: Aggiungere gli IPC handlers per indicizzazione e ricerca semantica.
 

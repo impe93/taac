@@ -140,7 +140,7 @@ const CURATED_MODELS: ModelDefinition[] = [
   // EMBEDDING MODELS - For vector search and RAG
   // ============================================================================
   {
-    id: 'nomic-embed-v1.5',
+    id: 'nomic-embed-text-v1.5',
     name: 'Nomic Embed Text v1.5 (Q8_0)',
     description: 'High-quality text embedding model for semantic search with 8192 token context',
     filename: 'nomic-embed-text-v1.5.Q8_0.gguf',
