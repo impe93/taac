@@ -1340,11 +1340,13 @@ Gestisce il vector database per-space per RAG.
 Il package `sqlite-vec` npm include binari precompilati per tutte le piattaforme supportate. Non è necessario compilare o scaricare estensioni native manualmente.
 
 **Installazione:**
+
 ```bash
 pnpm add sqlite-vec
 ```
 
 **Configurazione electron-vite** (`electron.vite.config.ts`):
+
 ```typescript
 externalizeDepsPlugin({
   exclude: ['electron-store'],
@@ -1358,6 +1360,7 @@ build: {
 ```
 
 **Configurazione electron-builder** (`electron-builder.yml`):
+
 ```yaml
 asarUnpack:
   - resources/**
@@ -1415,9 +1418,9 @@ export class VectorDBManager {
     sqliteVec.load(this.db)
 
     // Verify extension loaded
-    const { version } = this.db
-      .prepare('SELECT vec_version() as version')
-      .get() as { version: string }
+    const { version } = this.db.prepare('SELECT vec_version() as version').get() as {
+      version: string
+    }
     console.log(`sqlite-vec version: ${version}`)
 
     // Create tables
@@ -1447,32 +1450,39 @@ export class VectorDBManager {
     const id = `${embedding.noteId}_${embedding.chunkIndex}`
     const vecArray = new Float32Array(embedding.embedding)
 
-    this.db!.prepare(`
+    this.db!.prepare(
+      `
       INSERT OR REPLACE INTO embeddings (id, note_id, chunk_index, content, metadata)
       VALUES (?, ?, ?, ?, ?)
-    `).run(id, embedding.noteId, embedding.chunkIndex, embedding.text, '{}')
+    `
+    ).run(id, embedding.noteId, embedding.chunkIndex, embedding.text, '{}')
 
-    this.db!.prepare(`
+    this.db!.prepare(
+      `
       INSERT OR REPLACE INTO vec_embeddings (id, embedding)
       VALUES (?, ?)
-    `).run(id, vecArray)
+    `
+    ).run(id, vecArray)
   }
 
   async search(queryEmbedding: number[], limit: number = 10): Promise<SearchResult[]> {
     const queryVec = new Float32Array(queryEmbedding)
 
-    return this.db!.prepare(`
+    return this.db!.prepare(
+      `
       SELECT v.id, v.distance, e.note_id, e.content, e.metadata
       FROM vec_embeddings v
       JOIN embeddings e ON v.id = e.id
       WHERE v.embedding MATCH ? AND k = ?
       ORDER BY v.distance
-    `).all(queryVec, limit) as SearchResult[]
+    `
+    ).all(queryVec, limit) as SearchResult[]
   }
 
   async deleteNoteEmbeddings(noteId: string): Promise<void> {
-    const ids = this.db!.prepare('SELECT id FROM embeddings WHERE note_id = ?')
-      .all(noteId) as { id: string }[]
+    const ids = this.db!.prepare('SELECT id FROM embeddings WHERE note_id = ?').all(noteId) as {
+      id: string
+    }[]
 
     const deleteVec = this.db!.prepare('DELETE FROM vec_embeddings WHERE id = ?')
     for (const { id } of ids) {
@@ -1487,16 +1497,19 @@ export class VectorDBManager {
 #### Build per Piattaforma
 
 **macOS (arm64/x64):**
+
 ```bash
 pnpm build:mac
 ```
 
 **Windows (x64):**
+
 ```bash
 pnpm build:win
 ```
 
 **Linux (x64):**
+
 ```bash
 pnpm build:linux
 ```

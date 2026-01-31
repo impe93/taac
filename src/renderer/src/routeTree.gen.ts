@@ -24,43 +24,43 @@ import { Route as AiChatImport } from './routes/ai/chat'
 const DashboardLayoutRoute = DashboardLayoutImport.update({
   id: '/dashboard',
   path: '/dashboard',
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => rootRoute
 } as any)
 
 const IndexRoute = IndexImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => rootRoute
 } as any)
 
 const SettingsIndexRoute = SettingsIndexImport.update({
   id: '/settings/',
   path: '/settings/',
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => rootRoute
 } as any)
 
 const DashboardIndexRoute = DashboardIndexImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => DashboardLayoutRoute,
+  getParentRoute: () => DashboardLayoutRoute
 } as any)
 
 const SettingsAiRoute = SettingsAiImport.update({
   id: '/settings/ai',
   path: '/settings/ai',
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => rootRoute
 } as any)
 
 const NoteNoteIdRoute = NoteNoteIdImport.update({
   id: '/note/$noteId',
   path: '/note/$noteId',
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => rootRoute
 } as any)
 
 const AiChatRoute = AiChatImport.update({
   id: '/ai/chat',
   path: '/ai/chat',
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => rootRoute
 } as any)
 
 // Populate the FileRoutesByPath interface
@@ -126,11 +126,11 @@ interface DashboardLayoutRouteChildren {
 }
 
 const DashboardLayoutRouteChildren: DashboardLayoutRouteChildren = {
-  DashboardIndexRoute: DashboardIndexRoute,
+  DashboardIndexRoute: DashboardIndexRoute
 }
 
 const DashboardLayoutRouteWithChildren = DashboardLayoutRoute._addFileChildren(
-  DashboardLayoutRouteChildren,
+  DashboardLayoutRouteChildren
 )
 
 export interface FileRoutesByFullPath {
@@ -174,13 +174,7 @@ export interface FileRouteTypes {
     | '/dashboard/'
     | '/settings'
   fileRoutesByTo: FileRoutesByTo
-  to:
-    | '/'
-    | '/ai/chat'
-    | '/note/$noteId'
-    | '/settings/ai'
-    | '/dashboard'
-    | '/settings'
+  to: '/' | '/ai/chat' | '/note/$noteId' | '/settings/ai' | '/dashboard' | '/settings'
   id:
     | '__root__'
     | '/'
@@ -208,7 +202,7 @@ const rootRouteChildren: RootRouteChildren = {
   AiChatRoute: AiChatRoute,
   NoteNoteIdRoute: NoteNoteIdRoute,
   SettingsAiRoute: SettingsAiRoute,
-  SettingsIndexRoute: SettingsIndexRoute,
+  SettingsIndexRoute: SettingsIndexRoute
 }
 
 export const routeTree = rootRoute
