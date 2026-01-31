@@ -23,7 +23,7 @@ import { app } from 'electron'
 import { join } from 'path'
 import { HardwareDetector } from './HardwareDetector'
 import { ModelRegistry } from './ModelRegistry'
-import type { HardwareInfo, ModelDefinition } from './types'
+import type { HardwareInfo, ModelDefinition, LoadedModel } from './types'
 import { AINotInitializedError, ModelNotFoundError, ModelLoadError } from './errors'
 
 /**
@@ -259,10 +259,14 @@ export class AIManager {
   }
 
   /**
-   * Get list of currently loaded model IDs
+   * Get list of currently loaded models with metadata
    */
-  getLoadedModels(): string[] {
-    return Array.from(this.loadedModels.keys())
+  getLoadedModels(): LoadedModel[] {
+    return Array.from(this.loadedModels.values()).map((model) => ({
+      id: model.id,
+      lastUsed: model.lastUsed,
+      memoryUsage: model.memoryUsage
+    }))
   }
 
   /**
