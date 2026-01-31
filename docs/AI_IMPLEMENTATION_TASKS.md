@@ -707,7 +707,7 @@ Questa pagina è per testing, la chat principale sarà nella sidebar.
 
 ## Fase 4: RAG System
 
-### Task 4.1: Setup sqlite-vec extension
+### Task 4.1: Setup sqlite-vec extension (FATTO)
 
 **Descrizione**: Configurare il bundling dell'extension nativa sqlite-vec per ogni piattaforma.
 
@@ -730,7 +730,7 @@ Se sqlite-vec non è disponibile come npm package, valuta alternative come inclu
 
 ---
 
-### Task 4.2: Implementazione VectorDBManager
+### Task 4.2: Implementazione VectorDBManager (FATTO)
 
 **Descrizione**: Implementare il manager per il database vettoriale per-space usando better-sqlite3 e sqlite-vec.
 

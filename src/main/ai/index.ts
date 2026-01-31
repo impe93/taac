@@ -28,4 +28,4 @@ export type { VectorDBConfig } from './VectorDBManager'
 export { ConversationManager } from './ConversationManager'
 
 export { EmbeddingService } from './EmbeddingService'
-export type { ChunkingOptions, TextChunk } from './EmbeddingService'
+export type { ExtendedChunkingOptions, TextChunk, IndexableNote } from './EmbeddingService'

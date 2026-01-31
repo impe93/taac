@@ -9,13 +9,13 @@ export default defineConfig({
       externalizeDepsPlugin({
         exclude: ['electron-store'],
         // Native AI modules must be externalized
-        include: ['node-llama-cpp', 'better-sqlite3']
+        include: ['node-llama-cpp', 'better-sqlite3', 'sqlite-vec']
       })
     ],
     build: {
       rollupOptions: {
         // Explicitly mark native modules as external
-        external: ['node-llama-cpp', 'better-sqlite3']
+        external: ['node-llama-cpp', 'better-sqlite3', 'sqlite-vec']
       }
     }
   },

@@ -1335,146 +1335,185 @@ export class ModelRegistry {
 
 Gestisce il vector database per-space per RAG.
 
+#### Setup sqlite-vec
+
+Il package `sqlite-vec` npm include binari precompilati per tutte le piattaforme supportate. Non è necessario compilare o scaricare estensioni native manualmente.
+
+**Installazione:**
+```bash
+pnpm add sqlite-vec
+```
+
+**Configurazione electron-vite** (`electron.vite.config.ts`):
+```typescript
+externalizeDepsPlugin({
+  exclude: ['electron-store'],
+  include: ['node-llama-cpp', 'better-sqlite3', 'sqlite-vec']
+}),
+build: {
+  rollupOptions: {
+    external: ['node-llama-cpp', 'better-sqlite3', 'sqlite-vec']
+  }
+}
+```
+
+**Configurazione electron-builder** (`electron-builder.yml`):
+```yaml
+asarUnpack:
+  - resources/**
+  - node_modules/sqlite-vec/**
+  - node_modules/better-sqlite3/**
+```
+
+#### Implementazione
+
 ```typescript
 // src/main/ai/VectorDBManager.ts
 
 import Database from 'better-sqlite3'
-import { join } from 'path'
-import { app } from 'electron'
+import * as sqliteVec from 'sqlite-vec'
+import { mkdirSync } from 'fs'
+import { dirname } from 'path'
 
-export interface VectorDocument {
-  id: string
-  noteId: string
-  chunkIndex: number
-  content: string
-  embedding?: number[]
-  metadata: Record<string, unknown>
-  createdAt: string
-}
-
-export interface SearchResult {
-  id: string
-  noteId: string
-  content: string
-  distance: number
-  metadata: Record<string, unknown>
+export interface VectorDBConfig {
+  dbPath: string
+  embeddingDimension: number
 }
 
 export class VectorDBManager {
+  private static instances: Map<string, VectorDBManager> = new Map()
   private db: Database.Database | null = null
-  private spaceId: string
-  private embeddingDimension: number
+  private _config: VectorDBConfig
+  private initialized: boolean = false
 
-  constructor(spaceId: string, embeddingDimension: number = 768) {
-    this.spaceId = spaceId
-    this.embeddingDimension = embeddingDimension
+  private constructor(config: VectorDBConfig) {
+    this._config = config
   }
 
-  /**
-   * Initialize the database and create tables
-   */
+  static getInstance(spaceId: string, dbPath: string): VectorDBManager {
+    const existing = this.instances.get(spaceId)
+    if (existing) return existing
+
+    const instance = new VectorDBManager({
+      dbPath,
+      embeddingDimension: 768 // nomic-embed-text dimension
+    })
+    this.instances.set(spaceId, instance)
+    return instance
+  }
+
   async initialize(): Promise<void> {
-    const dbPath = join(app.getPath('userData'), 'spaces', this.spaceId, 'database', 'vectors.db')
+    if (this.initialized) return
 
-    this.db = new Database(dbPath)
+    // Ensure directory exists
+    mkdirSync(dirname(this._config.dbPath), { recursive: true })
 
-    // Load sqlite-vec extension
-    const extPath = this.getExtensionPath()
-    this.db.loadExtension(extPath)
+    // Create database connection
+    this.db = new Database(this._config.dbPath)
+
+    // Load sqlite-vec extension (npm package handles platform detection)
+    sqliteVec.load(this.db)
+
+    // Verify extension loaded
+    const { version } = this.db
+      .prepare('SELECT vec_version() as version')
+      .get() as { version: string }
+    console.log(`sqlite-vec version: ${version}`)
 
     // Create tables
     this.db.exec(`
-      -- Metadata table for documents
-      CREATE TABLE IF NOT EXISTS documents (
+      CREATE TABLE IF NOT EXISTS embeddings (
         id TEXT PRIMARY KEY,
         note_id TEXT NOT NULL,
         chunk_index INTEGER NOT NULL,
         content TEXT NOT NULL,
-        metadata TEXT DEFAULT '{}',
-        created_at TEXT NOT NULL,
+        metadata TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
         UNIQUE(note_id, chunk_index)
       );
 
-      CREATE INDEX IF NOT EXISTS idx_documents_note_id
-        ON documents(note_id);
+      CREATE INDEX IF NOT EXISTS idx_embeddings_note_id ON embeddings(note_id);
 
-      -- Vector table using sqlite-vec
-      CREATE VIRTUAL TABLE IF NOT EXISTS vec_documents USING vec0(
+      CREATE VIRTUAL TABLE IF NOT EXISTS vec_embeddings USING vec0(
         id TEXT PRIMARY KEY,
-        embedding float[${this.embeddingDimension}]
+        embedding float[${this._config.embeddingDimension}]
       );
     `)
+
+    this.initialized = true
   }
 
-  /**
-   * Get platform-specific extension path
-   */
-  private getExtensionPath(): string {
-    const platform = process.platform
-    const arch = process.arch
+  async storeEmbedding(embedding: EmbeddingResult): Promise<void> {
+    const id = `${embedding.noteId}_${embedding.chunkIndex}`
+    const vecArray = new Float32Array(embedding.embedding)
 
-    let ext = ''
-    if (platform === 'darwin') ext = 'dylib'
-    else if (platform === 'win32') ext = 'dll'
-    else ext = 'so'
+    this.db!.prepare(`
+      INSERT OR REPLACE INTO embeddings (id, note_id, chunk_index, content, metadata)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(id, embedding.noteId, embedding.chunkIndex, embedding.text, '{}')
 
-    // Extension bundled with app
-    return join(app.getAppPath(), 'resources', 'native', `sqlite-vec-${platform}-${arch}.${ext}`)
+    this.db!.prepare(`
+      INSERT OR REPLACE INTO vec_embeddings (id, embedding)
+      VALUES (?, ?)
+    `).run(id, vecArray)
   }
 
-  /**
-   * Insert or update a document with embedding
-   */
-  async upsertDocument(doc: VectorDocument): Promise<void> {
-    if (!this.db) throw new Error('Database not initialized')
+  async search(queryEmbedding: number[], limit: number = 10): Promise<SearchResult[]> {
+    const queryVec = new Float32Array(queryEmbedding)
 
-    const insertDoc = this.db.prepare(`
-      INSERT OR REPLACE INTO documents
-        (id, note_id, chunk_index, content, metadata, created_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `)
-
-    insertDoc.run(
-      doc.id,
-      doc.noteId,
-      doc.chunkIndex,
-      doc.content,
-      JSON.stringify(doc.metadata),
-      doc.createdAt
-    )
-
-    if (doc.embedding) {
-      const insertVec = this.db.prepare(`
-        INSERT OR REPLACE INTO vec_documents (id, embedding)
-        VALUES (?, ?)
-      `)
-
-      insertVec.run(doc.id, JSON.stringify(doc.embedding))
-    }
+    return this.db!.prepare(`
+      SELECT v.id, v.distance, e.note_id, e.content, e.metadata
+      FROM vec_embeddings v
+      JOIN embeddings e ON v.id = e.id
+      WHERE v.embedding MATCH ? AND k = ?
+      ORDER BY v.distance
+    `).all(queryVec, limit) as SearchResult[]
   }
 
-  /**
-   * Delete all documents for a note
-   */
-  async deleteDocumentsForNote(noteId: string): Promise<void> {
-    if (!this.db) throw new Error('Database not initialized')
+  async deleteNoteEmbeddings(noteId: string): Promise<void> {
+    const ids = this.db!.prepare('SELECT id FROM embeddings WHERE note_id = ?')
+      .all(noteId) as { id: string }[]
 
-    // Get document IDs first
-    const docs = this.db.prepare('SELECT id FROM documents WHERE note_id = ?').all(noteId) as {
-      id: string
-    }[]
-
-    // Delete from vector table
-    const deleteVec = this.db.prepare('DELETE FROM vec_documents WHERE id = ?')
-    for (const doc of docs) {
-      deleteVec.run(doc.id)
+    const deleteVec = this.db!.prepare('DELETE FROM vec_embeddings WHERE id = ?')
+    for (const { id } of ids) {
+      deleteVec.run(id)
     }
 
-    // Delete from documents table
-    this.db.prepare('DELETE FROM documents WHERE note_id = ?').run(noteId)
+    this.db!.prepare('DELETE FROM embeddings WHERE note_id = ?').run(noteId)
   }
+}
+```
 
-  /**
+#### Build per Piattaforma
+
+**macOS (arm64/x64):**
+```bash
+pnpm build:mac
+```
+
+**Windows (x64):**
+```bash
+pnpm build:win
+```
+
+**Linux (x64):**
+```bash
+pnpm build:linux
+```
+
+Il package `sqlite-vec` include automaticamente i binari corretti per ogni piattaforma durante il processo di build.
+
+---
+
+_Note: La vecchia documentazione suggeriva di scaricare manualmente i binari nativi, ma il package npm `sqlite-vec` gestisce tutto automaticamente._
+
+### 6.5.1 VectorDBManager Legacy Reference
+
+Per reference, ecco l'approccio legacy con caricamento manuale dell'estensione:
+
+```typescript
+// DEPRECATO - Non usare, mantenuto solo per reference
+/**
    * Search for similar documents
    */
   async search(
