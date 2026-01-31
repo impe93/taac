@@ -162,6 +162,35 @@ const aiAPI = {
     return (): void => {
       ipcRenderer.removeListener('ai:response-chunk', handler)
     }
+  },
+
+  // Vector Search / RAG
+  initializeVectorDB: (spaceId: string) => ipcRenderer.invoke('ai:initializeVectorDB', spaceId),
+
+  indexNote: (spaceId: string, noteId: string, folderId: string) =>
+    ipcRenderer.invoke('ai:indexNote', spaceId, noteId, folderId),
+
+  indexAllNotes: (spaceId: string) => ipcRenderer.invoke('ai:indexAllNotes', spaceId),
+
+  searchNotes: (spaceId: string, query: string, limit?: number, noteIds?: string[]) =>
+    ipcRenderer.invoke('ai:searchNotes', spaceId, query, limit, noteIds),
+
+  getIndexedNotes: (spaceId: string) => ipcRenderer.invoke('ai:getIndexedNotes', spaceId),
+
+  deleteNoteIndex: (spaceId: string, noteId: string) =>
+    ipcRenderer.invoke('ai:deleteNoteIndex', spaceId, noteId),
+
+  onIndexingProgress: (
+    callback: (data: { current: number; total: number; noteId: string; noteTitle: string }) => void
+  ) => {
+    const handler = (
+      _: unknown,
+      data: { current: number; total: number; noteId: string; noteTitle: string }
+    ): void => callback(data)
+    ipcRenderer.on('ai:indexing-progress', handler)
+    return (): void => {
+      ipcRenderer.removeListener('ai:indexing-progress', handler)
+    }
   }
 }
 

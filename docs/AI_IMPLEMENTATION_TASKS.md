@@ -851,7 +851,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 7, VECTOR SEARCH / RAG.
 
 ---
 
-### Task 4.6: Preload API per Vector Search
+### Task 4.6: Preload API per Vector Search (FATTO)
 
 **Descrizione**: Estendere la preload API con le funzioni per RAG.
 

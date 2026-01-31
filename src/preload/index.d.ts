@@ -14,7 +14,8 @@ import type {
   DownloadProgress,
   LoadedModel,
   GenerationOptions,
-  ChatCompletionResult
+  ChatCompletionResult,
+  SearchResult
 } from '../main/ai/types'
 
 // Re-export types from types.ts for convenience
@@ -28,7 +29,16 @@ export type {
   DownloadProgress,
   LoadedModel,
   GenerationOptions,
-  ChatCompletionResult
+  ChatCompletionResult,
+  SearchResult
+}
+
+// Indexing progress data for vector search
+export interface IndexingProgress {
+  current: number
+  total: number
+  noteId: string
+  noteTitle: string
 }
 
 // File System API interface
@@ -166,6 +176,20 @@ export interface AIAPI {
     options?: { maxTokens?: number; temperature?: number }
   ) => Promise<ChatCompletionResult>
   onResponseChunk: (callback: (data: ResponseChunkData) => void) => () => void
+
+  // Vector Search / RAG
+  initializeVectorDB: (spaceId: string) => Promise<void>
+  indexNote: (spaceId: string, noteId: string, folderId: string) => Promise<void>
+  indexAllNotes: (spaceId: string) => Promise<void>
+  searchNotes: (
+    spaceId: string,
+    query: string,
+    limit?: number,
+    noteIds?: string[]
+  ) => Promise<SearchResult[]>
+  getIndexedNotes: (spaceId: string) => Promise<string[]>
+  deleteNoteIndex: (spaceId: string, noteId: string) => Promise<void>
+  onIndexingProgress: (callback: (data: IndexingProgress) => void) => () => void
 }
 
 // Global window interface
