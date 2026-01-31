@@ -19,7 +19,7 @@ export const Route = createRootRoute({
         <WindowDragBorder />
         {/* Outer container with padding for the drag border */}
         <div
-          className="h-screen"
+          className="h-screen w-full"
           style={{
             padding: WINDOW_BORDER_WIDTH,
             paddingTop: isMacOS ? WINDOW_TRAFFIC_LIGHTS_HEIGHT : WINDOW_BORDER_WIDTH
