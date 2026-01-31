@@ -70,7 +70,9 @@ const capabilityConfig: Record<
   reasoning: { label: 'Reasoning', icon: Brain }
 }
 
-const formatSize = (bytes: number): string => {
+const formatSize = (bytes: number | undefined): string => {
+  if (bytes == null || isNaN(bytes)) return 'Unknown size'
+
   const units = ['B', 'KB', 'MB', 'GB', 'TB']
   let unitIndex = 0
   let size = bytes
@@ -109,7 +111,10 @@ export const ModelCard: FC<ModelCardProps> = ({
   onCancel,
   className
 }) => {
-  const tierInfo = tierConfig[model.hardwareTier]
+  const tierInfo = tierConfig[model.hardwareTier] ?? {
+    label: model.hardwareTier ?? 'Unknown',
+    className: 'bg-gray-500/15 text-gray-700 dark:text-gray-400 border-gray-500/20'
+  }
   const isDownloading = downloadProgress?.status === 'downloading'
   const isPaused = downloadProgress?.status === 'paused'
   const hasError = downloadProgress?.status === 'error'
@@ -150,27 +155,38 @@ export const ModelCard: FC<ModelCardProps> = ({
         {/* Model Info */}
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm text-muted-foreground">{formatSize(model.sizeBytes)}</span>
-          <span className="text-muted-foreground">·</span>
-          <span className="text-sm text-muted-foreground">{model.quantization}</span>
-          <span className="text-muted-foreground">·</span>
-          <span className="text-sm text-muted-foreground">
-            {model.contextLength.toLocaleString()} ctx
-          </span>
+          {model.quantization && (
+            <>
+              <span className="text-muted-foreground">·</span>
+              <span className="text-sm text-muted-foreground">{model.quantization}</span>
+            </>
+          )}
+          {model.contextLength != null && (
+            <>
+              <span className="text-muted-foreground">·</span>
+              <span className="text-sm text-muted-foreground">
+                {model.contextLength.toLocaleString()} ctx
+              </span>
+            </>
+          )}
         </div>
 
         {/* Capabilities */}
-        <div className="flex flex-wrap gap-1.5">
-          {model.capabilities.map((capability) => {
-            const config = capabilityConfig[capability]
-            const Icon = config.icon
-            return (
-              <Badge key={capability} variant="secondary" className="gap-1 text-xs">
-                <Icon className="size-3" />
-                {config.label}
-              </Badge>
-            )
-          })}
-        </div>
+        {model.capabilities && model.capabilities.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {model.capabilities.map((capability) => {
+              const config = capabilityConfig[capability]
+              if (!config) return null
+              const Icon = config.icon
+              return (
+                <Badge key={capability} variant="secondary" className="gap-1 text-xs">
+                  <Icon className="size-3" />
+                  {config.label}
+                </Badge>
+              )
+            })}
+          </div>
+        )}
 
         {/* Download Progress */}
         {isInProgress && downloadProgress && (

@@ -26,7 +26,7 @@ export const Route = createRootRoute({
           }}
         >
           {/* Inner container with rounded corners - clips all content */}
-          <div className="flex h-full overflow-hidden rounded-xl">
+          <div className="flex overflow-hidden rounded-xl">
             <AppSidebar />
             <SidebarInset>
               <header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-[[data-collapsible=icon]]/sidebar-wrapper:h-12">
@@ -34,7 +34,7 @@ export const Route = createRootRoute({
                   <SidebarTrigger className="-ml-1" />
                 </div>
               </header>
-              <div className="flex flex-1 p-4">
+              <div className="!w-full grow min-h-0 overflow-auto p-4">
                 <Outlet />
               </div>
             </SidebarInset>

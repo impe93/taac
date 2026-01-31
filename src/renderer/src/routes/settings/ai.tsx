@@ -1,6 +1,7 @@
 import { type ReactNode, useState } from 'react'
-import { createFileRoute } from '@tanstack/react-router'
-import { Cpu, Package, Settings2 } from 'lucide-react'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { Cpu, MessageSquare, Package, Settings2 } from 'lucide-react'
+import { Button } from '@renderer/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@renderer/components/ui/tabs'
 import {
   Card,
@@ -19,21 +20,34 @@ export const Route = createFileRoute('/settings/ai')({
 type TabValue = 'models' | 'hardware' | 'configuration'
 
 function AISettingsPage(): ReactNode {
+  const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState<TabValue>('models')
 
   return (
-    <div className="flex flex-col w-full h-full">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold tracking-tight">AI Settings</h1>
-        <p className="text-muted-foreground">
-          Manage AI models, hardware configuration, and inference settings
-        </p>
+    <div className="flex flex-col w-full max-w-5xl mx-auto">
+      <div className="mb-6 flex items-start justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">AI Settings</h1>
+          <p className="text-muted-foreground">
+            Manage AI models, hardware configuration, and inference settings
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => navigate({ to: '/ai/chat' })}
+          className="gap-2"
+          title="Test AI Chat"
+        >
+          <MessageSquare className="size-4" />
+          Test Chat
+        </Button>
       </div>
 
       <Tabs
         value={activeTab}
         onValueChange={(v) => setActiveTab(v as TabValue)}
-        className="flex-1 flex flex-col"
+        className="flex-1 flex flex-col w-full"
       >
         <TabsList className="w-fit">
           <TabsTrigger value="models" className="gap-1.5">
@@ -50,7 +64,7 @@ function AISettingsPage(): ReactNode {
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="models" className="mt-6 flex-1 overflow-auto">
+        <TabsContent value="models" className="mt-6 flex-1 overflow-auto w-full">
           <ModelLibrary />
         </TabsContent>
 

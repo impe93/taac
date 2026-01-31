@@ -286,15 +286,15 @@ export class ModelDownloader extends EventEmitter {
   }
 
   /**
-   * Get list of downloaded model IDs
+   * Get list of downloaded models with full definitions
    */
-  async getDownloadedModels(): Promise<string[]> {
+  async getDownloadedModels(): Promise<import('./types').ModelDefinition[]> {
     try {
       const files = await fs.readdir(this.modelsDir)
       return files
         .filter((f) => f.endsWith('.gguf'))
-        .map((f) => ModelRegistry.getModelByFilename(f)?.id)
-        .filter((id): id is string => id !== undefined)
+        .map((f) => ModelRegistry.getModelByFilename(f))
+        .filter((model): model is import('./types').ModelDefinition => model !== undefined)
     } catch {
       return []
     }

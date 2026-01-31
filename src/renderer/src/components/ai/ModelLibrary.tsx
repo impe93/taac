@@ -1,5 +1,5 @@
 import { type FC, type ReactNode, useState, useMemo } from 'react'
-import { Download, Filter, Sparkles, Package, Cpu } from 'lucide-react'
+import { Download, Sparkles, Package, Cpu } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@renderer/components/ui/tabs'
 import { ToggleGroup, ToggleGroupItem } from '@renderer/components/ui/toggle-group'
 import { Badge } from '@renderer/components/ui/badge'
@@ -117,7 +117,7 @@ export const ModelLibrary: FC<ModelLibraryProps> = ({ className }) => {
     return models.filter((model) => {
       const matchesTier = tierFilter === 'all' || model.hardwareTier === tierFilter
       const matchesCapability =
-        capabilityFilter === 'all' || model.capabilities.includes(capabilityFilter)
+        capabilityFilter === 'all' || model.capabilities?.includes(capabilityFilter)
       return matchesTier && matchesCapability
     })
   }, [availableModels, tierFilter, capabilityFilter])
@@ -126,7 +126,7 @@ export const ModelLibrary: FC<ModelLibraryProps> = ({ className }) => {
     return recommendedModels.filter((model) => {
       const matchesTier = tierFilter === 'all' || model.hardwareTier === tierFilter
       const matchesCapability =
-        capabilityFilter === 'all' || model.capabilities.includes(capabilityFilter)
+        capabilityFilter === 'all' || model.capabilities?.includes(capabilityFilter)
       return matchesTier && matchesCapability
     })
   }, [recommendedModels, tierFilter, capabilityFilter])
@@ -136,7 +136,7 @@ export const ModelLibrary: FC<ModelLibraryProps> = ({ className }) => {
     return models.filter((model) => {
       const matchesTier = tierFilter === 'all' || model.hardwareTier === tierFilter
       const matchesCapability =
-        capabilityFilter === 'all' || model.capabilities.includes(capabilityFilter)
+        capabilityFilter === 'all' || model.capabilities?.includes(capabilityFilter)
       return matchesTier && matchesCapability
     })
   }, [downloadedModels, tierFilter, capabilityFilter])
@@ -199,7 +199,7 @@ export const ModelLibrary: FC<ModelLibraryProps> = ({ className }) => {
   )
 
   return (
-    <div className={cn('space-y-6', className)}>
+    <div className={cn('w-full space-y-6', className)}>
       {/* Header with filters */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
@@ -218,12 +218,7 @@ export const ModelLibrary: FC<ModelLibraryProps> = ({ className }) => {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="flex items-center gap-2">
-          <Filter className="size-4 text-muted-foreground" />
-          <span className="text-sm font-medium">Filters:</span>
-        </div>
-        <div className="flex flex-wrap gap-3">
+      <div className="flex flex-wrap gap-3">
           <ToggleGroup
             type="single"
             value={tierFilter}
@@ -232,7 +227,11 @@ export const ModelLibrary: FC<ModelLibraryProps> = ({ className }) => {
             size="sm"
           >
             {TIER_OPTIONS.map((option) => (
-              <ToggleGroupItem key={option.value} value={option.value} className="text-xs">
+              <ToggleGroupItem
+                key={option.value}
+                value={option.value}
+                className="flex-none px-3 text-xs"
+              >
                 {option.label}
               </ToggleGroupItem>
             ))}
@@ -246,12 +245,15 @@ export const ModelLibrary: FC<ModelLibraryProps> = ({ className }) => {
             size="sm"
           >
             {CAPABILITY_OPTIONS.map((option) => (
-              <ToggleGroupItem key={option.value} value={option.value} className="text-xs">
+              <ToggleGroupItem
+                key={option.value}
+                value={option.value}
+                className="flex-none px-3 text-xs"
+              >
                 {option.label}
               </ToggleGroupItem>
             ))}
           </ToggleGroup>
-        </div>
       </div>
 
       {/* Tabs */}
