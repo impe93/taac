@@ -50,6 +50,7 @@ export interface AppConfig {
   editorFontSize: number
   autoSave: boolean
   autoSaveInterval: number
+  autoIndexNotes: boolean
   lastOpenedFolderId: string | null
   windowBounds: {
     width: number

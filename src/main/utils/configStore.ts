@@ -5,6 +5,7 @@ export interface AppConfig {
   editorFontSize: number
   autoSave: boolean
   autoSaveInterval: number
+  autoIndexNotes: boolean
   lastOpenedFolderId: string | null
   windowBounds: {
     width: number
@@ -67,6 +68,10 @@ const schema = {
     minimum: 1000,
     maximum: 60000,
     default: 5000
+  },
+  autoIndexNotes: {
+    type: 'boolean',
+    default: true
   },
   lastOpenedFolderId: {
     type: ['string', 'null'],

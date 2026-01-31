@@ -876,7 +876,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 8.
 
 ---
 
-### Task 4.7: React Hooks per Vector Search
+### Task 4.7: React Hooks per Vector Search (FATTO)
 
 **Descrizione**: Creare gli hooks React per gestire indicizzazione e ricerca semantica.
 
@@ -902,7 +902,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 9.
 
 ---
 
-### Task 4.8: Auto-indexing al salvataggio nota
+### Task 4.8: Auto-indexing al salvataggio nota (FATTO)
 
 **Descrizione**: Integrare l'auto-indexing quando una nota viene salvata.
 

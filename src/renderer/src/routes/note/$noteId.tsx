@@ -9,6 +9,7 @@ import {
 import { MDXNoteEditor } from '@renderer/components/editor/MDXNoteEditor'
 import { NoteTitle } from '@renderer/components/editor/NoteTitle'
 import { useAutoSave } from '@renderer/hooks/useAutoSave'
+import { useAutoIndexNote } from '@renderer/hooks/useAutoIndexNote'
 import { toast } from 'sonner'
 
 export const Route = createFileRoute('/note/$noteId')({
@@ -25,6 +26,11 @@ function NoteView(): ReactElement {
   const [title, setTitle] = useState(note?.title ?? '')
   const [content, setContent] = useState(note?.content ?? '')
   const [isSaving, setIsSaving] = useState(false)
+
+  // Auto-indexing for AI search (5s debounce after save)
+  const { triggerIndex, isIndexing } = useAutoIndexNote({
+    enabled: !!note && !!activeSpaceId
+  })
 
   // Sync local state when note changes (e.g., navigating to different note)
   useEffect(() => {
@@ -49,13 +55,20 @@ function NoteView(): ReactElement {
           updates: { title, content }
         })
       ).unwrap()
+
+      // Trigger auto-indexing after successful save (runs in background with 5s debounce)
+      triggerIndex({
+        spaceId: activeSpaceId,
+        noteId: note.id,
+        folderId: note.folderId
+      })
     } catch (error) {
       console.error('Failed to save note:', error)
       toast.error('Failed to save note')
     } finally {
       setIsSaving(false)
     }
-  }, [dispatch, note, activeSpaceId, title, content])
+  }, [dispatch, note, activeSpaceId, title, content, triggerIndex])
 
   // Auto-save with 1.5s debounce
   const { triggerSave, saveNow } = useAutoSave({
@@ -106,6 +119,7 @@ function NoteView(): ReactElement {
         <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
           <span>Last updated: {new Date(note.updatedAt).toLocaleString()}</span>
           {isSaving && <span className="text-primary animate-pulse">Saving...</span>}
+          {isIndexing && <span className="text-muted-foreground animate-pulse">Indexing...</span>}
         </div>
       </div>
 
