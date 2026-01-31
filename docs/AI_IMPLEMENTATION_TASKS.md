@@ -923,7 +923,7 @@ Considera di usare un worker o debouncing per evitare indicizzazioni troppo freq
 
 ---
 
-### Task 4.9: Componente SearchResults
+### Task 4.9: Componente SearchResults (FATTO)
 
 **Descrizione**: Creare il componente per visualizzare i risultati della ricerca semantica.
 
