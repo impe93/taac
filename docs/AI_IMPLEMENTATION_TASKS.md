@@ -609,7 +609,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 9.
 
 ---
 
-### Task 3.6: Componente ChatMessage
+### Task 3.6: Componente ChatMessage (FATTO)
 
 **Descrizione**: Creare il componente per visualizzare un singolo messaggio nella chat.
 
@@ -632,7 +632,7 @@ Crea src/renderer/src/components/ai/ChatMessage.tsx:
 
 ---
 
-### Task 3.7: Componente ChatInput
+### Task 3.7: Componente ChatInput (FATTO)
 
 **Descrizione**: Creare il componente input per inviare messaggi alla chat.
 
