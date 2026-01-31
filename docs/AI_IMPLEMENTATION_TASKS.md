@@ -947,7 +947,7 @@ Questo componente sarà usato nella chat per mostrare note rilevanti.
 
 ---
 
-### Task 4.10: Integrazione RAG nella Chat
+### Task 4.10: Integrazione RAG nella Chat (FATTO)
 
 **Descrizione**: Integrare la ricerca semantica nel flusso di chat per arricchire il contesto.
 

@@ -6,13 +6,19 @@ import { Badge } from '@renderer/components/ui/badge'
 import { cn } from '@renderer/lib/utils'
 import { ChatMessage } from './ChatMessage'
 import { ChatInput } from './ChatInput'
+import { ChatContextNotes, searchResultToContextNote, type ContextNote } from './ChatContextNotes'
 import { useAIChat, useLoadedModels } from '@renderer/hooks/useAI'
-import type { ChatMessage as ChatMessageType } from '@main/ai/types'
+import { useVectorSearch } from '@renderer/hooks/useVectorSearch'
+import type { ChatMessage as ChatMessageType, NoteReference } from '@main/ai/types'
 
 interface ChatInterfaceProps {
   modelId: string
   initialMessages?: ChatMessageType[]
   systemPrompt?: string
+  spaceId?: string
+  enableRAG?: boolean
+  ragSearchLimit?: number
+  onNoteClick?: (noteId: string) => void
   className?: string
 }
 
@@ -80,19 +86,64 @@ const EmptyState: FC = () => (
   </div>
 )
 
+const DEFAULT_RAG_SEARCH_LIMIT = 5
+const RAG_RELEVANCE_THRESHOLD = 40 // Minimum relevance score to include in context
+
+/**
+ * Builds a context prompt from relevant notes
+ */
+const buildContextPrompt = (notes: ContextNote[], userMessage: string): string => {
+  if (notes.length === 0) return userMessage
+
+  const notesContext = notes
+    .map(
+      (note, i) =>
+        `[Note ${i + 1}: "${note.title}" (${note.relevanceScore}% relevant)]\n${note.excerpt}`
+    )
+    .join('\n\n')
+
+  return `Given the following notes as context:
+
+${notesContext}
+
+User question: ${userMessage}`
+}
+
+/**
+ * Converts ContextNote array to NoteReference array for message storage
+ */
+const contextNotesToReferences = (notes: ContextNote[], spaceId: string): NoteReference[] =>
+  notes.map((note) => ({
+    noteId: note.noteId,
+    spaceId,
+    title: note.title,
+    excerpt: note.excerpt,
+    relevanceScore: note.relevanceScore
+  }))
+
 export const ChatInterface: FC<ChatInterfaceProps> = ({
   modelId,
   initialMessages = [],
   systemPrompt,
+  spaceId,
+  enableRAG = false,
+  ragSearchLimit = DEFAULT_RAG_SEARCH_LIMIT,
+  onNoteClick,
   className
 }) => {
   const [messages, setMessages] = useState<ChatMessageType[]>(initialMessages)
+  const [contextNotes, setContextNotes] = useState<ContextNote[]>([])
+  const [isSearchingContext, setIsSearchingContext] = useState(false)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   // AI hooks
   const { sendMessage, isGenerating, currentResponse } = useAIChat(modelId)
   const { loadedModels, isLoadingModels } = useLoadedModels()
+
+  // Vector search hook - only used when RAG is enabled
+  const vectorSearch = useVectorSearch(spaceId || '')
+  const isRAGEnabled = enableRAG && !!spaceId
 
   // Check if the model is loaded
   const loadedModel = loadedModels.find((m) => m.id === modelId)
@@ -107,23 +158,73 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
     scrollToBottom()
   }, [messages, currentResponse, scrollToBottom])
 
+  /**
+   * Searches for relevant notes and updates context state
+   */
+  const searchRelevantNotes = async (query: string): Promise<ContextNote[]> => {
+    if (!isRAGEnabled) return []
+
+    setIsSearchingContext(true)
+    try {
+      const results = await vectorSearch.mutateAsync({
+        query,
+        limit: ragSearchLimit
+      })
+
+      // Transform results and filter by relevance threshold
+      const notes = results
+        .map(searchResultToContextNote)
+        .filter((note) => note.relevanceScore >= RAG_RELEVANCE_THRESHOLD)
+
+      setContextNotes(notes)
+      return notes
+    } catch (error) {
+      console.error('Error searching for relevant notes:', error)
+      return []
+    } finally {
+      setIsSearchingContext(false)
+    }
+  }
+
+  /**
+   * Removes a note from the context
+   */
+  const handleRemoveContextNote = (noteId: string): void => {
+    setContextNotes((prev) => prev.filter((note) => note.noteId !== noteId))
+  }
+
   const handleSend = async (content: string): Promise<void> => {
-    // Create user message
+    // Search for relevant notes if RAG is enabled
+    let relevantNotes = contextNotes
+    if (isRAGEnabled && contextNotes.length === 0) {
+      relevantNotes = await searchRelevantNotes(content)
+    }
+
+    // Build content with context if RAG is enabled
+    const messageContentForAPI = isRAGEnabled ? buildContextPrompt(relevantNotes, content) : content
+
+    // Create user message (store original content, not the augmented one)
     const userMessage: ChatMessageType = {
       id: generateMessageId(),
       role: 'user',
       content,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      // Store note references in the message
+      noteReferences:
+        isRAGEnabled && spaceId ? contextNotesToReferences(relevantNotes, spaceId) : undefined
     }
 
     // Add user message to state
     setMessages((prev) => [...prev, userMessage])
 
+    // Clear context notes after sending (will search fresh for next message)
+    setContextNotes([])
+
     // Build messages array for API
     const apiMessages = [
       ...(systemPrompt ? [{ role: 'system' as const, content: systemPrompt }] : []),
       ...messages.map((m) => ({ role: m.role, content: m.content })),
-      { role: 'user' as const, content }
+      { role: 'user' as const, content: messageContentForAPI }
     ]
 
     try {
@@ -219,13 +320,31 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
         )}
       </ScrollArea>
 
-      {/* Input */}
-      <div className="p-4 border-t shrink-0">
+      {/* Input area with optional context notes */}
+      <div className="p-4 border-t shrink-0 space-y-3">
+        {/* Show context notes when RAG is enabled */}
+        {isRAGEnabled && (contextNotes.length > 0 || isSearchingContext) && (
+          <ChatContextNotes
+            notes={contextNotes}
+            onRemove={handleRemoveContextNote}
+            onNoteClick={onNoteClick}
+            isLoading={isSearchingContext}
+          />
+        )}
+
         <ChatInput
           onSend={handleSend}
-          isDisabled={!isModelLoaded}
+          isDisabled={!isModelLoaded || isSearchingContext}
           isLoading={isGenerating}
-          placeholder={isModelLoaded ? 'Type a message...' : 'Waiting for model to load...'}
+          placeholder={
+            isSearchingContext
+              ? 'Searching for relevant notes...'
+              : isModelLoaded
+                ? isRAGEnabled
+                  ? 'Ask a question about your notes...'
+                  : 'Type a message...'
+                : 'Waiting for model to load...'
+          }
         />
       </div>
     </div>

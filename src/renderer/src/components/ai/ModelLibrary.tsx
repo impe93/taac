@@ -219,41 +219,41 @@ export const ModelLibrary: FC<ModelLibraryProps> = ({ className }) => {
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3">
-          <ToggleGroup
-            type="single"
-            value={tierFilter}
-            onValueChange={handleTierChange}
-            variant="outline"
-            size="sm"
-          >
-            {TIER_OPTIONS.map((option) => (
-              <ToggleGroupItem
-                key={option.value}
-                value={option.value}
-                className="flex-none px-3 text-xs"
-              >
-                {option.label}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
+        <ToggleGroup
+          type="single"
+          value={tierFilter}
+          onValueChange={handleTierChange}
+          variant="outline"
+          size="sm"
+        >
+          {TIER_OPTIONS.map((option) => (
+            <ToggleGroupItem
+              key={option.value}
+              value={option.value}
+              className="flex-none px-3 text-xs"
+            >
+              {option.label}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
 
-          <ToggleGroup
-            type="single"
-            value={capabilityFilter}
-            onValueChange={handleCapabilityChange}
-            variant="outline"
-            size="sm"
-          >
-            {CAPABILITY_OPTIONS.map((option) => (
-              <ToggleGroupItem
-                key={option.value}
-                value={option.value}
-                className="flex-none px-3 text-xs"
-              >
-                {option.label}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
+        <ToggleGroup
+          type="single"
+          value={capabilityFilter}
+          onValueChange={handleCapabilityChange}
+          variant="outline"
+          size="sm"
+        >
+          {CAPABILITY_OPTIONS.map((option) => (
+            <ToggleGroupItem
+              key={option.value}
+              value={option.value}
+              className="flex-none px-3 text-xs"
+            >
+              {option.label}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
       </div>
 
       {/* Tabs */}
