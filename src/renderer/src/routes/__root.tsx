@@ -33,7 +33,7 @@ const RootLayout: FC = () => {
         }}
       >
         {/* Inner container with rounded corners - clips all content */}
-        <div className="flex h-full overflow-hidden rounded-xl">
+        <div className="flex overflow-hidden rounded-xl">
           <AppSidebar />
           <SidebarInset>
             <header className="flex h-16 shrink-0 items-center justify-between gap-2 transition-[width,height] ease-linear group-has-[[data-collapsible=icon]]/sidebar-wrapper:h-12">

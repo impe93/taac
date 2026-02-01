@@ -1,16 +1,4 @@
-import { useState, useCallback, type FC, type ReactNode } from 'react'
-import {
-  ResizablePanelGroup,
-  ResizablePanel,
-  ResizableHandle
-} from '@renderer/components/ui/resizable'
-import {
-  Drawer,
-  DrawerContent,
-  DrawerHeader,
-  DrawerTitle,
-  DrawerTrigger
-} from '@renderer/components/ui/drawer'
+import { useState, useCallback, useEffect, useRef, type FC } from 'react'
 import {
   Select,
   SelectContent,
@@ -18,21 +6,30 @@ import {
   SelectTrigger,
   SelectValue
 } from '@renderer/components/ui/select'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger
+} from '@renderer/components/ui/collapsible'
 import { Button } from '@renderer/components/ui/button'
-import { Badge } from '@renderer/components/ui/badge'
+import { ScrollArea } from '@renderer/components/ui/scroll-area'
 import { ConversationList } from './ConversationList'
 import { ChatInterface } from './ChatInterface'
-import { useCreateConversation } from '@renderer/hooks/useConversations'
+import {
+  useCreateConversation,
+  useAddNoteToConversation,
+  useAddMessage
+} from '@renderer/hooks/useConversations'
+import { useAIQuickAction, type AIQuickActionType } from '@renderer/hooks/useAIQuickAction'
 import { useSpaces, useActiveSpace } from '@renderer/hooks/useSpaces'
+import { toast } from 'sonner'
 import { cn } from '@renderer/lib/utils'
 import {
-  PanelLeftClose,
-  PanelLeft,
   MessageSquarePlus,
-  Bot,
-  Menu,
+  Settings2,
   Sparkles,
-  FolderOpen
+  FolderOpen,
+  ChevronDown
 } from 'lucide-react'
 
 interface AIChatPanelProps {
@@ -42,19 +39,21 @@ interface AIChatPanelProps {
 
 export const AIChatPanel: FC<AIChatPanelProps> = ({ className, defaultModelId }) => {
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null)
-  const [isPanelCollapsed, setIsPanelCollapsed] = useState(false)
-  const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false)
   const [selectedSpaceId, setSelectedSpaceId] = useState<string | undefined>(undefined)
   const [enableRAG, setEnableRAG] = useState(true)
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
 
   const modelId = defaultModelId ?? 'default'
   const createConversation = useCreateConversation()
+  const addNoteToConversation = useAddNoteToConversation()
+  const addMessage = useAddMessage()
+  const { pendingAction, clearAction } = useAIQuickAction()
   const { data: spaces } = useSpaces()
   const activeSpace = useActiveSpace()
+  const isProcessingActionRef = useRef(false)
 
   const handleSelectConversation = useCallback((conversationId: string): void => {
     setSelectedConversationId(conversationId)
-    setIsMobileDrawerOpen(false)
   }, [])
 
   const handleCreateConversation = useCallback(async (): Promise<void> => {
@@ -63,10 +62,9 @@ export const AIChatPanel: FC<AIChatPanelProps> = ({ className, defaultModelId })
       modelId
     })
     setSelectedConversationId(result.id)
-    setIsMobileDrawerOpen(false)
   }, [createConversation, modelId])
 
-  const handleCloseConversation = useCallback((): void => {
+  const handleBack = useCallback((): void => {
     setSelectedConversationId(null)
   }, [])
 
@@ -74,211 +72,94 @@ export const AIChatPanel: FC<AIChatPanelProps> = ({ className, defaultModelId })
     setSelectedConversationId(null)
   }, [])
 
-  const togglePanel = useCallback((): void => {
-    setIsPanelCollapsed((prev) => !prev)
-  }, [])
-
   const effectiveSpaceId = selectedSpaceId ?? activeSpace?.id
 
-  const renderConversationListContent = (): ReactNode => (
-    <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b p-3">
-        <h2 className="flex items-center gap-2 text-sm font-medium">
-          <Bot className="size-4" />
-          Conversazioni AI
-        </h2>
-        <Button variant="ghost" size="icon" className="size-8" onClick={togglePanel}>
-          <PanelLeftClose className="size-4" />
-        </Button>
-      </div>
+  // Process pending quick actions from note editor
+  useEffect(() => {
+    if (!pendingAction || isProcessingActionRef.current) return
 
-      {/* Selettori */}
-      <div className="space-y-3 border-b p-3">
-        {/* Space selector per RAG */}
-        <div className="space-y-1.5">
-          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <FolderOpen className="size-3" />
-            Contesto RAG
-          </label>
-          <Select value={effectiveSpaceId ?? ''} onValueChange={setSelectedSpaceId}>
-            <SelectTrigger className="h-8 text-xs">
-              <SelectValue placeholder="Seleziona space" />
-            </SelectTrigger>
-            <SelectContent>
-              {spaces?.map((space) => (
-                <SelectItem key={space.id} value={space.id} className="text-xs">
-                  <span className="flex items-center gap-2">
-                    <span>{space.icon}</span>
-                    <span>{space.name}</span>
-                  </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+    const processAction = async (): Promise<void> => {
+      isProcessingActionRef.current = true
 
-        {/* RAG toggle */}
-        <div className="flex items-center justify-between">
-          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Sparkles className="size-3" />
-            Ricerca contestuale
-          </span>
-          <Button
-            variant={enableRAG ? 'default' : 'outline'}
-            size="sm"
-            className="h-6 px-2 text-xs"
-            onClick={() => setEnableRAG(!enableRAG)}
-          >
-            {enableRAG ? 'Attiva' : 'Disattiva'}
-          </Button>
-        </div>
-      </div>
+      try {
+        const conversationTitles: Record<AIQuickActionType, string> = {
+          ask: `Chat: ${pendingAction.noteRef.title}`,
+          summarize: `Riassunto: ${pendingAction.noteRef.title}`,
+          explain: `Spiegazione: ${pendingAction.noteRef.title}`
+        }
 
-      {/* Conversation list */}
-      <div className="min-h-0 flex-1">
-        <ConversationList
-          onSelectConversation={handleSelectConversation}
-          selectedId={selectedConversationId ?? undefined}
-          onNewConversation={handleCreateConversation}
-        />
-      </div>
+        const conversation = await createConversation.mutateAsync({
+          title: conversationTitles[pendingAction.type],
+          modelId
+        })
 
-      {/* Create button */}
-      <div className="border-t p-3">
-        <Button
-          onClick={handleCreateConversation}
-          disabled={createConversation.isPending}
-          className="w-full gap-2"
-          size="sm"
-        >
-          <MessageSquarePlus className="size-4" />
-          Nuova conversazione
-        </Button>
-      </div>
-    </div>
-  )
+        await addNoteToConversation.mutateAsync({
+          conversationId: conversation.id,
+          noteRef: pendingAction.noteRef
+        })
 
-  const renderEmptyState = (): ReactNode => (
-    <div className="flex h-full flex-col items-center justify-center gap-6 p-8">
-      <div className="flex size-20 items-center justify-center rounded-full bg-primary/10">
-        <Bot className="size-10 text-primary" />
-      </div>
-      <div className="max-w-md text-center">
-        <h3 className="mb-2 text-lg font-semibold">Assistente AI</h3>
-        <p className="mb-6 text-sm text-muted-foreground">
-          Seleziona una conversazione esistente o creane una nuova per iniziare a chattare con
-          l&apos;AI. Le conversazioni supportano il contesto delle tue note tramite RAG.
-        </p>
-      </div>
+        if (pendingAction.type === 'summarize') {
+          await addMessage.mutateAsync({
+            conversationId: conversation.id,
+            role: 'user',
+            content: 'Riassumi questa nota in modo conciso, evidenziando i punti chiave.'
+          })
+        } else if (pendingAction.type === 'explain' && pendingAction.selectedText) {
+          await addMessage.mutateAsync({
+            conversationId: conversation.id,
+            role: 'user',
+            content: `Spiega il seguente testo in modo chiaro e semplice:\n\n"${pendingAction.selectedText}"`
+          })
+        }
 
-      <div className="flex flex-col gap-3">
-        <Button
-          onClick={handleCreateConversation}
-          disabled={createConversation.isPending}
-          className="gap-2"
-        >
-          <MessageSquarePlus className="size-4" />
-          Crea nuova conversazione
-        </Button>
-
-        {effectiveSpaceId && (
-          <Badge variant="outline" className="mx-auto gap-1.5">
-            <FolderOpen className="size-3" />
-            Contesto: {spaces?.find((s) => s.id === effectiveSpaceId)?.name ?? 'Space selezionato'}
-          </Badge>
-        )}
-      </div>
-    </div>
-  )
-
-  const renderChatArea = (): ReactNode => {
-    if (!selectedConversationId) {
-      return renderEmptyState()
+        setSelectedConversationId(conversation.id)
+        toast.success('Nota aggiunta al contesto AI')
+      } catch (error) {
+        console.error('Failed to process AI quick action:', error)
+        toast.error('Errore durante la creazione della conversazione')
+      } finally {
+        isProcessingActionRef.current = false
+        clearAction()
+      }
     }
 
+    processAction()
+  }, [pendingAction, createConversation, addNoteToConversation, addMessage, modelId, clearAction])
+
+  // Render conversation list view
+  if (!selectedConversationId) {
     return (
-      <div className="flex h-full flex-col">
-        {/* Mobile header with menu */}
-        <div className="flex items-center gap-2 border-b p-2 md:hidden">
-          <Drawer open={isMobileDrawerOpen} onOpenChange={setIsMobileDrawerOpen}>
-            <DrawerTrigger asChild>
-              <Button variant="ghost" size="icon" className="size-8">
-                <Menu className="size-4" />
+      <div className={cn('flex h-full flex-col', className)}>
+        {/* Compact settings */}
+        <Collapsible open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
+          <div className="flex items-center justify-between border-b px-3 py-2">
+            <CollapsibleTrigger asChild>
+              <Button variant="ghost" size="sm" className="h-7 gap-1.5 px-2">
+                <Settings2 className="size-3.5" />
+                <span className="text-xs">Impostazioni</span>
+                <ChevronDown
+                  className={cn('size-3 transition-transform', isSettingsOpen && 'rotate-180')}
+                />
               </Button>
-            </DrawerTrigger>
-            <DrawerContent className="h-[85vh]">
-              <DrawerHeader className="sr-only">
-                <DrawerTitle>Conversazioni</DrawerTitle>
-              </DrawerHeader>
-              {renderConversationListContent()}
-            </DrawerContent>
-          </Drawer>
-          <span className="text-sm font-medium">Chat AI</span>
-        </div>
+            </CollapsibleTrigger>
+            <Button
+              onClick={handleCreateConversation}
+              disabled={createConversation.isPending}
+              size="sm"
+              className="h-7 gap-1.5 px-2"
+            >
+              <MessageSquarePlus className="size-3.5" />
+              <span className="text-xs">Nuova</span>
+            </Button>
+          </div>
 
-        {/* Chat interface */}
-        <div className="min-h-0 flex-1">
-          <ChatInterface
-            conversationId={selectedConversationId}
-            modelId={modelId}
-            spaceId={effectiveSpaceId}
-            enableRAG={enableRAG}
-            onClose={handleCloseConversation}
-            onDelete={handleDeleteConversation}
-          />
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className={cn('flex h-full', className)}>
-      {/* Desktop layout with resizable panels */}
-      <div className="hidden h-full w-full md:flex">
-        {isPanelCollapsed ? (
-          <>
-            {/* Collapsed panel - show expand button */}
-            <div className="flex w-12 flex-col items-center border-r py-3">
-              <Button variant="ghost" size="icon" className="size-8" onClick={togglePanel}>
-                <PanelLeft className="size-4" />
-              </Button>
-            </div>
-            <div className="min-w-0 flex-1">{renderChatArea()}</div>
-          </>
-        ) : (
-          <ResizablePanelGroup direction="horizontal">
-            <ResizablePanel defaultSize={30} minSize={20} maxSize={40}>
-              {renderConversationListContent()}
-            </ResizablePanel>
-            <ResizableHandle withHandle />
-            <ResizablePanel defaultSize={70}>{renderChatArea()}</ResizablePanel>
-          </ResizablePanelGroup>
-        )}
-      </div>
-
-      {/* Mobile layout */}
-      <div className="flex h-full w-full flex-col md:hidden">
-        {selectedConversationId ? (
-          renderChatArea()
-        ) : (
-          <>
-            {/* Mobile header */}
-            <div className="flex items-center justify-between border-b p-3">
-              <h2 className="flex items-center gap-2 text-sm font-medium">
-                <Bot className="size-4" />
-                Conversazioni AI
-              </h2>
-            </div>
-
-            {/* Selettori mobile */}
-            <div className="space-y-3 border-b p-3">
-              <div className="space-y-1.5">
-                <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <FolderOpen className="size-3" />
-                  Contesto RAG
-                </label>
+          <CollapsibleContent>
+            <div className="space-y-2 border-b bg-muted/30 px-3 py-2">
+              {/* Space selector */}
+              <div className="flex items-center gap-2">
+                <FolderOpen className="size-3.5 shrink-0 text-muted-foreground" />
                 <Select value={effectiveSpaceId ?? ''} onValueChange={setSelectedSpaceId}>
-                  <SelectTrigger className="h-8 text-xs">
+                  <SelectTrigger className="h-7 flex-1 text-xs">
                     <SelectValue placeholder="Seleziona space" />
                   </SelectTrigger>
                   <SelectContent>
@@ -294,9 +175,10 @@ export const AIChatPanel: FC<AIChatPanelProps> = ({ className, defaultModelId })
                 </Select>
               </div>
 
+              {/* RAG toggle */}
               <div className="flex items-center justify-between">
                 <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Sparkles className="size-3" />
+                  <Sparkles className="size-3.5" />
                   Ricerca contestuale
                 </span>
                 <Button
@@ -305,35 +187,36 @@ export const AIChatPanel: FC<AIChatPanelProps> = ({ className, defaultModelId })
                   className="h-6 px-2 text-xs"
                   onClick={() => setEnableRAG(!enableRAG)}
                 >
-                  {enableRAG ? 'Attiva' : 'Disattiva'}
+                  {enableRAG ? 'On' : 'Off'}
                 </Button>
               </div>
             </div>
+          </CollapsibleContent>
+        </Collapsible>
 
-            {/* Conversation list mobile */}
-            <div className="min-h-0 flex-1">
-              <ConversationList
-                onSelectConversation={handleSelectConversation}
-                selectedId={selectedConversationId ?? undefined}
-                onNewConversation={handleCreateConversation}
-              />
-            </div>
-
-            {/* Create button mobile */}
-            <div className="border-t p-3">
-              <Button
-                onClick={handleCreateConversation}
-                disabled={createConversation.isPending}
-                className="w-full gap-2"
-                size="sm"
-              >
-                <MessageSquarePlus className="size-4" />
-                Nuova conversazione
-              </Button>
-            </div>
-          </>
-        )}
+        {/* Conversation list */}
+        <ScrollArea className="flex-1">
+          <ConversationList
+            onSelectConversation={handleSelectConversation}
+            selectedId={selectedConversationId ?? undefined}
+            onNewConversation={handleCreateConversation}
+          />
+        </ScrollArea>
       </div>
+    )
+  }
+
+  // Render chat view - ChatInterface has its own header with back button
+  return (
+    <div className={cn('flex h-full flex-col', className)}>
+      <ChatInterface
+        conversationId={selectedConversationId}
+        modelId={modelId}
+        spaceId={effectiveSpaceId}
+        enableRAG={enableRAG}
+        onClose={handleBack}
+        onDelete={handleDeleteConversation}
+      />
     </div>
   )
 }

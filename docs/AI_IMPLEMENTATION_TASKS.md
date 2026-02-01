@@ -1218,7 +1218,7 @@ Questo sarà il componente principale per l'esperienza AI.
 
 ---
 
-### Task 5.10: Quick actions da nota a chat
+### Task 5.10: Quick actions da nota a chat (FATTO)
 
 **Descrizione**: Aggiungere azioni rapide per inviare contenuto nota alla chat AI.
 

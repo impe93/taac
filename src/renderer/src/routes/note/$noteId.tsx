@@ -8,6 +8,7 @@ import {
 } from '@renderer/store/slices/notesTreeSlice'
 import { MDXNoteEditor } from '@renderer/components/editor/MDXNoteEditor'
 import { NoteTitle } from '@renderer/components/editor/NoteTitle'
+import { NoteAIActions } from '@renderer/components/editor/NoteAIActions'
 import { useAutoSave } from '@renderer/hooks/useAutoSave'
 import { useAutoIndexNote } from '@renderer/hooks/useAutoIndexNote'
 import { toast } from 'sonner'
@@ -115,7 +116,17 @@ function NoteView(): ReactElement {
     <div className="flex flex-col h-full w-full max-w-4xl mx-auto">
       {/* Header with title */}
       <div className="px-6 py-4 border-b border-border">
-        <NoteTitle title={title} onChange={handleTitleChange} placeholder="Untitled" />
+        <div className="flex items-start justify-between gap-4">
+          <NoteTitle title={title} onChange={handleTitleChange} placeholder="Untitled" />
+          {activeSpaceId && (
+            <NoteAIActions
+              noteId={note.id}
+              spaceId={activeSpaceId}
+              title={title}
+              content={content}
+            />
+          )}
+        </div>
         <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
           <span>Last updated: {new Date(note.updatedAt).toLocaleString()}</span>
           {isSaving && <span className="text-primary animate-pulse">Saving...</span>}

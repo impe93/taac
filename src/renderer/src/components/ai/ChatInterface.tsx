@@ -1,15 +1,16 @@
 import { type FC, useState, useRef, useEffect, useCallback, useMemo } from 'react'
-import { Bot, Loader2, MessageSquare, AlertCircle } from 'lucide-react'
+import { Bot, Loader2, MessageSquare, AlertCircle, AlertTriangle } from 'lucide-react'
 import { ScrollArea } from '@renderer/components/ui/scroll-area'
 import { Skeleton } from '@renderer/components/ui/skeleton'
 import { Badge } from '@renderer/components/ui/badge'
-import { Alert, AlertDescription } from '@renderer/components/ui/alert'
+import { Button } from '@renderer/components/ui/button'
+import { Alert, AlertDescription, AlertTitle } from '@renderer/components/ui/alert'
 import { cn } from '@renderer/lib/utils'
 import { ChatMessage } from './ChatMessage'
 import { ChatInput } from './ChatInput'
 import { ChatContextNotes, searchResultToContextNote, type ContextNote } from './ChatContextNotes'
 import { ConversationHeader } from './ConversationHeader'
-import { useAIChat, useLoadedModels } from '@renderer/hooks/useAI'
+import { useAIChat, useLoadedModels, useAIInitialize } from '@renderer/hooks/useAI'
 import { useVectorSearch } from '@renderer/hooks/useVectorSearch'
 import { useChatState } from '@renderer/hooks/useChatState'
 import type { ChatMessage as ChatMessageType, NoteReference } from '@main/ai/types'
@@ -172,7 +173,15 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
 
   // AI hooks
   const { sendMessage, isGenerating, currentResponse } = useAIChat(effectiveModelId)
-  const { loadedModels, isLoadingModels } = useLoadedModels()
+  const { loadedModels, isLoadingModels, loadModel, isLoadingModel } = useLoadedModels()
+  const { isInitialized, isCheckingInitialized, initialize, isInitializing } = useAIInitialize()
+
+  // Auto-initialize AI if not initialized
+  useEffect(() => {
+    if (!isCheckingInitialized && !isInitialized && !isInitializing) {
+      initialize()
+    }
+  }, [isCheckingInitialized, isInitialized, isInitializing, initialize])
 
   // Vector search hook - only used when RAG is enabled
   const vectorSearch = useVectorSearch(spaceId || '')
@@ -203,6 +212,11 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
   // Check if the model is loaded
   const loadedModel = loadedModels.find((m) => m.id === effectiveModelId)
   const isModelLoaded = Boolean(loadedModel)
+
+  // Handler to load model
+  const handleLoadModel = useCallback((): void => {
+    loadModel(effectiveModelId)
+  }, [loadModel, effectiveModelId])
 
   // Auto-scroll to bottom when messages change or during streaming
   const scrollToBottom = useCallback(() => {
@@ -300,8 +314,8 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
     }
   }
 
-  // Show loading skeleton while checking model status or loading conversation
-  if (isLoadingModels || isLoadingMessages) {
+  // Show loading skeleton while checking model status, initializing AI, or loading conversation
+  if (isLoadingModels || isLoadingMessages || isCheckingInitialized || isInitializing) {
     return (
       <div className={cn('flex flex-col h-full bg-background', className)}>
         <LoadingSkeleton />
@@ -377,6 +391,38 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
               </>
             )}
           </Badge>
+        </div>
+      )}
+
+      {/* Model not loaded warning */}
+      {!isModelLoaded && (
+        <div className="px-4 pt-3">
+          <Alert>
+            <AlertTriangle className="size-4" />
+            <AlertTitle>Modello non caricato</AlertTitle>
+            <AlertDescription className="flex items-center justify-between gap-4">
+              <span className="text-sm">
+                Il modello <strong>{effectiveModelId}</strong> non è caricato in memoria. Caricalo
+                per iniziare a chattare.
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleLoadModel}
+                disabled={isLoadingModel}
+                className="shrink-0"
+              >
+                {isLoadingModel ? (
+                  <>
+                    <Loader2 className="size-4 mr-2 animate-spin" />
+                    Caricamento...
+                  </>
+                ) : (
+                  'Carica Modello'
+                )}
+              </Button>
+            </AlertDescription>
+          </Alert>
         </div>
       )}
 
