@@ -614,6 +614,11 @@ async function collectNotesRecursively(
  * Handles paragraph nodes, text nodes, heading nodes, list nodes, etc.
  */
 function extractTextFromLexicalContent(content: unknown): string {
+  // Handle case where content is already a markdown string
+  if (typeof content === 'string') {
+    return content
+  }
+
   if (!content || typeof content !== 'object') {
     return ''
   }
