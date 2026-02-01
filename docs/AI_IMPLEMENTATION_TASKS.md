@@ -1082,7 +1082,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 9.
 
 ---
 
-### Task 5.5: Componente ConversationList
+### Task 5.5: Componente ConversationList (FATTO)
 
 **Descrizione**: Creare il componente per visualizzare la lista delle conversazioni.
 
