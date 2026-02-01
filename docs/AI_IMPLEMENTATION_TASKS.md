@@ -1107,7 +1107,7 @@ Crea src/renderer/src/components/ai/ConversationList.tsx:
 
 ---
 
-### Task 5.6: Componente ConversationHeader
+### Task 5.6: Componente ConversationHeader (FATTO)
 
 **Descrizione**: Creare l'header della conversazione con titolo editabile e azioni.
 
