@@ -1031,7 +1031,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 7, CONVERSATIONS.
 
 ---
 
-### Task 5.3: Preload API per Conversations
+### Task 5.3: Preload API per Conversations (FATTO)
 
 **Descrizione**: Estendere la preload API con le funzioni per gestire conversazioni.
 

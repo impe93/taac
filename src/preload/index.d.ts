@@ -15,7 +15,11 @@ import type {
   LoadedModel,
   GenerationOptions,
   ChatCompletionResult,
-  SearchResult
+  SearchResult,
+  Conversation,
+  ConversationSummary,
+  NoteReference,
+  ChatMessage
 } from '../main/ai/types'
 
 // Re-export types from types.ts for convenience
@@ -30,7 +34,11 @@ export type {
   LoadedModel,
   GenerationOptions,
   ChatCompletionResult,
-  SearchResult
+  SearchResult,
+  Conversation,
+  ConversationSummary,
+  NoteReference,
+  ChatMessage
 }
 
 // Indexing progress data for vector search
@@ -190,6 +198,25 @@ export interface AIAPI {
   getIndexedNotes: (spaceId: string) => Promise<string[]>
   deleteNoteIndex: (spaceId: string, noteId: string) => Promise<void>
   onIndexingProgress: (callback: (data: IndexingProgress) => void) => () => void
+
+  // Conversations
+  createConversation: (
+    title: string,
+    modelId: string,
+    systemPrompt?: string
+  ) => Promise<Conversation>
+  getConversation: (id: string) => Promise<Conversation>
+  listConversations: () => Promise<ConversationSummary[]>
+  addMessage: (
+    conversationId: string,
+    role: 'user' | 'assistant',
+    content: string,
+    noteRefs?: NoteReference[]
+  ) => Promise<ChatMessage>
+  updateConversationTitle: (conversationId: string, title: string) => Promise<Conversation>
+  addNoteToConversation: (conversationId: string, noteRef: NoteReference) => Promise<Conversation>
+  removeNoteFromConversation: (conversationId: string, noteId: string) => Promise<Conversation>
+  deleteConversation: (id: string) => Promise<void>
 }
 
 // Global window interface

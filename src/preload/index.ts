@@ -191,7 +191,35 @@ const aiAPI = {
     return (): void => {
       ipcRenderer.removeListener('ai:indexing-progress', handler)
     }
-  }
+  },
+
+  // Conversations
+  createConversation: (title: string, modelId: string, systemPrompt?: string) =>
+    ipcRenderer.invoke('ai:createConversation', title, modelId, systemPrompt),
+
+  getConversation: (id: string) => ipcRenderer.invoke('ai:getConversation', id),
+
+  listConversations: () => ipcRenderer.invoke('ai:listConversations'),
+
+  addMessage: (
+    conversationId: string,
+    role: 'user' | 'assistant',
+    content: string,
+    noteRefs?: Array<{ noteId: string; spaceId: string; title: string; excerpt: string }>
+  ) => ipcRenderer.invoke('ai:addMessage', conversationId, role, content, noteRefs),
+
+  updateConversationTitle: (conversationId: string, title: string) =>
+    ipcRenderer.invoke('ai:updateConversationTitle', conversationId, title),
+
+  addNoteToConversation: (
+    conversationId: string,
+    noteRef: { noteId: string; spaceId: string; title: string; excerpt: string }
+  ) => ipcRenderer.invoke('ai:addNoteToConversation', conversationId, noteRef),
+
+  removeNoteFromConversation: (conversationId: string, noteId: string) =>
+    ipcRenderer.invoke('ai:removeNoteFromConversation', conversationId, noteId),
+
+  deleteConversation: (id: string) => ipcRenderer.invoke('ai:deleteConversation', id)
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to
