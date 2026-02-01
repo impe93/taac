@@ -1057,7 +1057,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 8.
 
 ---
 
-### Task 5.4: React Hooks per Conversations
+### Task 5.4: React Hooks per Conversations (FATTO)
 
 **Descrizione**: Creare gli hooks React per gestire le conversazioni.
 
