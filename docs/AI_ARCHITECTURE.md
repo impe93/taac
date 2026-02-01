@@ -158,6 +158,50 @@ I seguenti moduli richiedono build nativi:
 | **Global**    | ConversationManager | Conversazioni possono referenziare note da space diversi    |
 | **Lazy Init** | Tutti i manager     | Inizializzazione on-demand per performance                  |
 
+### 4.2 Layout UI con AI Chat Panel
+
+L'AI Chat Panel è integrato come pannello laterale destro resizable nel layout principale:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              MAIN WINDOW                                     │
+│  ┌──────────────┬────────────────────────────────────┬──────────────────┐   │
+│  │   AppSidebar │           Main Content             │   AI Chat Panel  │   │
+│  │   (256px)    │         (ResizablePanel)           │   (Resizable)    │   │
+│  │              │                                    │   25-50%         │   │
+│  │  - Spaces    │  ┌──────────────────────────────┐  │                  │   │
+│  │  - Notes     │  │  Header (toggle AI button)   │  │  ┌────────────┐  │   │
+│  │    Tree      │  ├──────────────────────────────┤  │  │  AI Header │  │   │
+│  │  - Settings  │  │                              │  │  ├────────────┤  │   │
+│  │              │  │       Note Editor /          │  │  │ Conversa-  │  │   │
+│  │              │  │       Dashboard /            │  │  │ tion List  │  │   │
+│  │              │  │       Other Routes           │  │  ├────────────┤  │   │
+│  │              │  │                              │  │  │ Chat       │  │   │
+│  │              │  │                              │  │  │ Interface  │  │   │
+│  └──────────────┴──┴──────────────────────────────┴──┴──┴────────────┴──┘   │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Componenti chiave:**
+
+| Componente               | Path                                           | Descrizione                         |
+| ------------------------ | ---------------------------------------------- | ----------------------------------- |
+| `MainContentWithAIPanel` | `components/layout/MainContentWithAIPanel.tsx` | Wrapper con ResizablePanelGroup     |
+| `useAIChatPanel`         | `hooks/useAIChatPanel.ts`                      | Hook per stato pannello + shortcuts |
+| `AIChatPanel`            | `components/ai/AIChatPanel.tsx`                | Pannello chat completo              |
+
+**Stato e persistenza:**
+
+- `aiChatPanelOpen`: boolean - pannello aperto/chiuso
+- `aiChatPanelSize`: number - percentuale larghezza (25-50%)
+- Persistito in `electron-store` via `configStore`
+- Keyboard shortcut: `⌘⇧A` (Mac) / `Ctrl+Shift+A` (Win/Linux)
+
+**Responsive:**
+
+- Desktop (md+): pannello resizable affiancato al contenuto
+- Mobile: toggle full-screen tra contenuto e chat
+
 ---
 
 ## 5. Struttura Directory

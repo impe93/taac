@@ -1,5 +1,6 @@
+import { type ReactElement } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { MessageSquare, Settings } from 'lucide-react'
+import { Settings } from 'lucide-react'
 import {
   Sidebar,
   SidebarContent,
@@ -16,7 +17,7 @@ import { SpaceSelector } from './spaces/space-selector'
 import { NotesTree } from './notes-tree/NotesTree'
 import { DndProvider } from './dnd/DndProvider'
 
-export function AppSidebar() {
+export function AppSidebar(): ReactElement {
   const navigate = useNavigate()
 
   return (
@@ -28,12 +29,6 @@ export function AppSidebar() {
         <SidebarGroup className="py-0">
           <SidebarGroupContent>
             <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton onClick={() => navigate({ to: '/ai/chat' })} tooltip="AI Chat">
-                  <MessageSquare className="size-4" />
-                  <span>AI Chat</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton
                   onClick={() => navigate({ to: '/settings/ai' })}

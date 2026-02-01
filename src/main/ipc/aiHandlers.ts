@@ -710,15 +710,18 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
   /**
    * Delete a conversation
    */
-  ipcMain.handle('ai:deleteConversation', async (_event: IpcMainInvokeEvent, conversationId: string) => {
-    try {
-      const convManager = getConversationManager()
-      await convManager.deleteConversation(conversationId)
-      return { success: true }
-    } catch (error) {
-      throw new Error(`Failed to delete conversation: ${(error as Error).message}`)
+  ipcMain.handle(
+    'ai:deleteConversation',
+    async (_event: IpcMainInvokeEvent, conversationId: string) => {
+      try {
+        const convManager = getConversationManager()
+        await convManager.deleteConversation(conversationId)
+        return { success: true }
+      } catch (error) {
+        throw new Error(`Failed to delete conversation: ${(error as Error).message}`)
+      }
     }
-  })
+  )
 
   /**
    * Build context prompt from conversation's note references

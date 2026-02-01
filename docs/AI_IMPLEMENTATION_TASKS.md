@@ -1136,6 +1136,7 @@ Crea src/renderer/src/components/ai/ConversationHeader.tsx:
 **Implementazione**:
 
 1. Creato `src/renderer/src/hooks/useChatState.ts`:
+
    - Hook che gestisce messaggi per modalità persistente (con conversationId) o standalone
    - Usa `useConversation` e `useAddMessage` per modalità persistente
    - Usa state locale per modalità standalone
@@ -1179,29 +1180,41 @@ Questo sarà il componente principale per l'esperienza AI.
 
 ---
 
-### Task 5.9: Integrazione AIChatPanel nella sidebar
+### Task 5.9: Integrazione AIChatPanel nella UI principale (FATTO)
 
-**Descrizione**: Integrare il pannello chat AI nella sidebar dell'applicazione.
+**Descrizione**: Integrare il pannello chat AI nella UI principale come pannello laterale destro resizable.
 
-**Prompt**:
+**Implementazione** (Opzione B - Pannello laterale destro):
 
-```
-Integra AIChatPanel nella UI principale:
+1. Creato `src/main/utils/configStore.ts`:
 
-1. Opzione A - Tab nella sidebar:
-   - Aggiungi tab "AI Chat" nella sidebar esistente
-   - Icona: MessageSquare o Bot da Lucide
+   - Aggiunto `aiChatPanelOpen: boolean` (default: false)
+   - Aggiunto `aiChatPanelSize: number` (default: 35, min: 20, max: 50)
 
-2. Opzione B - Pannello laterale destro:
-   - Bottone nella toolbar per aprire/chiudere
-   - Pannello slide-in da destra
-   - Resizable
+2. Creato `src/renderer/src/hooks/useAIChatPanel.ts`:
 
-3. Salva stato apertura in config
-4. Shortcut keyboard: Cmd/Ctrl + Shift + A
+   - Hook per gestire stato pannello AI (isOpen, panelSize)
+   - Metodi: toggle, open, close, setPanelSize
+   - Keyboard shortcut integrato: Cmd/Ctrl + Shift + A
+   - Persistenza stato in electron-store via TanStack Query
 
-Valuta quale opzione si integra meglio con il design esistente della sidebar notes-tree.
-```
+3. Creato `src/renderer/src/components/layout/MainContentWithAIPanel.tsx`:
+
+   - Wrapper che integra il contenuto principale con pannello AI resizable
+   - Desktop: ResizablePanelGroup con contenuto principale + AIChatPanel
+   - Mobile: Toggle tra contenuto e pannello AI full-screen
+   - Header pannello con titolo e bottone chiudi
+   - Bottone floating su mobile quando pannello chiuso
+
+4. Modificato `src/renderer/src/routes/__root.tsx`:
+
+   - Aggiunto toggle button AI nell'header (icona Bot)
+   - Tooltip con shortcut ⌘⇧A
+   - Integrato MainContentWithAIPanel per wrappare Outlet
+
+5. Modificato `src/renderer/src/components/app-asidebar.tsx`:
+   - Rimosso link "AI Chat" (ora nel pannello destro)
+   - Mantenuto solo "AI Settings" per configurazione
 
 ---
 
@@ -1215,45 +1228,50 @@ Valuta quale opzione si integra meglio con il design esistente della sidebar not
 Aggiungi quick actions per AI dalla nota attiva:
 
 1. Nel toolbar dell'editor o menu contestuale:
-   - "Ask AI about this note" - apre chat con nota in context
+   - "Ask AI about this note" - apre pannello AI con nota in context
    - "Summarize this note" - prompt predefinito per summarize
    - "Explain this" - per selezione di testo
 
 2. Implementa:
-   - Se chat panel chiuso, aprilo
+   - Usa useAIChatPanel().open() per aprire il pannello
    - Crea nuova conversazione o usa quella attiva
-   - Aggiungi nota a noteContext
+   - Aggiungi nota a noteContext tramite useAddNoteToConversation
    - Se "Summarize" o "Explain": invia messaggio automatico
 
 3. Mostra toast di conferma "Note added to AI context"
+
+4. Considera di esporre un context/store per comunicare tra nota e pannello AI
 ```
 
 ---
 
 ## Fase 6: Onboarding & Polish
 
-### Task 6.1: Redux slice per AI state
+### Task 6.1: Redux slice per AI state (VALUTATO - NON NECESSARIO)
 
-**Descrizione**: Creare uno slice Redux per gestire lo stato globale AI (se necessario per stato UI).
+**Descrizione**: Valutare se serve Redux slice per gestire lo stato globale AI.
 
-**Prompt**:
+**Decisione**: TanStack Query è sufficiente.
 
-```
-Valuta se serve Redux slice per AI state:
+Lo stato AI è gestito tramite:
 
-1. Analizza se lo stato AI può essere gestito interamente con TanStack Query
-2. Se serve Redux, crea src/renderer/src/store/slices/aiSlice.ts per:
-   - isAIInitialized
-   - currentModelId (modello attivo per chat)
-   - chatPanelOpen
-   - selectedConversationId
+- `useAIChatPanel` hook con TanStack Query per stato pannello (open/closed, size)
+- `useConversations` hooks per gestione conversazioni
+- `useAI*` hooks per modelli e hardware
+- Persistenza in electron-store tramite configStore
 
-3. Se TanStack Query è sufficiente:
-   - Documenta pattern usato
-   - Considera useAIStore hook con Zustand come alternativa più leggera
+Pattern utilizzato:
 
-Obiettivo: evitare duplicazione stato tra Redux e TanStack Query.
-```
+- Query keys: `['config', 'aiChatPanel']`, `['ai', 'conversations']`, etc.
+- Mutations con `queryClient.setQueryData` per aggiornamenti ottimistici
+- `staleTime: Infinity` per stato che non cambia frequentemente
+
+Non serve Redux perché:
+
+- Nessun stato cross-component complesso che richieda Redux
+- TanStack Query gestisce già cache e sincronizzazione
+- electron-store fornisce persistenza
+- Pattern più semplice e meno boilerplate
 
 ---
 

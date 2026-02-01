@@ -16,6 +16,9 @@ export interface AppConfig {
   recentNotes: string[]
   activeSpaceId: string | null
   spacesInitialized: boolean
+  // AI Chat Panel state
+  aiChatPanelOpen: boolean
+  aiChatPanelSize: number
   // Redux persistence (new multi-space structure)
   reduxSpacesCaches?: Record<
     string,
@@ -99,6 +102,16 @@ const schema = {
   spacesInitialized: {
     type: 'boolean',
     default: false
+  },
+  aiChatPanelOpen: {
+    type: 'boolean',
+    default: false
+  },
+  aiChatPanelSize: {
+    type: 'number',
+    minimum: 20,
+    maximum: 50,
+    default: 35
   },
   reduxSpacesCaches: {
     type: 'object',

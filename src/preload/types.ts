@@ -61,6 +61,9 @@ export interface AppConfig {
   recentNotes: string[]
   activeSpaceId: string | null
   spacesInitialized: boolean
+  // AI Chat Panel state
+  aiChatPanelOpen: boolean
+  aiChatPanelSize: number
   // Redux persistence (new multi-space structure)
   reduxSpacesCaches?: Record<
     string,
