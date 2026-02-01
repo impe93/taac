@@ -1005,7 +1005,7 @@ Riferimento: docs/AI_ARCHITECTURE.md sezione 6.6.
 
 ---
 
-### Task 5.2: IPC Handlers per Conversations
+### Task 5.2: IPC Handlers per Conversations (FATTO)
 
 **Descrizione**: Aggiungere gli IPC handlers per gestire le conversazioni.
 
