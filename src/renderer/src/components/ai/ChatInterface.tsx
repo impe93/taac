@@ -1,29 +1,42 @@
-import { type FC, useState, useRef, useEffect, useCallback } from 'react'
-import { Bot, Loader2, MessageSquare } from 'lucide-react'
+import { type FC, useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { Bot, Loader2, MessageSquare, AlertCircle } from 'lucide-react'
 import { ScrollArea } from '@renderer/components/ui/scroll-area'
 import { Skeleton } from '@renderer/components/ui/skeleton'
 import { Badge } from '@renderer/components/ui/badge'
+import { Alert, AlertDescription } from '@renderer/components/ui/alert'
 import { cn } from '@renderer/lib/utils'
 import { ChatMessage } from './ChatMessage'
 import { ChatInput } from './ChatInput'
 import { ChatContextNotes, searchResultToContextNote, type ContextNote } from './ChatContextNotes'
+import { ConversationHeader } from './ConversationHeader'
 import { useAIChat, useLoadedModels } from '@renderer/hooks/useAI'
 import { useVectorSearch } from '@renderer/hooks/useVectorSearch'
+import { useChatState } from '@renderer/hooks/useChatState'
 import type { ChatMessage as ChatMessageType, NoteReference } from '@main/ai/types'
 
 interface ChatInterfaceProps {
+  /** Model ID to use for chat */
   modelId: string
+  /** Optional conversation ID for persistent mode */
+  conversationId?: string
+  /** Initial messages for standalone mode (ignored if conversationId is set) */
   initialMessages?: ChatMessageType[]
+  /** System prompt (ignored if conversationId is set - uses conversation's systemPrompt) */
   systemPrompt?: string
+  /** Space ID for RAG search */
   spaceId?: string
+  /** Enable RAG (Retrieval Augmented Generation) */
   enableRAG?: boolean
+  /** Number of notes to retrieve for RAG context */
   ragSearchLimit?: number
+  /** Callback when a note reference is clicked */
   onNoteClick?: (noteId: string) => void
+  /** Callback when conversation is closed (only in persistent mode) */
+  onClose?: () => void
+  /** Callback when conversation is deleted (only in persistent mode) */
+  onDelete?: () => void
   className?: string
 }
-
-const generateMessageId = (): string =>
-  `msg-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
 
 const LoadingSkeleton: FC = () => (
   <div className="flex flex-col h-full">
@@ -123,30 +136,72 @@ const contextNotesToReferences = (notes: ContextNote[], spaceId: string): NoteRe
 
 export const ChatInterface: FC<ChatInterfaceProps> = ({
   modelId,
+  conversationId,
   initialMessages = [],
   systemPrompt,
   spaceId,
   enableRAG = false,
   ragSearchLimit = DEFAULT_RAG_SEARCH_LIMIT,
   onNoteClick,
+  onClose,
+  onDelete,
   className
 }) => {
-  const [messages, setMessages] = useState<ChatMessageType[]>(initialMessages)
+  // Chat state management (persistent or standalone mode)
+  const {
+    messages,
+    addMessage,
+    isLoadingMessages,
+    conversation,
+    isPersistent,
+    error: conversationError
+  } = useChatState({
+    conversationId,
+    initialMessages
+  })
+
+  // Local state for context notes and search
   const [contextNotes, setContextNotes] = useState<ContextNote[]>([])
   const [isSearchingContext, setIsSearchingContext] = useState(false)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
+  // Get effective model ID and system prompt (from conversation or props)
+  const effectiveModelId = conversation?.modelId ?? modelId
+  const effectiveSystemPrompt = conversation?.systemPrompt ?? systemPrompt
+
   // AI hooks
-  const { sendMessage, isGenerating, currentResponse } = useAIChat(modelId)
+  const { sendMessage, isGenerating, currentResponse } = useAIChat(effectiveModelId)
   const { loadedModels, isLoadingModels } = useLoadedModels()
 
   // Vector search hook - only used when RAG is enabled
   const vectorSearch = useVectorSearch(spaceId || '')
   const isRAGEnabled = enableRAG && !!spaceId
 
+  // Merge conversation's noteContext with dynamically found context notes
+  const conversationContextNotes = useMemo((): ContextNote[] => {
+    if (!conversation?.noteContext || conversation.noteContext.length === 0) {
+      return []
+    }
+    return conversation.noteContext.map((ref) => ({
+      noteId: ref.noteId,
+      title: ref.title,
+      excerpt: ref.excerpt,
+      relevanceScore: ref.relevanceScore ?? 100 // Pinned notes get 100% relevance
+    }))
+  }, [conversation?.noteContext])
+
+  // All context notes: conversation's pinned notes + dynamically found notes
+  const allContextNotes = useMemo(() => {
+    // Combine pinned notes from conversation with dynamically searched notes
+    // Avoid duplicates by noteId
+    const pinnedIds = new Set(conversationContextNotes.map((n) => n.noteId))
+    const dynamicNotes = contextNotes.filter((n) => !pinnedIds.has(n.noteId))
+    return [...conversationContextNotes, ...dynamicNotes]
+  }, [conversationContextNotes, contextNotes])
+
   // Check if the model is loaded
-  const loadedModel = loadedModels.find((m) => m.id === modelId)
+  const loadedModel = loadedModels.find((m) => m.id === effectiveModelId)
   const isModelLoaded = Boolean(loadedModel)
 
   // Auto-scroll to bottom when messages change or during streaming
@@ -194,35 +249,37 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
   }
 
   const handleSend = async (content: string): Promise<void> => {
-    // Search for relevant notes if RAG is enabled
-    let relevantNotes = contextNotes
-    if (isRAGEnabled && contextNotes.length === 0) {
-      relevantNotes = await searchRelevantNotes(content)
+    // Search for relevant notes if RAG is enabled and no context notes yet
+    let relevantNotes = allContextNotes
+    if (isRAGEnabled && contextNotes.length === 0 && conversationContextNotes.length === 0) {
+      const searchedNotes = await searchRelevantNotes(content)
+      relevantNotes = searchedNotes
     }
 
-    // Build content with context if RAG is enabled
-    const messageContentForAPI = isRAGEnabled ? buildContextPrompt(relevantNotes, content) : content
+    // Build content with context if RAG is enabled and we have context
+    const messageContentForAPI =
+      isRAGEnabled && relevantNotes.length > 0
+        ? buildContextPrompt(relevantNotes, content)
+        : content
 
-    // Create user message (store original content, not the augmented one)
-    const userMessage: ChatMessageType = {
-      id: generateMessageId(),
-      role: 'user',
-      content,
-      timestamp: new Date().toISOString(),
-      // Store note references in the message
-      noteReferences:
-        isRAGEnabled && spaceId ? contextNotesToReferences(relevantNotes, spaceId) : undefined
-    }
+    // Prepare note references for storage
+    const noteRefs =
+      isRAGEnabled && spaceId && relevantNotes.length > 0
+        ? contextNotesToReferences(relevantNotes, spaceId)
+        : undefined
 
-    // Add user message to state
-    setMessages((prev) => [...prev, userMessage])
+    // Add user message using the unified addMessage function
+    await addMessage('user', content, noteRefs)
 
-    // Clear context notes after sending (will search fresh for next message)
+    // Clear dynamic context notes after sending (will search fresh for next message)
+    // Note: conversation's pinned noteContext stays
     setContextNotes([])
 
     // Build messages array for API
     const apiMessages = [
-      ...(systemPrompt ? [{ role: 'system' as const, content: systemPrompt }] : []),
+      ...(effectiveSystemPrompt
+        ? [{ role: 'system' as const, content: effectiveSystemPrompt }]
+        : []),
       ...messages.map((m) => ({ role: m.role, content: m.content })),
       { role: 'user' as const, content: messageContentForAPI }
     ]
@@ -231,34 +288,37 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
       // Send to AI and wait for response
       const response = await sendMessage(apiMessages)
 
-      // Create assistant message
-      const assistantMessage: ChatMessageType = {
-        id: generateMessageId(),
-        role: 'assistant',
-        content: response,
-        timestamp: new Date().toISOString()
-      }
-
-      // Add assistant message to state
-      setMessages((prev) => [...prev, assistantMessage])
+      // Add assistant message using the unified addMessage function
+      await addMessage('assistant', response)
     } catch (error) {
-      // Create error message
-      const errorMessage: ChatMessageType = {
-        id: generateMessageId(),
-        role: 'assistant',
-        content: 'Sorry, an error occurred while generating a response. Please try again.',
-        timestamp: new Date().toISOString()
-      }
-      setMessages((prev) => [...prev, errorMessage])
+      // Add error message
+      await addMessage(
+        'assistant',
+        'Sorry, an error occurred while generating a response. Please try again.'
+      )
       console.error('Chat error:', error)
     }
   }
 
-  // Show loading skeleton while checking model status
-  if (isLoadingModels) {
+  // Show loading skeleton while checking model status or loading conversation
+  if (isLoadingModels || isLoadingMessages) {
     return (
       <div className={cn('flex flex-col h-full bg-background', className)}>
         <LoadingSkeleton />
+      </div>
+    )
+  }
+
+  // Show error state if conversation failed to load
+  if (conversationError) {
+    return (
+      <div className={cn('flex flex-col h-full bg-background p-4', className)}>
+        <Alert variant="destructive">
+          <AlertCircle className="size-4" />
+          <AlertDescription>
+            Failed to load conversation: {conversationError.message}
+          </AlertDescription>
+        </Alert>
       </div>
     )
   }
@@ -277,30 +337,48 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
   // All messages to display (including streaming)
   const displayMessages = streamingMessage ? [...messages, streamingMessage] : messages
 
+  // Handler for closing conversation
+  const handleClose = (): void => {
+    onClose?.()
+  }
+
+  // Handler for deleting conversation
+  const handleDelete = (): void => {
+    onDelete?.()
+  }
+
   return (
     <div className={cn('flex flex-col h-full bg-background', className)}>
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center justify-center size-8 rounded-full bg-muted">
-            <Bot className="size-4 text-muted-foreground" />
+      {/* Header - show ConversationHeader for persistent mode, simple header for standalone */}
+      {isPersistent && conversation ? (
+        <ConversationHeader
+          conversation={conversation}
+          onClose={handleClose}
+          onDelete={handleDelete}
+        />
+      ) : (
+        <div className="flex items-center justify-between px-4 py-3 border-b shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center justify-center size-8 rounded-full bg-muted">
+              <Bot className="size-4 text-muted-foreground" />
+            </div>
+            <div>
+              <h2 className="text-sm font-medium">{effectiveModelId}</h2>
+              <p className="text-xs text-muted-foreground">AI Assistant</p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-sm font-medium">{modelId}</h2>
-            <p className="text-xs text-muted-foreground">AI Assistant</p>
-          </div>
+          <Badge variant={isModelLoaded ? 'default' : 'secondary'} className="gap-1.5">
+            {isModelLoaded ? (
+              'Ready'
+            ) : (
+              <>
+                <Loader2 className="size-3 animate-spin" />
+                Loading
+              </>
+            )}
+          </Badge>
         </div>
-        <Badge variant={isModelLoaded ? 'default' : 'secondary'} className="gap-1.5">
-          {isModelLoaded ? (
-            'Ready'
-          ) : (
-            <>
-              <Loader2 className="size-3 animate-spin" />
-              Loading
-            </>
-          )}
-        </Badge>
-      </div>
+      )}
 
       {/* Messages */}
       <ScrollArea ref={scrollAreaRef} className="flex-1">
@@ -323,9 +401,9 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
       {/* Input area with optional context notes */}
       <div className="p-4 border-t shrink-0 space-y-3">
         {/* Show context notes when RAG is enabled */}
-        {isRAGEnabled && (contextNotes.length > 0 || isSearchingContext) && (
+        {isRAGEnabled && (allContextNotes.length > 0 || isSearchingContext) && (
           <ChatContextNotes
-            notes={contextNotes}
+            notes={allContextNotes}
             onRemove={handleRemoveContextNote}
             onNoteClick={onNoteClick}
             isLoading={isSearchingContext}

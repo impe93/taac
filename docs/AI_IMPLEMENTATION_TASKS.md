@@ -1129,32 +1129,27 @@ Crea src/renderer/src/components/ai/ConversationHeader.tsx:
 
 ---
 
-### Task 5.7: Refactor ChatInterface per Conversations
+### Task 5.7: Refactor ChatInterface per Conversations (FATTO)
 
 **Descrizione**: Modificare ChatInterface per supportare conversazioni persistenti.
 
-**Prompt**:
+**Implementazione**:
 
-```
-Modifica ChatInterface per integrazione con conversazioni:
+1. Creato `src/renderer/src/hooks/useChatState.ts`:
+   - Hook che gestisce messaggi per modalità persistente (con conversationId) o standalone
+   - Usa `useConversation` e `useAddMessage` per modalità persistente
+   - Usa state locale per modalità standalone
+   - Espone `messages`, `addMessage`, `isLoadingMessages`, `conversation`, `isPersistent`
 
-1. Props modificate:
-   - conversationId?: string (se presente, usa conversazione persistente)
-   - Mantieni modalità standalone per chat senza persistenza
-
-2. Se conversationId:
-   - Usa useConversation(conversationId) per caricare messaggi
-   - Usa useAddMessage per aggiungere messaggi
-   - Carica noteContext dalla conversazione
-   - Mostra ConversationHeader
-
-3. Separa logica:
-   - useChatState(conversationId?) hook che gestisce:
-     - Messaggi (da query o state locale)
-     - Add message (mutation o state update)
-
-4. Integrazione RAG: usa buildContextPrompt per note in context
-```
+2. Modificato `src/renderer/src/components/ai/ChatInterface.tsx`:
+   - Nuova prop `conversationId` opzionale per modalità persistente
+   - Nuove props `onClose` e `onDelete` per gestione conversazione
+   - Integrato `useChatState` hook per gestione unificata messaggi
+   - Mostra `ConversationHeader` in modalità persistente
+   - Usa `effectiveModelId` e `effectiveSystemPrompt` da conversazione o props
+   - Merge `noteContext` da conversazione con context notes dinamiche
+   - Gestione errori caricamento conversazione con Alert
+   - Loading state unificato per modelli e conversazione
 
 ---
 
