@@ -976,7 +976,7 @@ Pattern: "Given the following notes as context:\n[notes]\n\nUser question: [mess
 
 ## Fase 5: Conversations
 
-### Task 5.1: Implementazione ConversationManager
+### Task 5.1: Implementazione ConversationManager (FATTO)
 
 **Descrizione**: Implementare il manager per la persistenza delle conversazioni globali.
 

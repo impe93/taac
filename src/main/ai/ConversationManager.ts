@@ -5,11 +5,21 @@
  * - Global storage (not per-space)
  * - Can reference notes from multiple spaces
  * - CRUD operations for conversations
+ * - File-based persistence in {userData}/conversations/{id}.json
  *
  * Reference: docs/AI_ARCHITECTURE.md section 6.6
  */
 
-import type { Conversation, ChatMessage, NoteReference } from './types'
+import { promises as fs } from 'fs'
+import { join } from 'path'
+import { v4 as uuidv4 } from 'uuid'
+import type {
+  Conversation,
+  ConversationSummary,
+  ChatMessage,
+  NoteReference,
+  ChatRole
+} from './types'
 import { ConversationNotFoundError } from './errors'
 
 export class ConversationManager {
@@ -33,140 +43,257 @@ export class ConversationManager {
   }
 
   /**
-   * Initialize and load conversations from disk
-   * TODO: Implement loading
+   * Reset singleton instance (for testing)
+   */
+  static resetInstance(): void {
+    ConversationManager.instance = null
+  }
+
+  /**
+   * Initialize and load all conversations from disk
    */
   async initialize(): Promise<void> {
     if (this.initialized) return
 
-    // TODO: Scan conversationsDir and load all .json files
-    // TODO: Populate conversations Map
+    // Create conversations directory if it doesn't exist
+    await fs.mkdir(this.conversationsDir, { recursive: true })
+
+    // Load all existing conversations
+    await this.loadAllConversations()
 
     this.initialized = true
   }
 
   /**
-   * Create a new conversation
-   * TODO: Implement creation
+   * Load all conversations from disk
    */
-  async create(
+  private async loadAllConversations(): Promise<void> {
+    try {
+      const files = await fs.readdir(this.conversationsDir)
+
+      for (const file of files) {
+        if (file.endsWith('.json')) {
+          try {
+            const filePath = join(this.conversationsDir, file)
+            const content = await fs.readFile(filePath, 'utf-8')
+            const conversation = JSON.parse(content) as Conversation
+            this.conversations.set(conversation.id, conversation)
+          } catch (error) {
+            console.error(`Failed to load conversation file ${file}:`, error)
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load conversations:', error)
+    }
+  }
+
+  /**
+   * Save a conversation to disk
+   */
+  private async saveConversation(conversation: Conversation): Promise<void> {
+    const filePath = join(this.conversationsDir, `${conversation.id}.json`)
+    await fs.writeFile(filePath, JSON.stringify(conversation, null, 2), 'utf-8')
+  }
+
+  /**
+   * Create a new conversation
+   */
+  async createConversation(
     title: string,
     modelId: string,
-    initialMessage?: ChatMessage
+    systemPrompt?: string
   ): Promise<Conversation> {
-    const id = this.generateId()
     const now = new Date().toISOString()
 
     const conversation: Conversation = {
-      id,
+      id: uuidv4(),
       title,
-      messages: initialMessage ? [initialMessage] : [],
       modelId,
+      systemPrompt,
+      messages: [],
+      noteContext: [],
       createdAt: now,
       updatedAt: now,
-      noteContext: [],
       metadata: {
         totalTokens: 0
       }
     }
 
-    this.conversations.set(id, conversation)
+    // Add system message if provided
+    if (systemPrompt) {
+      conversation.messages.push({
+        id: uuidv4(),
+        role: 'system',
+        content: systemPrompt,
+        timestamp: now
+      })
+    }
 
-    // TODO: Persist to disk
+    this.conversations.set(conversation.id, conversation)
+    await this.saveConversation(conversation)
 
     return conversation
+  }
+
+  /**
+   * Add a message to a conversation
+   */
+  async addMessage(
+    conversationId: string,
+    role: ChatRole,
+    content: string,
+    noteReferences?: NoteReference[]
+  ): Promise<ChatMessage> {
+    const conversation = this.conversations.get(conversationId)
+    if (!conversation) {
+      throw new ConversationNotFoundError(conversationId)
+    }
+
+    const message: ChatMessage = {
+      id: uuidv4(),
+      role,
+      content,
+      timestamp: new Date().toISOString(),
+      noteReferences
+    }
+
+    conversation.messages.push(message)
+    conversation.updatedAt = new Date().toISOString()
+
+    // Add note references to context if not already present
+    if (noteReferences) {
+      for (const ref of noteReferences) {
+        const exists = conversation.noteContext.some(
+          (n) => n.noteId === ref.noteId && n.spaceId === ref.spaceId
+        )
+        if (!exists) {
+          conversation.noteContext.push(ref)
+        }
+      }
+    }
+
+    await this.saveConversation(conversation)
+    return message
+  }
+
+  /**
+   * Add a note to conversation context
+   */
+  async addNoteToContext(conversationId: string, noteRef: NoteReference): Promise<void> {
+    const conversation = this.conversations.get(conversationId)
+    if (!conversation) {
+      throw new ConversationNotFoundError(conversationId)
+    }
+
+    // Avoid duplicates
+    const exists = conversation.noteContext.some(
+      (n) => n.noteId === noteRef.noteId && n.spaceId === noteRef.spaceId
+    )
+
+    if (!exists) {
+      conversation.noteContext.push(noteRef)
+      conversation.updatedAt = new Date().toISOString()
+      await this.saveConversation(conversation)
+    }
+  }
+
+  /**
+   * Remove a note from conversation context
+   */
+  async removeNoteFromContext(conversationId: string, noteId: string): Promise<void> {
+    const conversation = this.conversations.get(conversationId)
+    if (!conversation) {
+      throw new ConversationNotFoundError(conversationId)
+    }
+
+    const originalLength = conversation.noteContext.length
+    conversation.noteContext = conversation.noteContext.filter((n) => n.noteId !== noteId)
+
+    if (conversation.noteContext.length !== originalLength) {
+      conversation.updatedAt = new Date().toISOString()
+      await this.saveConversation(conversation)
+    }
   }
 
   /**
    * Get a conversation by ID
    */
-  get(conversationId: string): Conversation {
-    const conversation = this.conversations.get(conversationId)
-    if (!conversation) {
-      throw new ConversationNotFoundError(conversationId)
-    }
-    return conversation
+  getConversation(id: string): Conversation | undefined {
+    return this.conversations.get(id)
   }
 
   /**
-   * Get all conversations
+   * List all conversations (summary only), sorted by updatedAt descending
    */
-  getAll(): Conversation[] {
-    return Array.from(this.conversations.values()).sort(
-      (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-    )
-  }
-
-  /**
-   * Add a message to a conversation
-   * TODO: Implement with persistence
-   */
-  async addMessage(conversationId: string, message: ChatMessage): Promise<void> {
-    const conversation = this.get(conversationId)
-    conversation.messages.push(message)
-    conversation.updatedAt = new Date().toISOString()
-
-    // TODO: Persist to disk
-  }
-
-  /**
-   * Add a note reference to a conversation
-   * TODO: Implement with persistence
-   */
-  async addNoteReference(conversationId: string, reference: NoteReference): Promise<void> {
-    const conversation = this.get(conversationId)
-
-    // Avoid duplicates
-    const exists = conversation.noteContext.some(
-      (r) => r.spaceId === reference.spaceId && r.noteId === reference.noteId
-    )
-    if (!exists) {
-      conversation.noteContext.push(reference)
-      conversation.updatedAt = new Date().toISOString()
-    }
-
-    // TODO: Persist to disk
+  listConversations(): ConversationSummary[] {
+    return Array.from(this.conversations.values())
+      .map((c) => ({
+        id: c.id,
+        title: c.title,
+        modelId: c.modelId,
+        messageCount: c.messages.length,
+        noteCount: c.noteContext.length,
+        createdAt: c.createdAt,
+        updatedAt: c.updatedAt
+      }))
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
   }
 
   /**
    * Update conversation title
-   * TODO: Implement with persistence
    */
-  async updateTitle(conversationId: string, title: string): Promise<void> {
-    const conversation = this.get(conversationId)
+  async updateConversationTitle(id: string, title: string): Promise<void> {
+    const conversation = this.conversations.get(id)
+    if (!conversation) {
+      throw new ConversationNotFoundError(id)
+    }
+
     conversation.title = title
     conversation.updatedAt = new Date().toISOString()
-
-    // TODO: Persist to disk
+    await this.saveConversation(conversation)
   }
 
   /**
    * Delete a conversation
-   * TODO: Implement with file deletion
    */
-  async delete(conversationId: string): Promise<void> {
-    if (!this.conversations.has(conversationId)) {
-      throw new ConversationNotFoundError(conversationId)
+  async deleteConversation(id: string): Promise<void> {
+    if (!this.conversations.has(id)) {
+      throw new ConversationNotFoundError(id)
     }
 
-    this.conversations.delete(conversationId)
+    this.conversations.delete(id)
 
-    // TODO: Delete file from disk
+    const filePath = join(this.conversationsDir, `${id}.json`)
+    try {
+      await fs.unlink(filePath)
+    } catch (error) {
+      // File might not exist, that's fine
+      console.warn(`Could not delete conversation file: ${filePath}`, error)
+    }
   }
 
   /**
-   * Search conversations by title
+   * Build context prompt from referenced notes
+   * Used to inject note context into the conversation
    */
-  search(query: string): Conversation[] {
-    const lowerQuery = query.toLowerCase()
-    return this.getAll().filter((c) => c.title.toLowerCase().includes(lowerQuery))
-  }
+  buildContextPrompt(conversation: Conversation): string {
+    if (conversation.noteContext.length === 0) {
+      return ''
+    }
 
-  /**
-   * Generate unique conversation ID
-   */
-  private generateId(): string {
-    return `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    let contextPrompt = '\n\n## Referenced Notes Context:\n\n'
+
+    for (const note of conversation.noteContext) {
+      contextPrompt += `### ${note.title}\n`
+      if (note.relevanceScore !== undefined) {
+        contextPrompt += `*Relevance: ${(note.relevanceScore * 100).toFixed(1)}%*\n\n`
+      }
+      contextPrompt += `${note.excerpt}\n\n`
+      contextPrompt += '---\n\n'
+    }
+
+    return contextPrompt
   }
 
   /**
@@ -174,5 +301,82 @@ export class ConversationManager {
    */
   getConversationsDir(): string {
     return this.conversationsDir
+  }
+
+  /**
+   * Check if manager is initialized
+   */
+  isInitialized(): boolean {
+    return this.initialized
+  }
+
+  /**
+   * Get total number of conversations
+   */
+  getConversationCount(): number {
+    return this.conversations.size
+  }
+
+  /**
+   * Search conversations by title
+   */
+  searchConversations(query: string): ConversationSummary[] {
+    const lowerQuery = query.toLowerCase()
+    return this.listConversations().filter((c) => c.title.toLowerCase().includes(lowerQuery))
+  }
+
+  /**
+   * Update conversation metadata (e.g., token count)
+   */
+  async updateMetadata(
+    conversationId: string,
+    metadata: Partial<Conversation['metadata']>
+  ): Promise<void> {
+    const conversation = this.conversations.get(conversationId)
+    if (!conversation) {
+      throw new ConversationNotFoundError(conversationId)
+    }
+
+    conversation.metadata = { ...conversation.metadata, ...metadata }
+    conversation.updatedAt = new Date().toISOString()
+    await this.saveConversation(conversation)
+  }
+
+  /**
+   * Clear all notes from conversation context
+   */
+  async clearNoteContext(conversationId: string): Promise<void> {
+    const conversation = this.conversations.get(conversationId)
+    if (!conversation) {
+      throw new ConversationNotFoundError(conversationId)
+    }
+
+    if (conversation.noteContext.length > 0) {
+      conversation.noteContext = []
+      conversation.updatedAt = new Date().toISOString()
+      await this.saveConversation(conversation)
+    }
+  }
+
+  /**
+   * Get messages from a conversation (with optional pagination)
+   */
+  getMessages(conversationId: string, limit?: number, offset?: number): ChatMessage[] {
+    const conversation = this.conversations.get(conversationId)
+    if (!conversation) {
+      throw new ConversationNotFoundError(conversationId)
+    }
+
+    let messages = conversation.messages
+
+    if (offset !== undefined) {
+      messages = messages.slice(offset)
+    }
+
+    if (limit !== undefined) {
+      messages = messages.slice(0, limit)
+    }
+
+    return messages
   }
 }

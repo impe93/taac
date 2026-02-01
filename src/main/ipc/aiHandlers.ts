@@ -575,6 +575,178 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
       }
     }
   )
+
+  // ============================================================================
+  // CONVERSATIONS
+  // ============================================================================
+
+  /**
+   * Create a new conversation
+   */
+  ipcMain.handle(
+    'ai:createConversation',
+    async (_event: IpcMainInvokeEvent, title: string, modelId: string, systemPrompt?: string) => {
+      try {
+        const convManager = getConversationManager()
+        if (!convManager.isInitialized()) {
+          await convManager.initialize()
+        }
+        return await convManager.createConversation(title, modelId, systemPrompt)
+      } catch (error) {
+        throw new Error(`Failed to create conversation: ${(error as Error).message}`)
+      }
+    }
+  )
+
+  /**
+   * Get a conversation by ID
+   */
+  ipcMain.handle('ai:getConversation', (_event: IpcMainInvokeEvent, conversationId: string) => {
+    try {
+      const convManager = getConversationManager()
+      return convManager.getConversation(conversationId)
+    } catch (error) {
+      throw new Error(`Failed to get conversation: ${(error as Error).message}`)
+    }
+  })
+
+  /**
+   * List all conversations
+   */
+  ipcMain.handle('ai:listConversations', (_event: IpcMainInvokeEvent) => {
+    try {
+      const convManager = getConversationManager()
+      return convManager.listConversations()
+    } catch (error) {
+      throw new Error(`Failed to list conversations: ${(error as Error).message}`)
+    }
+  })
+
+  /**
+   * Add a message to a conversation
+   */
+  ipcMain.handle(
+    'ai:addMessage',
+    async (
+      _event: IpcMainInvokeEvent,
+      conversationId: string,
+      role: 'user' | 'assistant' | 'system',
+      content: string,
+      noteReferences?: Array<{
+        noteId: string
+        spaceId: string
+        title: string
+        excerpt: string
+        relevanceScore?: number
+      }>
+    ) => {
+      try {
+        const convManager = getConversationManager()
+        return await convManager.addMessage(conversationId, role, content, noteReferences)
+      } catch (error) {
+        throw new Error(`Failed to add message: ${(error as Error).message}`)
+      }
+    }
+  )
+
+  /**
+   * Update conversation title
+   */
+  ipcMain.handle(
+    'ai:updateConversationTitle',
+    async (_event: IpcMainInvokeEvent, conversationId: string, title: string) => {
+      try {
+        const convManager = getConversationManager()
+        await convManager.updateConversationTitle(conversationId, title)
+        return { success: true }
+      } catch (error) {
+        throw new Error(`Failed to update conversation title: ${(error as Error).message}`)
+      }
+    }
+  )
+
+  /**
+   * Add a note to conversation context
+   */
+  ipcMain.handle(
+    'ai:addNoteToConversation',
+    async (
+      _event: IpcMainInvokeEvent,
+      conversationId: string,
+      noteRef: {
+        noteId: string
+        spaceId: string
+        title: string
+        excerpt: string
+        relevanceScore?: number
+      }
+    ) => {
+      try {
+        const convManager = getConversationManager()
+        await convManager.addNoteToContext(conversationId, noteRef)
+        return { success: true }
+      } catch (error) {
+        throw new Error(`Failed to add note to conversation: ${(error as Error).message}`)
+      }
+    }
+  )
+
+  /**
+   * Remove a note from conversation context
+   */
+  ipcMain.handle(
+    'ai:removeNoteFromConversation',
+    async (_event: IpcMainInvokeEvent, conversationId: string, noteId: string) => {
+      try {
+        const convManager = getConversationManager()
+        await convManager.removeNoteFromContext(conversationId, noteId)
+        return { success: true }
+      } catch (error) {
+        throw new Error(`Failed to remove note from conversation: ${(error as Error).message}`)
+      }
+    }
+  )
+
+  /**
+   * Delete a conversation
+   */
+  ipcMain.handle('ai:deleteConversation', async (_event: IpcMainInvokeEvent, conversationId: string) => {
+    try {
+      const convManager = getConversationManager()
+      await convManager.deleteConversation(conversationId)
+      return { success: true }
+    } catch (error) {
+      throw new Error(`Failed to delete conversation: ${(error as Error).message}`)
+    }
+  })
+
+  /**
+   * Build context prompt from conversation's note references
+   */
+  ipcMain.handle('ai:buildContextPrompt', (_event: IpcMainInvokeEvent, conversationId: string) => {
+    try {
+      const convManager = getConversationManager()
+      const conversation = convManager.getConversation(conversationId)
+      if (!conversation) {
+        throw new Error(`Conversation not found: ${conversationId}`)
+      }
+      return convManager.buildContextPrompt(conversation)
+    } catch (error) {
+      throw new Error(`Failed to build context prompt: ${(error as Error).message}`)
+    }
+  })
+
+  /**
+   * Search conversations by title
+   */
+  ipcMain.handle('ai:searchConversations', (_event: IpcMainInvokeEvent, query: string) => {
+    try {
+      const convManager = getConversationManager()
+      return convManager.searchConversations(query)
+    } catch (error) {
+      throw new Error(`Failed to search conversations: ${(error as Error).message}`)
+    }
+  })
 }
 
 // ============================================================================
