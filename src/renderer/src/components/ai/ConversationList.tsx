@@ -1,5 +1,5 @@
 import { type FC, useState } from 'react'
-import { Plus, MessageSquare, Pencil, Trash2 } from 'lucide-react'
+import { MessageSquare, Pencil, Trash2 } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { Badge } from '@renderer/components/ui/badge'
 import { ScrollArea } from '@renderer/components/ui/scroll-area'
@@ -29,7 +29,6 @@ import {
 interface ConversationListProps {
   onSelectConversation: (id: string) => void
   selectedId?: string
-  onNewConversation: () => void
   className?: string
 }
 
@@ -94,7 +93,6 @@ const EmptyState: FC = () => (
 export const ConversationList: FC<ConversationListProps> = ({
   onSelectConversation,
   selectedId,
-  onNewConversation,
   className
 }) => {
   const { data: conversations, isLoading, error } = useConversations()
@@ -162,14 +160,6 @@ export const ConversationList: FC<ConversationListProps> = ({
 
   return (
     <div className={cn('flex flex-col h-full', className)}>
-      {/* Header with New Conversation button */}
-      <div className="p-2 border-b shrink-0">
-        <Button onClick={onNewConversation} className="w-full gap-2" size="sm">
-          <Plus className="size-4" />
-          New Conversation
-        </Button>
-      </div>
-
       {/* Conversation list */}
       <ScrollArea className="flex-1">
         {isLoading ? (

@@ -65,7 +65,7 @@ export const MainContentWithAIPanel: FC<MainContentWithAIPanelProps> = ({
                     size="icon"
                     className="size-7"
                     onClick={close}
-                    title="Chiudi pannello AI (⌘⇧A)"
+                    title="Close AI panel (⌘⇧A)"
                   >
                     <X className="size-4" />
                   </Button>
@@ -111,7 +111,7 @@ export const MainContentWithAIPanel: FC<MainContentWithAIPanelProps> = ({
           onClick={toggle}
           size="icon"
           className="fixed bottom-6 right-6 z-50 size-12 rounded-full shadow-lg md:hidden"
-          title="Apri AI Assistant (⌘⇧A)"
+          title="Open AI Assistant (⌘⇧A)"
         >
           <Bot className="size-5" />
         </Button>

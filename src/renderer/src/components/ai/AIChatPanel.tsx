@@ -12,7 +12,6 @@ import {
   CollapsibleTrigger
 } from '@renderer/components/ui/collapsible'
 import { Button } from '@renderer/components/ui/button'
-import { ScrollArea } from '@renderer/components/ui/scroll-area'
 import { ConversationList } from './ConversationList'
 import { ChatInterface } from './ChatInterface'
 import {
@@ -24,13 +23,7 @@ import { useAIQuickAction, type AIQuickActionType } from '@renderer/hooks/useAIQ
 import { useSpaces, useActiveSpace } from '@renderer/hooks/useSpaces'
 import { toast } from 'sonner'
 import { cn } from '@renderer/lib/utils'
-import {
-  MessageSquarePlus,
-  Settings2,
-  Sparkles,
-  FolderOpen,
-  ChevronDown
-} from 'lucide-react'
+import { MessageSquarePlus, Settings2, Sparkles, FolderOpen, ChevronDown } from 'lucide-react'
 
 interface AIChatPanelProps {
   className?: string
@@ -58,7 +51,7 @@ export const AIChatPanel: FC<AIChatPanelProps> = ({ className, defaultModelId })
 
   const handleCreateConversation = useCallback(async (): Promise<void> => {
     const result = await createConversation.mutateAsync({
-      title: 'Nuova conversazione',
+      title: 'New conversation',
       modelId
     })
     setSelectedConversationId(result.id)
@@ -84,8 +77,8 @@ export const AIChatPanel: FC<AIChatPanelProps> = ({ className, defaultModelId })
       try {
         const conversationTitles: Record<AIQuickActionType, string> = {
           ask: `Chat: ${pendingAction.noteRef.title}`,
-          summarize: `Riassunto: ${pendingAction.noteRef.title}`,
-          explain: `Spiegazione: ${pendingAction.noteRef.title}`
+          summarize: `Summary: ${pendingAction.noteRef.title}`,
+          explain: `Explanation: ${pendingAction.noteRef.title}`
         }
 
         const conversation = await createConversation.mutateAsync({
@@ -102,21 +95,21 @@ export const AIChatPanel: FC<AIChatPanelProps> = ({ className, defaultModelId })
           await addMessage.mutateAsync({
             conversationId: conversation.id,
             role: 'user',
-            content: 'Riassumi questa nota in modo conciso, evidenziando i punti chiave.'
+            content: 'Summarize this note concisely, highlighting the key points.'
           })
         } else if (pendingAction.type === 'explain' && pendingAction.selectedText) {
           await addMessage.mutateAsync({
             conversationId: conversation.id,
             role: 'user',
-            content: `Spiega il seguente testo in modo chiaro e semplice:\n\n"${pendingAction.selectedText}"`
+            content: `Explain the following text clearly and simply:\n\n"${pendingAction.selectedText}"`
           })
         }
 
         setSelectedConversationId(conversation.id)
-        toast.success('Nota aggiunta al contesto AI')
+        toast.success('Note added to AI context')
       } catch (error) {
         console.error('Failed to process AI quick action:', error)
-        toast.error('Errore durante la creazione della conversazione')
+        toast.error('Error creating conversation')
       } finally {
         isProcessingActionRef.current = false
         clearAction()
@@ -129,14 +122,14 @@ export const AIChatPanel: FC<AIChatPanelProps> = ({ className, defaultModelId })
   // Render conversation list view
   if (!selectedConversationId) {
     return (
-      <div className={cn('flex h-full flex-col', className)}>
+      <div className={cn('flex h-full flex-col overflow-hidden', className)}>
         {/* Compact settings */}
         <Collapsible open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
           <div className="flex items-center justify-between border-b px-3 py-2">
             <CollapsibleTrigger asChild>
               <Button variant="ghost" size="sm" className="h-7 gap-1.5 px-2">
                 <Settings2 className="size-3.5" />
-                <span className="text-xs">Impostazioni</span>
+                <span className="text-xs">Settings</span>
                 <ChevronDown
                   className={cn('size-3 transition-transform', isSettingsOpen && 'rotate-180')}
                 />
@@ -149,7 +142,7 @@ export const AIChatPanel: FC<AIChatPanelProps> = ({ className, defaultModelId })
               className="h-7 gap-1.5 px-2"
             >
               <MessageSquarePlus className="size-3.5" />
-              <span className="text-xs">Nuova</span>
+              <span className="text-xs">New</span>
             </Button>
           </div>
 
@@ -160,15 +153,12 @@ export const AIChatPanel: FC<AIChatPanelProps> = ({ className, defaultModelId })
                 <FolderOpen className="size-3.5 shrink-0 text-muted-foreground" />
                 <Select value={effectiveSpaceId ?? ''} onValueChange={setSelectedSpaceId}>
                   <SelectTrigger className="h-7 flex-1 text-xs">
-                    <SelectValue placeholder="Seleziona space" />
+                    <SelectValue placeholder="Select space" />
                   </SelectTrigger>
                   <SelectContent>
                     {spaces?.map((space) => (
                       <SelectItem key={space.id} value={space.id} className="text-xs">
-                        <span className="flex items-center gap-2">
-                          <span>{space.icon}</span>
-                          <span>{space.name}</span>
-                        </span>
+                        {space.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -179,7 +169,7 @@ export const AIChatPanel: FC<AIChatPanelProps> = ({ className, defaultModelId })
               <div className="flex items-center justify-between">
                 <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <Sparkles className="size-3.5" />
-                  Ricerca contestuale
+                  Contextual search
                 </span>
                 <Button
                   variant={enableRAG ? 'default' : 'outline'}
@@ -195,13 +185,11 @@ export const AIChatPanel: FC<AIChatPanelProps> = ({ className, defaultModelId })
         </Collapsible>
 
         {/* Conversation list */}
-        <ScrollArea className="flex-1">
-          <ConversationList
-            onSelectConversation={handleSelectConversation}
-            selectedId={selectedConversationId ?? undefined}
-            onNewConversation={handleCreateConversation}
-          />
-        </ScrollArea>
+        <ConversationList
+          className="min-h-0 flex-1"
+          onSelectConversation={handleSelectConversation}
+          selectedId={selectedConversationId ?? undefined}
+        />
       </div>
     )
   }
