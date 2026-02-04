@@ -220,7 +220,12 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
 
   // Auto-scroll to bottom when messages change or during streaming
   const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    // Find the ScrollArea viewport and scroll it directly
+    // This prevents scrollIntoView from scrolling parent containers
+    const viewport = scrollAreaRef.current?.querySelector('[data-slot="scroll-area-viewport"]')
+    if (viewport) {
+      viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'smooth' })
+    }
   }, [])
 
   useEffect(() => {
@@ -362,13 +367,14 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
   }
 
   return (
-    <div className={cn('flex flex-col h-full bg-background', className)}>
+    <div className={cn('flex flex-col h-full overflow-hidden bg-background', className)}>
       {/* Header - show ConversationHeader for persistent mode, simple header for standalone */}
       {isPersistent && conversation ? (
         <ConversationHeader
           conversation={conversation}
           onClose={handleClose}
           onDelete={handleDelete}
+          className="shrink-0"
         />
       ) : (
         <div className="flex items-center justify-between px-4 py-3 border-b shrink-0">
@@ -396,7 +402,7 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
 
       {/* Model not loaded warning */}
       {!isModelLoaded && (
-        <div className="px-4 pt-3">
+        <div className="px-4 pt-3 shrink-0">
           <Alert>
             <AlertTriangle className="size-4" />
             <AlertTitle>Modello non caricato</AlertTitle>
@@ -427,7 +433,7 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
       )}
 
       {/* Messages */}
-      <ScrollArea ref={scrollAreaRef} className="flex-1">
+      <ScrollArea ref={scrollAreaRef} className="flex-1 min-h-0">
         {displayMessages.length === 0 ? (
           <EmptyState />
         ) : (
