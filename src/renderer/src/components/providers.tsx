@@ -189,10 +189,10 @@ export function Providers({ children }: { children: React.ReactNode }): React.Re
                 }
               }}
             />
-            <React.Suspense>
+            {/* <React.Suspense>
               <TanStackRouterDevtools position="top-right" />
               <ReactQueryDevtools buttonPosition="bottom-right" />
-            </React.Suspense>
+            </React.Suspense> */}
           </ThemeProvider>
         </QueryClientProvider>
       </ReduxInitializer>

@@ -180,6 +180,8 @@ const aiAPI = {
   deleteNoteIndex: (spaceId: string, noteId: string) =>
     ipcRenderer.invoke('ai:deleteNoteIndex', spaceId, noteId),
 
+  getEmbeddingModelStatus: () => ipcRenderer.invoke('ai:getEmbeddingModelStatus'),
+
   onIndexingProgress: (
     callback: (data: { current: number; total: number; noteId: string; noteTitle: string }) => void
   ) => {

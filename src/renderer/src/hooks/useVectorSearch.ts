@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
-import type { SearchResult, IndexingProgress } from '@preload/index.d'
+import { useEffect, useState, useCallback } from 'react'
+import type { SearchResult, IndexingProgress, EmbeddingModelStatus } from '@preload/index.d'
+import { useModelDownload } from './useModels'
 
 /**
  * Query list of indexed note IDs for a space
@@ -116,4 +117,55 @@ export const useDeleteNoteIndex = () => {
       })
     }
   })
+}
+
+/**
+ * Query embedding model status for RAG operations
+ * Returns whether the default embedding model is available
+ */
+export const useEmbeddingModelStatus = () => {
+  return useQuery<EmbeddingModelStatus>({
+    queryKey: ['ai', 'embedding', 'status'],
+    queryFn: () => window.ai.getEmbeddingModelStatus(),
+    staleTime: 30_000 // Cache for 30 seconds
+  })
+}
+
+/**
+ * Hook to ensure embedding model is available for RAG
+ * Combines status query with download capability
+ */
+export const useEnsureEmbeddingModel = () => {
+  const queryClient = useQueryClient()
+  const { data: status, isLoading, refetch } = useEmbeddingModelStatus()
+  const { download, progress, isDownloading } = useModelDownload()
+
+  const downloadEmbeddingModel = useCallback(() => {
+    if (status?.modelId) {
+      download(status.modelId)
+    }
+  }, [status?.modelId, download])
+
+  // Invalidate status when download completes
+  useEffect(() => {
+    if (status?.modelId) {
+      const modelProgress = progress.get(status.modelId)
+      if (modelProgress?.status === 'completed') {
+        queryClient.invalidateQueries({ queryKey: ['ai', 'embedding', 'status'] })
+      }
+    }
+  }, [progress, status?.modelId, queryClient])
+
+  return {
+    isAvailable: status?.isAvailable ?? false,
+    isLoading,
+    modelName: status?.modelName ?? 'Embedding Model',
+    modelId: status?.modelId,
+    sizeBytes: status?.sizeBytes,
+    error: status?.error,
+    downloadEmbeddingModel,
+    isDownloading,
+    downloadProgress: status?.modelId ? progress.get(status.modelId) : undefined,
+    refetch
+  }
 }

@@ -49,6 +49,16 @@ export interface IndexingProgress {
   noteTitle: string
 }
 
+// Embedding model status for RAG operations
+export interface EmbeddingModelStatus {
+  isAvailable: boolean
+  modelId: string
+  modelName: string
+  sizeBytes?: number
+  downloadUrl?: string
+  error?: string
+}
+
 // File System API interface
 export interface FileSystemAPI {
   // Note operations
@@ -197,6 +207,7 @@ export interface AIAPI {
   ) => Promise<SearchResult[]>
   getIndexedNotes: (spaceId: string) => Promise<string[]>
   deleteNoteIndex: (spaceId: string, noteId: string) => Promise<void>
+  getEmbeddingModelStatus: () => Promise<EmbeddingModelStatus>
   onIndexingProgress: (callback: (data: IndexingProgress) => void) => () => void
 
   // Conversations

@@ -392,6 +392,24 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
     'ai:indexNote',
     async (_event: IpcMainInvokeEvent, spaceId: string, noteId: string, folderId: string) => {
       try {
+        // Ensure AIManager is initialized (required for embedding generation)
+        const manager = getAIManager()
+        if (!manager.isInitialized()) {
+          await manager.initialize()
+        }
+
+        // Check if embedding model is available
+        const service = getEmbeddingService()
+        const modelId = service.getEmbeddingModel()
+        const dl = await getDownloader()
+        const isDownloaded = await dl.isModelDownloaded(modelId)
+
+        if (!isDownloaded) {
+          throw new Error(
+            `Il modello di embedding "${modelId}" non è scaricato. Scaricalo prima di indicizzare le note.`
+          )
+        }
+
         const vectorDB = getOrCreateVectorDB(spaceId, getOrCreateFsManager)
         if (!vectorDB.isInitialized()) {
           await vectorDB.initialize()
@@ -403,7 +421,6 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
         // Convert Lexical content to markdown text
         const textContent = extractTextFromLexicalContent(note.content)
 
-        const service = getEmbeddingService()
         await service.indexNote(
           {
             id: note.id,
@@ -429,13 +446,30 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
    */
   ipcMain.handle('ai:indexAllNotes', async (event: IpcMainInvokeEvent, spaceId: string) => {
     try {
+      // Ensure AIManager is initialized (required for embedding generation)
+      const manager = getAIManager()
+      if (!manager.isInitialized()) {
+        await manager.initialize()
+      }
+
+      // Check if embedding model is available
+      const service = getEmbeddingService()
+      const modelId = service.getEmbeddingModel()
+      const dl = await getDownloader()
+      const isDownloaded = await dl.isModelDownloaded(modelId)
+
+      if (!isDownloaded) {
+        throw new Error(
+          `Il modello di embedding "${modelId}" non è scaricato. Scaricalo prima di indicizzare le note.`
+        )
+      }
+
       const vectorDB = getOrCreateVectorDB(spaceId, getOrCreateFsManager)
       if (!vectorDB.isInitialized()) {
         await vectorDB.initialize()
       }
 
       const fsManager = getOrCreateFsManager(spaceId)
-      const service = getEmbeddingService()
 
       // Collect all notes recursively from folder tree
       const allNotes: Array<{ note: Note; folderId: string }> = []
@@ -522,16 +556,33 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
       noteIds?: string[]
     ): Promise<SearchResult[]> => {
       try {
+        console.log('[RAG Backend] searchNotes called:', { spaceId, query, limit, noteIds })
+
+        // Ensure AIManager is initialized (required for embedding generation)
+        const manager = getAIManager()
+        if (!manager.isInitialized()) {
+          console.log('[RAG Backend] Initializing AIManager...')
+          await manager.initialize()
+        }
+
         const vectorDB = getOrCreateVectorDB(spaceId, getOrCreateFsManager)
         if (!vectorDB.isInitialized()) {
+          console.log('[RAG Backend] Initializing VectorDB...')
           await vectorDB.initialize()
         }
 
         const service = getEmbeddingService()
+        console.log('[RAG Backend] Generating query embedding...')
         const queryEmbedding = await service.embedQuery(query)
+        console.log('[RAG Backend] Query embedding generated, length:', queryEmbedding.length)
 
-        return await vectorDB.search(queryEmbedding, limit ?? 10, noteIds)
+        const results = await vectorDB.search(queryEmbedding, limit ?? 10, noteIds)
+        console.log('[RAG Backend] Search results:', results.length, 'results')
+        console.log('[RAG Backend] Results details:', JSON.stringify(results, null, 2))
+
+        return results
       } catch (error) {
+        console.error('[RAG Backend] Search error:', error)
         throw new Error(`Failed to search notes: ${(error as Error).message}`)
       }
     }
@@ -576,6 +627,45 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
     }
   )
 
+  /**
+   * Get embedding model status for RAG operations
+   * Returns whether the default embedding model is downloaded and available
+   */
+  ipcMain.handle('ai:getEmbeddingModelStatus', async (_event: IpcMainInvokeEvent) => {
+    try {
+      const service = getEmbeddingService()
+      const modelId = service.getEmbeddingModel()
+      const modelDef = ModelRegistry.getModel(modelId)
+
+      if (!modelDef) {
+        return {
+          isAvailable: false,
+          modelId,
+          modelName: modelId,
+          error: 'Embedding model not found in registry'
+        }
+      }
+
+      const dl = await getDownloader()
+      const isDownloaded = await dl.isModelDownloaded(modelId)
+
+      return {
+        isAvailable: isDownloaded,
+        modelId,
+        modelName: modelDef.name,
+        sizeBytes: modelDef.sizeBytes,
+        downloadUrl: modelDef.downloadUrl
+      }
+    } catch (error) {
+      return {
+        isAvailable: false,
+        modelId: 'nomic-embed-text-v1.5',
+        modelName: 'Nomic Embed Text',
+        error: (error as Error).message
+      }
+    }
+  })
+
   // ============================================================================
   // CONVERSATIONS
   // ============================================================================
@@ -613,9 +703,12 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
   /**
    * List all conversations
    */
-  ipcMain.handle('ai:listConversations', (_event: IpcMainInvokeEvent) => {
+  ipcMain.handle('ai:listConversations', async (_event: IpcMainInvokeEvent) => {
     try {
       const convManager = getConversationManager()
+      if (!convManager.isInitialized()) {
+        await convManager.initialize()
+      }
       return convManager.listConversations()
     } catch (error) {
       throw new Error(`Failed to list conversations: ${(error as Error).message}`)

@@ -42,7 +42,7 @@ const getRelevanceBadgeVariant = (score: number): 'default' | 'secondary' | 'out
  */
 export const searchResultToContextNote = (result: SearchResult): ContextNote => ({
   noteId: result.noteId,
-  title: (result.metadata?.title as string) || 'Untitled',
+  title: (result.metadata?.noteTitle as string) || (result.metadata?.title as string) || 'Untitled',
   excerpt: result.content.slice(0, 200) + (result.content.length > 200 ? '...' : ''),
   relevanceScore: distanceToRelevance(result.distance)
 })

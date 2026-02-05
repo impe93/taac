@@ -427,33 +427,76 @@ export class AIManager {
     // Convert messages to llama.cpp chat history format
     const chatHistory = this.convertToChatHistory(messages)
 
-    // Set up response accumulator
+    // Set up real-time streaming with async queue pattern
     let fullResponse = ''
-    const chunks: string[] = []
+    let resolveChunk: ((value: string | null) => void) | null = null
+    let done = false
+    const chunkQueue: string[] = []
+    let generationError: Error | null = null
 
-    // Generate response with streaming via onTextChunk callback
-    const response = await loaded.chatSession.prompt(
-      chatHistory.length > 0 ? chatHistory[chatHistory.length - 1].text : '',
-      {
+    // Start generation without awaiting - this allows chunks to be yielded in real-time
+    const generationPromise = loaded.chatSession
+      .prompt(chatHistory.length > 0 ? chatHistory[chatHistory.length - 1].text : '', {
         maxTokens: options?.maxTokens ?? 2048,
         temperature: options?.temperature ?? 0.7,
         topP: options?.topP,
         stopOnAbortSignal: true,
         onTextChunk: (chunk: string) => {
           fullResponse += chunk
-          chunks.push(chunk)
+          // If there's a waiting consumer, resolve immediately
+          if (resolveChunk) {
+            resolveChunk(chunk)
+            resolveChunk = null
+          } else {
+            // Otherwise queue the chunk for later consumption
+            chunkQueue.push(chunk)
+          }
+        }
+      })
+      .then(() => {
+        done = true
+        // Signal completion to any waiting consumer
+        if (resolveChunk) {
+          resolveChunk(null)
+          resolveChunk = null
+        }
+      })
+      .catch((error: Error) => {
+        generationError = error
+        done = true
+        // Signal error to any waiting consumer
+        if (resolveChunk) {
+          resolveChunk(null)
+          resolveChunk = null
+        }
+      })
+
+    // Yield chunks as they arrive in real-time
+    while (!done || chunkQueue.length > 0) {
+      // If there are queued chunks, yield them immediately
+      if (chunkQueue.length > 0) {
+        yield chunkQueue.shift()!
+      } else if (!done) {
+        // Wait for the next chunk to arrive
+        const chunk = await new Promise<string | null>((resolve) => {
+          resolveChunk = resolve
+        })
+        if (chunk !== null) {
+          yield chunk
         }
       }
-    )
+    }
 
-    // Yield all accumulated chunks for streaming
-    for (const chunk of chunks) {
-      yield chunk
+    // Wait for generation to fully complete and handle any errors
+    await generationPromise
+
+    if (generationError) {
+      throw generationError
     }
 
     // Return final result with complete response and token usage
     return {
-      response: fullResponse || response,
+      response: fullResponse,
       tokensUsed: context.contextSize // Approximation - actual usage from metadata if available
     }
   }

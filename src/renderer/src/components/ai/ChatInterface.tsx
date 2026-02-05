@@ -11,7 +11,7 @@ import { ChatInput } from './ChatInput'
 import { ChatContextNotes, searchResultToContextNote, type ContextNote } from './ChatContextNotes'
 import { ConversationHeader } from './ConversationHeader'
 import { useAIChat, useLoadedModels, useAIInitialize } from '@renderer/hooks/useAI'
-import { useVectorSearch } from '@renderer/hooks/useVectorSearch'
+import { useVectorSearch, useEnsureEmbeddingModel } from '@renderer/hooks/useVectorSearch'
 import { useChatState } from '@renderer/hooks/useChatState'
 import type { ChatMessage as ChatMessageType, NoteReference } from '@main/ai/types'
 
@@ -101,7 +101,7 @@ const EmptyState: FC = () => (
 )
 
 const DEFAULT_RAG_SEARCH_LIMIT = 5
-const RAG_RELEVANCE_THRESHOLD = 40 // Minimum relevance score to include in context
+const RAG_RELEVANCE_THRESHOLD = 25 // Minimum relevance score to include in context
 
 /**
  * Builds a context prompt from relevant notes
@@ -164,6 +164,7 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
   // Local state for context notes and search
   const [contextNotes, setContextNotes] = useState<ContextNote[]>([])
   const [isSearchingContext, setIsSearchingContext] = useState(false)
+  const [ragError, setRagError] = useState<string | null>(null)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -186,6 +187,16 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
   // Vector search hook - only used when RAG is enabled
   const vectorSearch = useVectorSearch(spaceId || '')
   const isRAGEnabled = enableRAG && !!spaceId
+
+  // Embedding model status hook for RAG
+  const {
+    isAvailable: isEmbeddingAvailable,
+    isLoading: isCheckingEmbedding,
+    modelName: embeddingModelName,
+    downloadEmbeddingModel,
+    isDownloading: isDownloadingEmbedding,
+    downloadProgress: embeddingProgress
+  } = useEnsureEmbeddingModel()
 
   // Merge conversation's noteContext with dynamically found context notes
   const conversationContextNotes = useMemo((): ContextNote[] => {
@@ -236,24 +247,54 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
    * Searches for relevant notes and updates context state
    */
   const searchRelevantNotes = async (query: string): Promise<ContextNote[]> => {
-    if (!isRAGEnabled) return []
+    console.log('[RAG Debug] searchRelevantNotes called with query:', query)
+    console.log('[RAG Debug] isRAGEnabled:', isRAGEnabled, 'spaceId:', spaceId)
+
+    if (!isRAGEnabled) {
+      console.log('[RAG Debug] RAG not enabled, returning empty')
+      return []
+    }
+
+    // Check embedding model availability first
+    if (!isEmbeddingAvailable) {
+      console.log('[RAG Debug] Embedding model not available')
+      setRagError(
+        `Il modello di embedding "${embeddingModelName}" non è disponibile. Scaricalo per abilitare la ricerca nelle note.`
+      )
+      return []
+    }
 
     setIsSearchingContext(true)
+    setRagError(null)
     try {
+      console.log('[RAG Debug] Calling vectorSearch.mutateAsync...')
       const results = await vectorSearch.mutateAsync({
         query,
         limit: ragSearchLimit
       })
+      console.log('[RAG Debug] Raw search results:', results)
 
       // Transform results and filter by relevance threshold
-      const notes = results
-        .map(searchResultToContextNote)
-        .filter((note) => note.relevanceScore >= RAG_RELEVANCE_THRESHOLD)
+      const transformedNotes = results.map(searchResultToContextNote)
+      console.log('[RAG Debug] Transformed notes:', transformedNotes)
+
+      const notes = transformedNotes.filter(
+        (note) => note.relevanceScore >= RAG_RELEVANCE_THRESHOLD
+      )
+      console.log(
+        '[RAG Debug] Filtered notes (threshold:',
+        RAG_RELEVANCE_THRESHOLD,
+        '):',
+        notes
+      )
 
       setContextNotes(notes)
       return notes
     } catch (error) {
-      console.error('Error searching for relevant notes:', error)
+      console.error('[RAG Debug] Error searching for relevant notes:', error)
+      const errorMessage =
+        error instanceof Error ? error.message : 'Errore nella ricerca delle note'
+      setRagError(errorMessage)
       return []
     } finally {
       setIsSearchingContext(false)
@@ -428,6 +469,48 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
                 )}
               </Button>
             </AlertDescription>
+          </Alert>
+        </div>
+      )}
+
+      {/* Embedding model not available warning - only show when RAG is enabled */}
+      {isRAGEnabled && !isEmbeddingAvailable && !isCheckingEmbedding && (
+        <div className="px-4 pt-3 shrink-0">
+          <Alert>
+            <AlertTriangle className="size-4" />
+            <AlertTitle>Ricerca nelle note disabilitata</AlertTitle>
+            <AlertDescription className="flex items-center justify-between gap-4">
+              <span className="text-sm">
+                Il modello di embedding <strong>{embeddingModelName}</strong> è necessario per
+                cercare nelle tue note. Scaricalo per abilitare il RAG.
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={downloadEmbeddingModel}
+                disabled={isDownloadingEmbedding}
+                className="shrink-0"
+              >
+                {isDownloadingEmbedding ? (
+                  <>
+                    <Loader2 className="size-4 mr-2 animate-spin" />
+                    {embeddingProgress ? `${embeddingProgress.percentage}%` : 'Download...'}
+                  </>
+                ) : (
+                  'Scarica'
+                )}
+              </Button>
+            </AlertDescription>
+          </Alert>
+        </div>
+      )}
+
+      {/* RAG error alert */}
+      {ragError && (
+        <div className="px-4 pt-3 shrink-0">
+          <Alert variant="destructive">
+            <AlertCircle className="size-4" />
+            <AlertDescription>{ragError}</AlertDescription>
           </Alert>
         </div>
       )}
