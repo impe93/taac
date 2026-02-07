@@ -16,70 +16,22 @@ import type { ModelDefinition, HardwareTier } from './types'
  */
 const CURATED_MODELS: ModelDefinition[] = [
   // ============================================================================
-  // LOW TIER - CPU-friendly models (< 4GB)
-  // ============================================================================
-  {
-    id: 'phi-3-mini-q4',
-    name: 'Phi-3 Mini 4K (Q4_K_M)',
-    description: 'Microsoft Phi-3 Mini optimized for resource-constrained environments',
-    filename: 'Phi-3-mini-4k-instruct-Q4_K_M.gguf',
-    sizeBytes: 2.3 * 1024 * 1024 * 1024, // ~2.3GB
-    layers: 32,
-    quantization: 'Q4_K_M',
-    contextLength: 4096,
-    capabilities: ['chat'],
-    hardwareTier: 'low',
-    downloadUrl:
-      'https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf/resolve/main/Phi-3-mini-4k-instruct-q4.gguf',
-    license: 'MIT'
-  },
-  {
-    id: 'qwen2-1.5b-q8',
-    name: 'Qwen2 1.5B (Q8_0)',
-    description: 'Alibaba Qwen2 1.5B parameter model, excellent for lightweight inference',
-    filename: 'qwen2-1_5b-instruct-q8_0.gguf',
-    sizeBytes: 1.6 * 1024 * 1024 * 1024, // ~1.6GB
-    layers: 28,
-    quantization: 'Q8_0',
-    contextLength: 32768,
-    capabilities: ['chat'],
-    hardwareTier: 'low',
-    downloadUrl:
-      'https://huggingface.co/Qwen/Qwen2-1.5B-Instruct-GGUF/resolve/main/qwen2-1_5b-instruct-q8_0.gguf',
-    license: 'Apache 2.0'
-  },
-
-  // ============================================================================
   // MEDIUM TIER - Balanced models (4-8GB)
   // ============================================================================
   {
-    id: 'llama-3.1-8b-q4',
-    name: 'Llama 3.1 8B (Q4_K_M)',
-    description: 'Meta Llama 3.1 8B parameter model with strong general capabilities',
-    filename: 'Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf',
-    sizeBytes: 4.9 * 1024 * 1024 * 1024, // ~4.9GB
-    layers: 32,
-    quantization: 'Q4_K_M',
-    contextLength: 131072,
+    id: 'qwen3-4b-instruct-2507-q8',
+    name: 'Qwen3 4B Instruct 2507 (Q8_0)',
+    description:
+      'Alibaba Qwen3 4B instruction-tuned model with strong reasoning and multilingual capabilities',
+    filename: 'Qwen3-4B-Instruct-2507-Q8_0.gguf',
+    sizeBytes: 4.28 * 1024 * 1024 * 1024, // ~4.28GB
+    layers: 36,
+    quantization: 'Q8_0',
+    contextLength: 262144,
     capabilities: ['chat', 'code', 'reasoning'],
     hardwareTier: 'medium',
     downloadUrl:
-      'https://huggingface.co/lmstudio-community/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf',
-    license: 'Llama 3.1 Community License'
-  },
-  {
-    id: 'mistral-7b-q4',
-    name: 'Mistral 7B (Q4_K_M)',
-    description: 'Mistral 7B instruction-tuned model for advanced chat capabilities',
-    filename: 'mistral-7b-instruct-v0.3.Q4_K_M.gguf',
-    sizeBytes: 4.4 * 1024 * 1024 * 1024, // ~4.4GB
-    layers: 32,
-    quantization: 'Q4_K_M',
-    contextLength: 32768,
-    capabilities: ['chat', 'code'],
-    hardwareTier: 'medium',
-    downloadUrl:
-      'https://huggingface.co/MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF/resolve/main/Mistral-7B-Instruct-v0.3.Q4_K_M.gguf',
+      'https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-Q8_0.gguf',
     license: 'Apache 2.0'
   },
 
@@ -101,73 +53,25 @@ const CURATED_MODELS: ModelDefinition[] = [
       'https://huggingface.co/lmstudio-community/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-8B-Instruct-Q8_0.gguf',
     license: 'Llama 3.1 Community License'
   },
-  {
-    id: 'deepseek-coder-6.7b-q8',
-    name: 'DeepSeek Coder 6.7B (Q8_0)',
-    description: 'DeepSeek Coder specialized for code generation and understanding',
-    filename: 'deepseek-coder-6.7b-instruct-Q8_0.gguf',
-    sizeBytes: 7.2 * 1024 * 1024 * 1024, // ~7.2GB
-    layers: 32,
-    quantization: 'Q8_0',
-    contextLength: 16384,
-    capabilities: ['chat', 'code'],
-    hardwareTier: 'high',
-    downloadUrl:
-      'https://huggingface.co/TheBloke/deepseek-coder-6.7B-instruct-GGUF/resolve/main/deepseek-coder-6.7b-instruct.Q8_0.gguf',
-    license: 'DeepSeek License'
-  },
-
-  // ============================================================================
-  // ULTRA TIER - Premium models (16GB+)
-  // ============================================================================
-  {
-    id: 'llama-3.1-70b-q4',
-    name: 'Llama 3.1 70B (Q4_K_M)',
-    description: 'Meta Llama 3.1 70B parameter model for maximum capability and intelligence',
-    filename: 'Meta-Llama-3.1-70B-Instruct-Q4_K_M.gguf',
-    sizeBytes: 42.5 * 1024 * 1024 * 1024, // ~42.5GB
-    layers: 80,
-    quantization: 'Q4_K_M',
-    contextLength: 131072,
-    capabilities: ['chat', 'code', 'reasoning'],
-    hardwareTier: 'ultra',
-    downloadUrl:
-      'https://huggingface.co/lmstudio-community/Meta-Llama-3.1-70B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-70B-Instruct-Q4_K_M.gguf',
-    license: 'Llama 3.1 Community License'
-  },
 
   // ============================================================================
   // EMBEDDING MODELS - For vector search and RAG
   // ============================================================================
   {
-    id: 'nomic-embed-text-v1.5',
-    name: 'Nomic Embed Text v1.5 (Q8_0)',
-    description: 'High-quality text embedding model for semantic search with 8192 token context',
-    filename: 'nomic-embed-text-v1.5.Q8_0.gguf',
-    sizeBytes: 137 * 1024 * 1024, // ~137MB
-    layers: 12,
+    id: 'nomic-embed-text-v2-moe',
+    name: 'Nomic Embed Text v2 MoE (Q8_0)',
+    description:
+      'High-quality multilingual embedding model with MoE architecture for semantic search (~100 languages)',
+    filename: 'nomic-embed-text-v2-moe.Q8_0.gguf',
+    sizeBytes: 488 * 1024 * 1024, // ~488MB
+    layers: 22,
     quantization: 'Q8_0',
-    contextLength: 8192,
-    capabilities: ['embedding'],
-    hardwareTier: 'low',
-    downloadUrl:
-      'https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5.Q8_0.gguf',
-    license: 'Apache 2.0'
-  },
-  {
-    id: 'bge-small-en-v1.5',
-    name: 'BGE Small EN v1.5 (F16)',
-    description: 'Compact BAAI embedding model optimized for English text retrieval',
-    filename: 'bge-small-en-v1.5-f16.gguf',
-    sizeBytes: 66 * 1024 * 1024, // ~66MB
-    layers: 12,
-    quantization: 'F16',
     contextLength: 512,
     capabilities: ['embedding'],
     hardwareTier: 'low',
     downloadUrl:
-      'https://huggingface.co/CompendiumLabs/bge-small-en-v1.5-gguf/resolve/main/bge-small-en-v1.5-f16.gguf',
-    license: 'MIT'
+      'https://huggingface.co/nomic-ai/nomic-embed-text-v2-moe-GGUF/resolve/main/nomic-embed-text-v2-moe.Q8_0.gguf',
+    license: 'Apache 2.0'
   }
 ]
 

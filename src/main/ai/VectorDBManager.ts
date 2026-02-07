@@ -78,12 +78,20 @@ export class VectorDBManager {
           chunk_index INTEGER NOT NULL,
           content TEXT NOT NULL,
           metadata TEXT,
+          embedding_model TEXT,
           created_at TEXT DEFAULT (datetime('now')),
           UNIQUE(note_id, chunk_index)
         );
 
         CREATE INDEX IF NOT EXISTS idx_embeddings_note_id ON embeddings(note_id);
       `)
+
+      // Migration: add embedding_model column if missing (existing databases)
+      try {
+        this.db.exec('ALTER TABLE embeddings ADD COLUMN embedding_model TEXT')
+      } catch {
+        // Column already exists, ignore
+      }
 
       // Create virtual table for vector search using vec0
       // vec0 creates a virtual table that stores vectors efficiently
@@ -119,10 +127,17 @@ export class VectorDBManager {
         // Insert metadata into embeddings table
         this.db!.prepare(
           `
-          INSERT OR REPLACE INTO embeddings (id, note_id, chunk_index, content, metadata)
-          VALUES (?, ?, ?, ?, ?)
+          INSERT OR REPLACE INTO embeddings (id, note_id, chunk_index, content, metadata, embedding_model)
+          VALUES (?, ?, ?, ?, ?, ?)
         `
-        ).run(id, doc.noteId, doc.chunkIndex, doc.content, JSON.stringify(doc.metadata || {}))
+        ).run(
+          id,
+          doc.noteId,
+          doc.chunkIndex,
+          doc.content,
+          JSON.stringify(doc.metadata || {}),
+          doc.embeddingModel || null
+        )
 
         // Insert vector into vec_embeddings virtual table if embedding is provided
         if (doc.embedding) {
@@ -434,6 +449,26 @@ export class VectorDBManager {
    */
   async getEmbeddingCount(): Promise<number> {
     return this.getDocumentCount()
+  }
+
+  /**
+   * Get the embedding model used for stored embeddings
+   * Returns null if no embeddings exist or model is not tracked
+   */
+  async getStoredEmbeddingModel(): Promise<string | null> {
+    if (!this.db || !this.initialized) {
+      return null
+    }
+
+    try {
+      const result = this.db
+        .prepare('SELECT embedding_model FROM embeddings WHERE embedding_model IS NOT NULL LIMIT 1')
+        .get() as { embedding_model: string } | undefined
+
+      return result?.embedding_model || null
+    } catch {
+      return null
+    }
   }
 
   /**

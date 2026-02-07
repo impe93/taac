@@ -234,6 +234,7 @@ export interface VectorDocument {
   chunkIndex: number
   content: string
   embedding?: number[]
+  embeddingModel?: string
   metadata?: Record<string, unknown>
 }
 
@@ -263,19 +264,20 @@ export interface EmbeddingResult {
 // ============================================================================
 
 /**
- * Options for text chunking during indexing
+ * Options for text chunking during indexing (token-based)
  */
 export interface ChunkingOptions {
-  maxChunkSize: number
-  overlapSize: number
+  maxChunkTokens: number
+  overlapTokens: number
   splitOnParagraph: boolean
 }
 
 /**
- * Default chunking options
+ * Default chunking options (token-based)
+ * 256 tokens per chunk with 32 token overlap suits embedding models with 512 token context
  */
 export const DEFAULT_CHUNKING_OPTIONS: ChunkingOptions = {
-  maxChunkSize: 512,
-  overlapSize: 50,
+  maxChunkTokens: 256,
+  overlapTokens: 32,
   splitOnParagraph: true
 }

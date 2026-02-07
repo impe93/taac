@@ -606,6 +606,25 @@ export class AIManager {
   }
 
   /**
+   * Get the LlamaModel instance for a model (loads if needed)
+   *
+   * Useful for accessing tokenization primitives (tokenize/detokenize)
+   * without needing the full chat or embedding context.
+   *
+   * @param modelId - The model ID
+   * @returns The LlamaModel instance
+   */
+  async getModelInstance(modelId: string): Promise<LlamaModel> {
+    const loaded = this.loadedModels.get(modelId)
+    if (!loaded) {
+      await this.loadModel(modelId)
+      return this.getModelInstance(modelId)
+    }
+    loaded.lastUsed = Date.now()
+    return loaded.model
+  }
+
+  /**
    * Get internal loaded model (for advanced operations)
    *
    * @internal

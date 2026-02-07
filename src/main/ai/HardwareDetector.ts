@@ -100,55 +100,32 @@ export class HardwareDetector {
     const chatModels = compatibleModels.filter((m) => m.capabilities.includes('chat'))
     const embeddingModels = compatibleModels.filter((m) => m.capabilities.includes('embedding'))
 
-    // Add chat model recommendations based on tier (from highest applicable down)
-    switch (hardware.tier) {
-      case 'ultra':
-        // Ultra tier: can run large models with full GPU offload
-        if (chatModels.find((m) => m.id === 'mistral-7b-q4')) {
-          recommendations.push({
-            modelId: 'mistral-7b-q4',
-            reason: 'Your high-end GPU can handle 7B+ parameter models with excellent performance',
-            estimatedPerformance: 'very-fast',
-            gpuLayersRecommended: -1
-          })
-        }
-      // fallthrough
-      case 'high':
-        // High tier: best quality 7B with full GPU offload
-        if (chatModels.find((m) => m.id === 'mistral-7b-q4') && hardware.tier !== 'ultra') {
-          recommendations.push({
-            modelId: 'mistral-7b-q4',
-            reason: 'Best quality 7B model with full GPU acceleration',
-            estimatedPerformance: 'fast',
-            gpuLayersRecommended: -1
-          })
-        }
-      // fallthrough
-      case 'medium':
-        // Medium tier: smaller models with partial GPU offload
-        if (chatModels.find((m) => m.id === 'llama-3.2-3b-q4')) {
-          const perf: EstimatedPerformance =
-            hardware.tier === 'high' || hardware.tier === 'ultra' ? 'very-fast' : 'fast'
-          recommendations.push({
-            modelId: 'llama-3.2-3b-q4',
-            reason: 'Great balance of quality and speed for most systems',
-            estimatedPerformance: perf,
-            gpuLayersRecommended: hardware.tier === 'medium' ? 20 : -1
-          })
-        }
-      // fallthrough
-      case 'low':
-        // Low tier: lightweight models with minimal GPU usage
-        if (chatModels.find((m) => m.id === 'phi-3-mini-4k-q4')) {
-          const perf: EstimatedPerformance = hardware.tier === 'low' ? 'moderate' : 'fast'
-          recommendations.push({
-            modelId: 'phi-3-mini-4k-q4',
-            reason: 'Lightweight model optimized for limited hardware',
-            estimatedPerformance: perf,
-            gpuLayersRecommended: hardware.tier === 'low' ? 0 : 16
-          })
-        }
-        break
+    // Chat model recommendation based on tier
+    if (
+      (hardware.tier === 'high' || hardware.tier === 'ultra') &&
+      chatModels.find((m) => m.id === 'llama-3.1-8b-q8')
+    ) {
+      recommendations.push({
+        modelId: 'llama-3.1-8b-q8',
+        reason: 'Best quality 8B model with full GPU acceleration',
+        estimatedPerformance: hardware.tier === 'ultra' ? 'very-fast' : 'fast',
+        gpuLayersRecommended: -1
+      })
+    }
+
+    // Always recommend Qwen3 4B as lighter alternative (or primary for low/medium)
+    if (chatModels.find((m) => m.id === 'qwen3-4b-instruct-2507-q8')) {
+      const perf: EstimatedPerformance =
+        hardware.tier === 'high' || hardware.tier === 'ultra' ? 'very-fast' : 'fast'
+      recommendations.push({
+        modelId: 'qwen3-4b-instruct-2507-q8',
+        reason:
+          hardware.tier === 'high' || hardware.tier === 'ultra'
+            ? 'Lighter alternative with strong reasoning capabilities'
+            : 'Best model for your hardware with strong reasoning and multilingual capabilities',
+        estimatedPerformance: perf,
+        gpuLayersRecommended: hardware.tier === 'low' ? 0 : -1
+      })
     }
 
     // Always recommend embedding model if available

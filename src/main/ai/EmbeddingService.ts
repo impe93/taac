@@ -12,17 +12,18 @@
 
 import type { AIManager } from './AIManager'
 import type { VectorDBManager } from './VectorDBManager'
+import type { LlamaModel } from 'node-llama-cpp'
 import type { EmbeddingResult, ChunkingOptions } from './types'
 import { DEFAULT_CHUNKING_OPTIONS } from './types'
 import { EmbeddingFailedError, AINotInitializedError } from './errors'
 import { v4 as uuidv4 } from 'uuid'
 
 /**
- * Extended chunking options with paragraph splitting
+ * Extended chunking options with token-based limits
  */
 export interface ExtendedChunkingOptions extends ChunkingOptions {
-  /** Minimum chunk size to keep (avoids tiny fragments) */
-  minChunkSize?: number
+  /** Minimum chunk size in tokens to keep (avoids tiny fragments) */
+  minChunkTokens?: number
 }
 
 /**
@@ -49,11 +50,11 @@ export interface IndexableNote {
 }
 
 /**
- * Default extended chunking options
+ * Default extended chunking options (token-based)
  */
 const DEFAULT_EXTENDED_OPTIONS: ExtendedChunkingOptions = {
   ...DEFAULT_CHUNKING_OPTIONS,
-  minChunkSize: 50
+  minChunkTokens: 10
 }
 
 /**
@@ -64,7 +65,7 @@ const DEFAULT_EXTENDED_OPTIONS: ExtendedChunkingOptions = {
  */
 export class EmbeddingService {
   private aiManager: AIManager
-  private embeddingModelId: string = 'nomic-embed-text-v1.5'
+  private embeddingModelId: string = 'nomic-embed-text-v2-moe'
 
   /**
    * Create an EmbeddingService instance
@@ -170,8 +171,8 @@ export class EmbeddingService {
         return
       }
 
-      // Chunk the content with paragraph awareness
-      const chunks = this.chunkText(textContent, options)
+      // Chunk the content with token-aware paragraph splitting
+      const chunks = await this.chunkText(textContent, options)
 
       if (chunks.length === 0) {
         console.log(`[EmbeddingService] Note ${note.id} produced no valid chunks, skipping`)
@@ -189,6 +190,7 @@ export class EmbeddingService {
           chunkIndex: i,
           content: chunk.text,
           embedding,
+          embeddingModel: this.embeddingModelId,
           metadata: {
             noteTitle: note.title,
             folderId: note.folderId,
@@ -240,7 +242,7 @@ export class EmbeddingService {
           continue
         }
 
-        const chunks = this.chunkText(textContent, options)
+        const chunks = await this.chunkText(textContent, options)
         const noteResults: EmbeddingResult[] = []
 
         for (let j = 0; j < chunks.length; j++) {
@@ -253,6 +255,7 @@ export class EmbeddingService {
             chunkIndex: j,
             content: chunk.text,
             embedding,
+            embeddingModel: this.embeddingModelId,
             metadata: {
               noteTitle: note.title,
               folderId: note.folderId,
@@ -369,23 +372,28 @@ export class EmbeddingService {
   }
 
   /**
-   * Chunk text with overlap and paragraph awareness
+   * Chunk text with token-based limits and paragraph awareness
+   *
+   * Uses the embedding model's tokenizer to accurately measure chunk sizes
+   * in tokens rather than characters, respecting the model's actual context limits.
    *
    * @param text - The text to chunk
-   * @param options - Chunking configuration
+   * @param options - Chunking configuration (token-based)
    * @returns Array of text chunks with position metadata
    */
-  chunkText(
+  async chunkText(
     text: string,
     options: ExtendedChunkingOptions = DEFAULT_EXTENDED_OPTIONS
-  ): TextChunk[] {
-    const { maxChunkSize, overlapSize, splitOnParagraph, minChunkSize = 50 } = options
+  ): Promise<TextChunk[]> {
+    const { maxChunkTokens, overlapTokens, splitOnParagraph, minChunkTokens = 10 } = options
+    const model = await this.aiManager.getModelInstance(this.embeddingModelId)
     const chunks: TextChunk[] = []
 
     if (splitOnParagraph) {
       // Split by paragraphs first (double newlines)
       const paragraphs = text.split(/\n\n+/)
       let currentChunk = ''
+      let currentChunkTokens = 0
       let currentStartOffset = 0
       let runningOffset = 0
 
@@ -396,8 +404,12 @@ export class EmbeddingService {
           continue
         }
 
-        // Check if adding this paragraph exceeds max size
-        if (currentChunk.length + trimmedPara.length + 2 <= maxChunkSize) {
+        const paraTokens = model.tokenize(trimmedPara).length
+        // Separator \n\n is roughly 1 token
+        const separatorTokens = currentChunk ? 1 : 0
+
+        // Check if adding this paragraph exceeds max token limit
+        if (currentChunkTokens + paraTokens + separatorTokens <= maxChunkTokens) {
           // Add to current chunk
           if (currentChunk) {
             currentChunk += '\n\n' + trimmedPara
@@ -405,9 +417,10 @@ export class EmbeddingService {
             currentChunk = trimmedPara
             currentStartOffset = runningOffset
           }
+          currentChunkTokens += paraTokens + separatorTokens
         } else {
           // Save current chunk if it has content
-          if (currentChunk && currentChunk.length >= minChunkSize) {
+          if (currentChunk && currentChunkTokens >= minChunkTokens) {
             chunks.push({
               text: currentChunk,
               index: chunks.length,
@@ -416,13 +429,14 @@ export class EmbeddingService {
             })
           }
 
-          // Handle long paragraphs that exceed max size
-          if (trimmedPara.length > maxChunkSize) {
-            const subChunks = this.splitLongText(
+          // Handle long paragraphs that exceed max token limit
+          if (paraTokens > maxChunkTokens) {
+            const subChunks = this.splitLongTextByTokens(
               trimmedPara,
-              maxChunkSize,
-              overlapSize,
-              minChunkSize
+              model,
+              maxChunkTokens,
+              overlapTokens,
+              minChunkTokens
             )
             for (const subChunk of subChunks) {
               chunks.push({
@@ -433,8 +447,10 @@ export class EmbeddingService {
               })
             }
             currentChunk = ''
+            currentChunkTokens = 0
           } else {
             currentChunk = trimmedPara
+            currentChunkTokens = paraTokens
             currentStartOffset = runningOffset
           }
         }
@@ -443,7 +459,7 @@ export class EmbeddingService {
       }
 
       // Don't forget the last chunk
-      if (currentChunk && currentChunk.length >= minChunkSize) {
+      if (currentChunk && currentChunkTokens >= minChunkTokens) {
         chunks.push({
           text: currentChunk,
           index: chunks.length,
@@ -452,8 +468,14 @@ export class EmbeddingService {
         })
       }
     } else {
-      // Simple character-based chunking without paragraph awareness
-      const subChunks = this.splitLongText(text, maxChunkSize, overlapSize, minChunkSize)
+      // Token-based chunking without paragraph awareness
+      const subChunks = this.splitLongTextByTokens(
+        text,
+        model,
+        maxChunkTokens,
+        overlapTokens,
+        minChunkTokens
+      )
       let offset = 0
 
       for (const subChunk of subChunks) {
@@ -463,7 +485,7 @@ export class EmbeddingService {
           startOffset: offset,
           endOffset: offset + subChunk.length
         })
-        offset += maxChunkSize - overlapSize
+        offset += subChunk.length
       }
     }
 
@@ -471,42 +493,42 @@ export class EmbeddingService {
   }
 
   /**
-   * Split long text into chunks with overlap
+   * Split long text into chunks using token-based boundaries
+   *
+   * Tokenizes the text, creates sliding windows of tokens,
+   * and detokenizes each window back to text.
    *
    * @param text - The text to split
-   * @param maxSize - Maximum chunk size
-   * @param overlap - Overlap between chunks
-   * @param minSize - Minimum chunk size
+   * @param model - The LlamaModel instance for tokenization
+   * @param maxTokens - Maximum tokens per chunk
+   * @param overlapTokens - Token overlap between chunks
+   * @param minTokens - Minimum tokens per chunk
    * @returns Array of text chunks
    */
-  private splitLongText(text: string, maxSize: number, overlap: number, minSize: number): string[] {
+  private splitLongTextByTokens(
+    text: string,
+    model: LlamaModel,
+    maxTokens: number,
+    overlapTokens: number,
+    minTokens: number
+  ): string[] {
+    const tokens = model.tokenize(text)
     const chunks: string[] = []
     let start = 0
 
-    while (start < text.length) {
-      let end = Math.min(start + maxSize, text.length)
+    while (start < tokens.length) {
+      const end = Math.min(start + maxTokens, tokens.length)
+      const chunkTokens = tokens.slice(start, end)
+      const chunk = model.detokenize(chunkTokens).trim()
 
-      // Try to break at word boundary if not at the end
-      if (end < text.length) {
-        const lastSpace = text.lastIndexOf(' ', end)
-        if (lastSpace > start + minSize) {
-          end = lastSpace
-        }
-      }
-
-      const chunk = text.slice(start, end).trim()
-
-      if (chunk.length >= minSize || start + maxSize >= text.length) {
+      if (chunk && (chunkTokens.length >= minTokens || end >= tokens.length)) {
         chunks.push(chunk)
       }
 
       // Move forward with overlap
-      start = end - overlap
-
+      const nextStart = end - overlapTokens
       // Ensure we make progress
-      if (start <= chunks.length * (maxSize - overlap) - maxSize) {
-        start = end
-      }
+      start = nextStart <= start ? end : nextStart
     }
 
     return chunks

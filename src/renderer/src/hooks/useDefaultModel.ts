@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { useDownloadedModels } from './useModels'
 import { useModelRecommendations } from './useHardware'
 
-const FALLBACK_MODEL_ID = 'qwen2-1.5b-q8'
+const FALLBACK_MODEL_ID = 'qwen3-4b-instruct-2507-q8'
 
 /**
  * Hook to get a sensible default model ID based on:
