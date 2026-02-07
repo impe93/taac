@@ -8,7 +8,7 @@ import { Alert, AlertDescription, AlertTitle } from '@renderer/components/ui/ale
 import { cn } from '@renderer/lib/utils'
 import { ChatMessage } from './ChatMessage'
 import { ChatInput } from './ChatInput'
-import { ChatContextNotes, searchResultToContextNote, type ContextNote } from './ChatContextNotes'
+import { searchResultToContextNote, type ContextNote } from './ChatContextNotes'
 import { ConversationHeader } from './ConversationHeader'
 import { useAIChat, useLoadedModels, useAIInitialize } from '@renderer/hooks/useAI'
 import { useVectorSearch, useEnsureEmbeddingModel } from '@renderer/hooks/useVectorSearch'
@@ -303,10 +303,11 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
 
   /**
    * Removes a note from the context
+   * Note: Currently not used in UI, but kept for potential future features
    */
-  const handleRemoveContextNote = (noteId: string): void => {
-    setContextNotes((prev) => prev.filter((note) => note.noteId !== noteId))
-  }
+  // const handleRemoveContextNote = (noteId: string): void => {
+  //   setContextNotes((prev) => prev.filter((note) => note.noteId !== noteId))
+  // }
 
   const handleSend = async (content: string): Promise<void> => {
     // Search for relevant notes if RAG is enabled and no context notes yet
@@ -329,7 +330,7 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
         : undefined
 
     // Add user message using the unified addMessage function
-    await addMessage('user', content, noteRefs)
+    await addMessage('user', content)
 
     // Clear dynamic context notes after sending (will search fresh for next message)
     // Note: conversation's pinned noteContext stays
@@ -349,7 +350,7 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
       const response = await sendMessage(apiMessages)
 
       // Add assistant message using the unified addMessage function
-      await addMessage('assistant', response)
+      await addMessage('assistant', response, noteRefs)
     } catch (error) {
       // Add error message
       await addMessage(
@@ -526,6 +527,7 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
                 key={message.id}
                 message={message}
                 isStreaming={message.id === 'streaming'}
+                onNoteClick={onNoteClick}
               />
             ))}
             <div ref={messagesEndRef} />
@@ -533,18 +535,8 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
         )}
       </ScrollArea>
 
-      {/* Input area with optional context notes */}
-      <div className="p-4 border-t shrink-0 space-y-3">
-        {/* Show context notes when RAG is enabled */}
-        {isRAGEnabled && (allContextNotes.length > 0 || isSearchingContext) && (
-          <ChatContextNotes
-            notes={allContextNotes}
-            onRemove={handleRemoveContextNote}
-            onNoteClick={onNoteClick}
-            isLoading={isSearchingContext}
-          />
-        )}
-
+      {/* Input area */}
+      <div className="p-4 border-t shrink-0">
         <ChatInput
           onSend={handleSend}
           isDisabled={!isModelLoaded || isSearchingContext}

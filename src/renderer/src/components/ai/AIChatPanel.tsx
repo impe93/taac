@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef, type FC } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import {
   Select,
   SelectContent,
@@ -15,6 +16,9 @@ import { Button } from '@renderer/components/ui/button'
 import { Badge } from '@renderer/components/ui/badge'
 import { ConversationList } from './ConversationList'
 import { ChatInterface } from './ChatInterface'
+import { useAppDispatch } from '@renderer/store/hooks'
+import { store } from '@renderer/store'
+import { selectNoteById, selectNote } from '@renderer/store/slices/notesTreeSlice'
 import {
   useCreateConversation,
   useAddNoteToConversation,
@@ -74,6 +78,10 @@ export const AIChatPanel: FC<AIChatPanelProps> = ({ className, defaultModelId })
   const activeSpace = useActiveSpace()
   const isProcessingActionRef = useRef(false)
 
+  // Navigation hooks for note click handler
+  const navigate = useNavigate()
+  const dispatch = useAppDispatch()
+
   // Effective space for RAG operations
   const effectiveSpaceId = selectedSpaceId ?? activeSpace?.id
 
@@ -111,6 +119,24 @@ export const AIChatPanel: FC<AIChatPanelProps> = ({ className, defaultModelId })
   const handleDeleteConversation = useCallback((): void => {
     setSelectedConversationId(null)
   }, [])
+
+  const handleNoteClick = useCallback(
+    (noteId: string): void => {
+      // Try to get the note from Redux state to obtain folderId
+      // Using store.getState() instead of useAppSelector to avoid Hook rules violation
+      const state = store.getState()
+      const note = selectNoteById(noteId)(state)
+
+      if (note) {
+        // If note is in state, update selection (for sidebar highlighting)
+        dispatch(selectNote({ noteId, folderId: note.folderId }))
+      }
+
+      // Navigate to note (works even if note not in current space)
+      navigate({ to: '/note/$noteId', params: { noteId } })
+    },
+    [navigate, dispatch]
+  )
 
   // Process pending quick actions from note editor
   useEffect(() => {
@@ -369,6 +395,7 @@ export const AIChatPanel: FC<AIChatPanelProps> = ({ className, defaultModelId })
         enableRAG={enableRAG}
         onClose={handleBack}
         onDelete={handleDeleteConversation}
+        onNoteClick={handleNoteClick}
       />
     </div>
   )

@@ -8,6 +8,7 @@ import type { ChatMessage as ChatMessageType } from '@main/ai/types'
 interface ChatMessageProps {
   message: ChatMessageType
   isStreaming?: boolean
+  onNoteClick?: (noteId: string) => void
   className?: string
 }
 
@@ -51,11 +52,36 @@ const roleConfig = {
   }
 } as const
 
-export const ChatMessage: FC<ChatMessageProps> = ({ message, isStreaming = false, className }) => {
+export const ChatMessage: FC<ChatMessageProps> = ({
+  message,
+  isStreaming = false,
+  onNoteClick,
+  className
+}) => {
   const { role, content, timestamp, noteReferences } = message
   const config = roleConfig[role]
   const Icon = config.icon
   const isUser = role === 'user'
+
+  // De-duplicate note references by noteId, keeping the one with highest relevance score
+  const uniqueNoteReferences = noteReferences
+    ? Object.values(
+        noteReferences.reduce(
+          (acc, ref) => {
+            const existing = acc[ref.noteId]
+            // Keep the reference with higher relevance score, or the first one if scores are equal
+            if (
+              !existing ||
+              (ref.relevanceScore ?? 0) > (existing.relevanceScore ?? 0)
+            ) {
+              acc[ref.noteId] = ref
+            }
+            return acc
+          },
+          {} as Record<string, (typeof noteReferences)[0]>
+        )
+      )
+    : undefined
 
   return (
     <div
@@ -102,22 +128,26 @@ export const ChatMessage: FC<ChatMessageProps> = ({ message, isStreaming = false
         </div>
 
         {/* Note References */}
-        {noteReferences && noteReferences.length > 0 && (
+        {uniqueNoteReferences && uniqueNoteReferences.length > 0 && (
           <div
             className={cn('flex flex-wrap gap-1.5 mt-1', isUser ? 'justify-end' : 'justify-start')}
           >
-            {noteReferences.map((ref) => (
+            {uniqueNoteReferences.map((ref) => (
               <Badge
                 key={ref.noteId}
                 variant="outline"
-                className="gap-1 text-xs font-normal bg-background/50 hover:bg-accent cursor-pointer"
+                className={cn(
+                  'gap-1 text-xs font-normal bg-background/50',
+                  onNoteClick && 'hover:bg-accent cursor-pointer'
+                )}
                 title={ref.excerpt}
+                onClick={onNoteClick ? () => onNoteClick(ref.noteId) : undefined}
               >
                 <FileText className="size-3" />
                 <span className="max-w-[150px] truncate">{ref.title}</span>
                 {ref.relevanceScore !== undefined && (
                   <span className="text-muted-foreground">
-                    {Math.round(ref.relevanceScore * 100)}%
+                    {Math.round(ref.relevanceScore)}%
                   </span>
                 )}
               </Badge>
