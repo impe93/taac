@@ -62,15 +62,15 @@ const CURATED_MODELS: ModelDefinition[] = [
     name: 'Nomic Embed Text v2 MoE (Q8_0)',
     description:
       'High-quality multilingual embedding model with MoE architecture for semantic search (~100 languages)',
-    filename: 'nomic-embed-text-v2-moe.Q8_0.gguf',
-    sizeBytes: 488 * 1024 * 1024, // ~488MB
+    filename: 'nomic-embed-text-v2-moe-q8_0.gguf',
+    sizeBytes: 512 * 1024 * 1024, // ~512MB
     layers: 22,
     quantization: 'Q8_0',
-    contextLength: 512,
+    contextLength: 2048,
     capabilities: ['embedding'],
     hardwareTier: 'low',
     downloadUrl:
-      'https://huggingface.co/nomic-ai/nomic-embed-text-v2-moe-GGUF/resolve/main/nomic-embed-text-v2-moe.Q8_0.gguf',
+      'https://huggingface.co/ggml-org/Nomic-Embed-Text-V2-GGUF/resolve/main/nomic-embed-text-v2-moe-q8_0.gguf',
     license: 'Apache 2.0'
   }
 ]

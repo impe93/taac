@@ -22,18 +22,25 @@ interface ChatContextNotesProps {
 }
 
 /**
- * Converts vector distance (0-2 range) to relevance percentage (0-100)
+ * Converts cosine distance to a rescaled relevance percentage.
+ * nomic-embed-text-v2-moe produces cosine similarities in a compressed range:
+ *   ~0.9 for identical, ~0.5-0.7 highly relevant, ~0.3-0.5 relevant, <0.2 noise
+ * Rescaled from model's effective range [0.15, 0.55] to [0, 100] for intuitive display.
  */
 const distanceToRelevance = (distance: number): number => {
-  return Math.round(Math.max(0, Math.min(100, (1 - distance / 2) * 100)))
+  const similarity = 1 - distance
+  const MIN_SIM = 0.15
+  const MAX_SIM = 0.55
+  const rescaled = ((similarity - MIN_SIM) / (MAX_SIM - MIN_SIM)) * 100
+  return Math.round(Math.max(0, Math.min(100, rescaled)))
 }
 
 /**
  * Gets badge variant based on relevance score
  */
 const getRelevanceBadgeVariant = (score: number): 'default' | 'secondary' | 'outline' => {
-  if (score >= 70) return 'default'
-  if (score >= 50) return 'secondary'
+  if (score >= 55) return 'default'
+  if (score >= 30) return 'secondary'
   return 'outline'
 }
 

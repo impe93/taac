@@ -93,12 +93,15 @@ export class VectorDBManager {
         // Column already exists, ignore
       }
 
-      // Create virtual table for vector search using vec0
-      // vec0 creates a virtual table that stores vectors efficiently
+      // Migration: switch vec_embeddings to cosine distance metric
+      // Old tables used default L2 distance; cosine is more appropriate for embedding similarity
+      await this.migrateToCosinMetric()
+
+      // Create virtual table for vector search using vec0 with cosine distance
       this.db.exec(`
         CREATE VIRTUAL TABLE IF NOT EXISTS vec_embeddings USING vec0(
           id TEXT PRIMARY KEY,
-          embedding float[${this._config.embeddingDimension}]
+          embedding float[${this._config.embeddingDimension}] distance_metric=cosine
         );
       `)
 
@@ -489,6 +492,50 @@ export class VectorDBManager {
       console.log('[VectorDBManager] Cleared all embeddings')
     } catch (error) {
       throw new VectorDBError('clear', error instanceof Error ? error.message : 'Unknown error')
+    }
+  }
+
+  /**
+   * Migrate vec_embeddings from L2 to cosine distance metric
+   * Drops the old table so it gets recreated with the correct metric.
+   * Embeddings data must be re-indexed after this migration.
+   */
+  private async migrateToCosinMetric(): Promise<void> {
+    if (!this.db) return
+
+    try {
+      // Check if vec_embeddings exists AND uses the old L2 metric
+      // We detect this by checking a db_meta table for the distance metric version
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS db_meta (
+          key TEXT PRIMARY KEY,
+          value TEXT
+        );
+      `)
+
+      const meta = this.db
+        .prepare("SELECT value FROM db_meta WHERE key = 'distance_metric'")
+        .get() as { value: string } | undefined
+
+      if (meta?.value === 'cosine') {
+        return // Already migrated
+      }
+
+      // Drop old vec_embeddings (uses L2 distance) and clear orphaned metadata
+      console.log('[VectorDBManager] Migrating to cosine distance metric...')
+      this.db.exec('DROP TABLE IF EXISTS vec_embeddings')
+      this.db.exec('DELETE FROM embeddings')
+
+      // Record the migration
+      this.db
+        .prepare("INSERT OR REPLACE INTO db_meta (key, value) VALUES ('distance_metric', 'cosine')")
+        .run()
+
+      console.log(
+        '[VectorDBManager] Migration complete. Notes need to be re-indexed.'
+      )
+    } catch (error) {
+      console.error('[VectorDBManager] Migration failed:', error)
     }
   }
 

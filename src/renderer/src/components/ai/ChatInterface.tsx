@@ -101,7 +101,7 @@ const EmptyState: FC = () => (
 )
 
 const DEFAULT_RAG_SEARCH_LIMIT = 5
-const RAG_RELEVANCE_THRESHOLD = 25 // Minimum relevance score to include in context
+const RAG_RELEVANCE_THRESHOLD = 20 // Minimum cosine similarity % to include in context
 
 /**
  * Builds a context prompt from relevant notes

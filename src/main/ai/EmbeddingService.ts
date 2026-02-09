@@ -101,7 +101,7 @@ export class EmbeddingService {
   }
 
   /**
-   * Generate embedding for a single text
+   * Generate embedding for a single text (no task prefix)
    * @param text - The text to embed
    * @returns The embedding vector (L2-normalized)
    */
@@ -115,6 +115,32 @@ export class EmbeddingService {
     // Convert to mutable array and normalize for proper L2 distance calculation
     const vector = [...embedding.vector]
     return this.normalizeVector(vector)
+  }
+
+  /**
+   * Generate embedding with a task-specific prefix
+   * nomic-embed-text-v2-moe requires 'search_document' / 'search_query' prefixes
+   * for proper asymmetric search quality
+   */
+  private async embedWithPrefix(prefix: string, text: string): Promise<number[]> {
+    if (!this.aiManager.isInitialized()) {
+      throw new AINotInitializedError()
+    }
+
+    const context = await this.aiManager.getEmbeddingContext(this.embeddingModelId)
+    const prefixedText = `${prefix}: ${text}`
+    const embedding = await context.getEmbeddingFor(prefixedText)
+    // L2-normalize as required by nomic-embed-text-v2-moe model specification
+    return this.normalizeVector([...embedding.vector])
+  }
+
+  /**
+   * Generate embedding for a document chunk (uses 'search_document' prefix)
+   * @param text - The document text to embed
+   * @returns The embedding vector
+   */
+  async embedDocument(text: string): Promise<number[]> {
+    return this.embedWithPrefix('search_document', text)
   }
 
   /**
@@ -182,7 +208,7 @@ export class EmbeddingService {
       // Generate embeddings and store each chunk
       for (let i = 0; i < chunks.length; i++) {
         const chunk = chunks[i]
-        const embedding = await this.embedText(chunk.text)
+        const embedding = await this.embedDocument(chunk.text)
 
         await vectorDB.upsertDocument({
           id: uuidv4(),
@@ -247,7 +273,7 @@ export class EmbeddingService {
 
         for (let j = 0; j < chunks.length; j++) {
           const chunk = chunks[j]
-          const embedding = await this.embedText(chunk.text)
+          const embedding = await this.embedDocument(chunk.text)
 
           await vectorDB.upsertDocument({
             id: uuidv4(),
@@ -284,12 +310,12 @@ export class EmbeddingService {
   }
 
   /**
-   * Generate embedding for a search query
+   * Generate embedding for a search query (uses 'search_query' prefix)
    * @param query - The search query text
    * @returns The embedding vector for similarity search
    */
   async embedQuery(query: string): Promise<number[]> {
-    return this.embedText(query)
+    return this.embedWithPrefix('search_query', query)
   }
 
   /**
