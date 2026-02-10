@@ -104,6 +104,9 @@ export class VectorDBManager {
         // Column already exists, ignore
       }
 
+      // Migration: add section_id and section_header columns for structure-aware chunking
+      await this.migrateSectionFields()
+
       // Migration: switch vec_embeddings to cosine distance metric
       // Old tables used default L2 distance; cosine is more appropriate for embedding similarity
       await this.migrateToCosinMetric()
@@ -141,8 +144,8 @@ export class VectorDBManager {
         // Insert metadata into embeddings table
         this.db!.prepare(
           `
-          INSERT OR REPLACE INTO embeddings (id, note_id, chunk_index, content, metadata, embedding_model)
-          VALUES (?, ?, ?, ?, ?, ?)
+          INSERT OR REPLACE INTO embeddings (id, note_id, chunk_index, content, metadata, embedding_model, section_id, section_header)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `
         ).run(
           id,
@@ -150,7 +153,9 @@ export class VectorDBManager {
           doc.chunkIndex,
           doc.content,
           JSON.stringify(doc.metadata || {}),
-          doc.embeddingModel || null
+          doc.embeddingModel || null,
+          doc.sectionId || null,
+          doc.sectionHeader || null
         )
 
         // Insert vector into vec_embeddings virtual table if embedding is provided
@@ -289,7 +294,9 @@ export class VectorDBManager {
               v.distance,
               e.note_id,
               e.content,
-              e.metadata
+              e.metadata,
+              e.section_id,
+              e.section_header
             FROM vec_embeddings v
             JOIN embeddings e ON v.id = e.id
             WHERE v.embedding MATCH ?
@@ -303,6 +310,8 @@ export class VectorDBManager {
           note_id: string
           content: string
           metadata: string
+          section_id: string | null
+          section_header: string | null
         }>
 
         // Filter by noteIds and limit
@@ -314,6 +323,8 @@ export class VectorDBManager {
           noteId: row.note_id,
           content: row.content,
           distance: row.distance,
+          sectionId: row.section_id || undefined,
+          sectionHeader: row.section_header || undefined,
           metadata: JSON.parse(row.metadata || '{}')
         }))
       }
@@ -327,7 +338,9 @@ export class VectorDBManager {
             v.distance,
             e.note_id,
             e.content,
-            e.metadata
+            e.metadata,
+            e.section_id,
+            e.section_header
           FROM vec_embeddings v
           JOIN embeddings e ON v.id = e.id
           WHERE v.embedding MATCH ?
@@ -341,6 +354,8 @@ export class VectorDBManager {
         note_id: string
         content: string
         metadata: string
+        section_id: string | null
+        section_header: string | null
       }>
 
       return results.map((row) => ({
@@ -348,6 +363,8 @@ export class VectorDBManager {
         noteId: row.note_id,
         content: row.content,
         distance: row.distance,
+        sectionId: row.section_id || undefined,
+        sectionHeader: row.section_header || undefined,
         metadata: JSON.parse(row.metadata || '{}')
       }))
     } catch (error) {
@@ -583,6 +600,59 @@ export class VectorDBManager {
       console.log('[VectorDBManager] Cleared all embeddings and indexing status')
     } catch (error) {
       throw new VectorDBError('clear', error instanceof Error ? error.message : 'Unknown error')
+    }
+  }
+
+  /**
+   * Add section_id and section_header columns to embeddings table
+   * for structure-aware chunking and section-based retrieval.
+   */
+  private async migrateSectionFields(): Promise<void> {
+    if (!this.db) return
+
+    // Ensure db_meta exists (may already exist from cosine migration)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS db_meta (
+        key TEXT PRIMARY KEY,
+        value TEXT
+      );
+    `)
+
+    const meta = this.db
+      .prepare("SELECT value FROM db_meta WHERE key = 'migration_section_fields'")
+      .get() as { value: string } | undefined
+
+    if (meta?.value === 'done') return
+
+    try {
+      // Add columns (SQLite ALTER TABLE ADD COLUMN is always safe)
+      try {
+        this.db.exec('ALTER TABLE embeddings ADD COLUMN section_id TEXT')
+      } catch {
+        // Column already exists
+      }
+
+      try {
+        this.db.exec('ALTER TABLE embeddings ADD COLUMN section_header TEXT')
+      } catch {
+        // Column already exists
+      }
+
+      // Create index for section-based queries
+      this.db.exec(
+        'CREATE INDEX IF NOT EXISTS idx_embeddings_section_id ON embeddings(section_id)'
+      )
+
+      // Record the migration
+      this.db
+        .prepare(
+          "INSERT OR REPLACE INTO db_meta (key, value) VALUES ('migration_section_fields', 'done')"
+        )
+        .run()
+
+      console.log('[VectorDBManager] Migration: added section_id and section_header columns')
+    } catch (error) {
+      console.error('[VectorDBManager] Section fields migration failed:', error)
     }
   }
 

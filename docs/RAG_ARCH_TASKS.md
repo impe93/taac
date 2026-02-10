@@ -164,7 +164,7 @@ Evoluzione dello schema per supportare le nuove feature (FTS5, section_id, trigg
 
 ---
 
-### Task B1 — Estendere lo schema embeddings con section_id e section_header ⬜
+### Task B1 — Estendere lo schema embeddings con section_id e section_header ✅
 
 **File coinvolti:** `src/main/ai/VectorDBManager.ts`
 **Sezione RAG_ARCHITECTURE.md:** §7.2 Schema SQL

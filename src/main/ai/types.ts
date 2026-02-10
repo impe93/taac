@@ -235,6 +235,8 @@ export interface VectorDocument {
   content: string
   embedding?: number[]
   embeddingModel?: string
+  sectionId?: string
+  sectionHeader?: string
   metadata?: Record<string, unknown>
 }
 
@@ -246,6 +248,8 @@ export interface SearchResult {
   noteId: string
   content: string
   distance: number
+  sectionId?: string
+  sectionHeader?: string
   metadata: Record<string, unknown>
 }
 
