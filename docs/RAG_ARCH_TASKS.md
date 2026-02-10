@@ -27,7 +27,7 @@ Modifiche rapide e a basso rischio che migliorano le fondamenta prima delle feat
 
 ---
 
-### Task A1 — Rimuovere la normalizzazione L2 dei vettori ⬜
+### Task A1 — Rimuovere la normalizzazione L2 dei vettori ✅
 
 **File coinvolti:** `src/main/ai/EmbeddingService.ts`
 **Sezione RAG_ARCHITECTURE.md:** §3.3 Normalizzazione L2

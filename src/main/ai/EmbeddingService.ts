@@ -91,19 +91,9 @@ export class EmbeddingService {
   }
 
   /**
-   * Normalize a vector to unit length (L2 normalization)
-   * Required for proper cosine similarity with sqlite-vec's L2 distance
-   */
-  private normalizeVector(vec: number[]): number[] {
-    const norm = Math.sqrt(vec.reduce((sum, val) => sum + val * val, 0))
-    if (norm === 0) return vec
-    return vec.map((val) => val / norm)
-  }
-
-  /**
    * Generate embedding for a single text (no task prefix)
    * @param text - The text to embed
-   * @returns The embedding vector (L2-normalized)
+   * @returns The embedding vector as returned by the model
    */
   async embedText(text: string): Promise<number[]> {
     if (!this.aiManager.isInitialized()) {
@@ -112,9 +102,7 @@ export class EmbeddingService {
 
     const context = await this.aiManager.getEmbeddingContext(this.embeddingModelId)
     const embedding = await context.getEmbeddingFor(text)
-    // Convert to mutable array and normalize for proper L2 distance calculation
-    const vector = [...embedding.vector]
-    return this.normalizeVector(vector)
+    return [...embedding.vector]
   }
 
   /**
@@ -130,8 +118,7 @@ export class EmbeddingService {
     const context = await this.aiManager.getEmbeddingContext(this.embeddingModelId)
     const prefixedText = `${prefix}: ${text}`
     const embedding = await context.getEmbeddingFor(prefixedText)
-    // L2-normalize as required by nomic-embed-text-v2-moe model specification
-    return this.normalizeVector([...embedding.vector])
+    return [...embedding.vector]
   }
 
   /**
@@ -146,7 +133,7 @@ export class EmbeddingService {
   /**
    * Generate embeddings for multiple texts
    * @param texts - Array of texts to embed
-   * @returns Array of embedding vectors (L2-normalized, same order as input)
+   * @returns Array of embedding vectors (same order as input)
    */
   async embedTexts(texts: string[]): Promise<number[][]> {
     if (!this.aiManager.isInitialized()) {
@@ -158,9 +145,7 @@ export class EmbeddingService {
 
     for (const text of texts) {
       const embedding = await context.getEmbeddingFor(text)
-      // Convert to mutable array and normalize
-      const vector = [...embedding.vector]
-      embeddings.push(this.normalizeVector(vector))
+      embeddings.push([...embedding.vector])
     }
 
     return embeddings
