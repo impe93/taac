@@ -381,75 +381,67 @@ export class EmbeddingService {
   }
 
   /**
-   * Extract plain text from Markdown content
+   * Extract text from Markdown content preserving semantic structure
    *
-   * Strips Markdown syntax to get clean text for embedding:
-   * - Headers (# ## ###)
-   * - Bold/italic (**text** *text*)
-   * - Links [text](url)
-   * - Images ![alt](url)
-   * - Code blocks ```code```
-   * - Inline code `code`
-   * - Lists (- * 1.)
-   * - Blockquotes (>)
-   * - Horizontal rules (---)
-   * - HTML tags
+   * Removes non-semantic elements while keeping structural markers that
+   * the chunking algorithm needs to identify sections and structure.
    *
-   * @param markdown - The Markdown content
-   * @returns Plain text content
+   * **Removes:**
+   * - Images `![alt](url)` → keeps only alt text
+   * - Link URLs `[text](url)` → keeps only text
+   * - HTML tags and entities
+   * - Horizontal rules (`---`)
+   * - Fenced code block markers (```) and language hints — keeps content
+   * - Inline code backticks — keeps content
+   * - Reference-style link syntax and definitions
+   * - Strikethrough markers (`~~`) — keeps content
+   *
+   * **Preserves:**
+   * - Header markers (`#`, `##`, `###`, …)
+   * - List markers (`-`, `*`, `1.`)
+   * - Emphasis (`**bold**`, `*italic*`)
+   * - Blockquote markers (`>`)
+   *
+   * @param markdown - The Markdown (or Lexical-extracted) content
+   * @returns Text with semantic markers preserved
    */
   extractTextFromMarkdown(markdown: string): string {
     if (!markdown) return ''
 
     let text = markdown
 
-    // Remove code blocks (fenced with ```)
-    text = text.replace(/```[\s\S]*?```/g, '')
+    // Remove fenced code block markers but keep the content inside
+    // Matches ```lang\n...content...\n``` → keeps content
+    text = text.replace(/```[^\n]*\n([\s\S]*?)```/g, '$1')
+    // Handle edge case: empty or single-line code blocks (``` on same line)
+    text = text.replace(/```[^\n]*```/g, '')
 
-    // Remove inline code
-    text = text.replace(/`[^`]+`/g, '')
+    // Remove inline code backticks but keep the text
+    text = text.replace(/`([^`]+)`/g, '$1')
 
-    // Remove images ![alt](url)
+    // Remove images ![alt](url) → keep alt text
     text = text.replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')
 
-    // Convert links [text](url) to just text
+    // Remove link URLs [text](url) → keep text
     text = text.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
 
-    // Remove reference-style links
+    // Remove reference-style links [text][id] → keep text
     text = text.replace(/\[([^\]]+)\]\[[^\]]*\]/g, '$1')
 
     // Remove link definitions [id]: url
     text = text.replace(/^\[[^\]]+\]:\s+.+$/gm, '')
 
-    // Remove headers (keep the text)
-    text = text.replace(/^#{1,6}\s+(.+)$/gm, '$1')
-
-    // Remove bold/italic markers
-    text = text.replace(/\*\*\*(.+?)\*\*\*/g, '$1')
-    text = text.replace(/\*\*(.+?)\*\*/g, '$1')
-    text = text.replace(/\*(.+?)\*/g, '$1')
-    text = text.replace(/___(.+?)___/g, '$1')
-    text = text.replace(/__(.+?)__/g, '$1')
-    text = text.replace(/_(.+?)_/g, '$1')
-
-    // Remove strikethrough
+    // Remove strikethrough markers but keep text
     text = text.replace(/~~(.+?)~~/g, '$1')
-
-    // Remove blockquotes (>)
-    text = text.replace(/^>\s*/gm, '')
-
-    // Remove horizontal rules
-    text = text.replace(/^[-*_]{3,}\s*$/gm, '')
-
-    // Remove list markers (-, *, 1.)
-    text = text.replace(/^\s*[-*+]\s+/gm, '')
-    text = text.replace(/^\s*\d+\.\s+/gm, '')
 
     // Remove HTML tags
     text = text.replace(/<[^>]+>/g, '')
 
     // Remove HTML entities
     text = text.replace(/&[a-zA-Z0-9#]+;/g, ' ')
+
+    // Remove horizontal rules
+    text = text.replace(/^[-*_]{3,}\s*$/gm, '')
 
     // Normalize whitespace
     text = text.replace(/\r\n/g, '\n')

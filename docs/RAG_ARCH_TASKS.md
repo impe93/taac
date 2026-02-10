@@ -241,7 +241,7 @@ Sostituzione del chunking token-based con uno structure-aware che rispetta la st
 
 ---
 
-### Task C1 — Riscrittura dell'estrazione testo da Markdown ⬜
+### Task C1 — Riscrittura dell'estrazione testo da Markdown ✅
 
 **File coinvolti:** `src/main/ai/EmbeddingService.ts`, `src/main/ipc/aiHandlers.ts`
 **Sezione RAG_ARCHITECTURE.md:** §4.2 Estrazione testo
