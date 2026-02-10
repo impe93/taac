@@ -195,7 +195,7 @@ NOTA: la migrazione deve essere safe per database esistenti — non distruggere 
 
 ---
 
-### Task B2 — Creare la tabella FTS5 con triggers di sincronizzazione ⬜
+### Task B2 — Creare la tabella FTS5 con triggers di sincronizzazione ✅
 
 **File coinvolti:** `src/main/ai/VectorDBManager.ts`
 **Sezione RAG_ARCHITECTURE.md:** §7.2 Schema SQL (tabella `embeddings_fts` e triggers)

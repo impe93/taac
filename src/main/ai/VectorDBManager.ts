@@ -119,6 +119,9 @@ export class VectorDBManager {
         );
       `)
 
+      // Migration: create FTS5 table and sync triggers for hybrid search
+      await this.migrateFTS5()
+
       this.initialized = true
       console.log(`[VectorDBManager] Initialized at ${this._config.dbPath}`)
     } catch (error) {
@@ -639,9 +642,7 @@ export class VectorDBManager {
       }
 
       // Create index for section-based queries
-      this.db.exec(
-        'CREATE INDEX IF NOT EXISTS idx_embeddings_section_id ON embeddings(section_id)'
-      )
+      this.db.exec('CREATE INDEX IF NOT EXISTS idx_embeddings_section_id ON embeddings(section_id)')
 
       // Record the migration
       this.db
@@ -692,11 +693,90 @@ export class VectorDBManager {
         .prepare("INSERT OR REPLACE INTO db_meta (key, value) VALUES ('distance_metric', 'cosine')")
         .run()
 
-      console.log(
-        '[VectorDBManager] Migration complete. Notes need to be re-indexed.'
-      )
+      console.log('[VectorDBManager] Migration complete. Notes need to be re-indexed.')
     } catch (error) {
       console.error('[VectorDBManager] Migration failed:', error)
+    }
+  }
+
+  /**
+   * Create FTS5 virtual table and sync triggers for hybrid search (BM25).
+   * Uses content-sync mode: FTS5 reads content from the `embeddings` table via rowid.
+   * Triggers keep FTS5 in sync on INSERT, DELETE, and UPDATE.
+   */
+  private async migrateFTS5(): Promise<void> {
+    if (!this.db) return
+
+    const meta = this.db.prepare("SELECT value FROM db_meta WHERE key = 'migration_fts5'").get() as
+      | { value: string }
+      | undefined
+
+    if (meta?.value === 'done') return
+
+    try {
+      // Create FTS5 virtual table (content-sync with embeddings)
+      this.db.exec(`
+        CREATE VIRTUAL TABLE IF NOT EXISTS embeddings_fts USING fts5(
+          content,
+          note_title,
+          content='embeddings',
+          content_rowid='rowid',
+          tokenize='unicode61'
+        );
+      `)
+
+      // Sync trigger: INSERT — index new chunk into FTS5
+      this.db.exec(`
+        CREATE TRIGGER IF NOT EXISTS embeddings_ai AFTER INSERT ON embeddings BEGIN
+          INSERT INTO embeddings_fts(rowid, content, note_title)
+          VALUES (new.rowid, new.content, json_extract(new.metadata, '$.noteTitle'));
+        END;
+      `)
+
+      // Sync trigger: DELETE — remove chunk from FTS5
+      this.db.exec(`
+        CREATE TRIGGER IF NOT EXISTS embeddings_ad AFTER DELETE ON embeddings BEGIN
+          INSERT INTO embeddings_fts(embeddings_fts, rowid, content, note_title)
+          VALUES ('delete', old.rowid, old.content, json_extract(old.metadata, '$.noteTitle'));
+        END;
+      `)
+
+      // Sync trigger: UPDATE — delete old entry + insert updated entry
+      this.db.exec(`
+        CREATE TRIGGER IF NOT EXISTS embeddings_au AFTER UPDATE ON embeddings BEGIN
+          INSERT INTO embeddings_fts(embeddings_fts, rowid, content, note_title)
+          VALUES ('delete', old.rowid, old.content, json_extract(old.metadata, '$.noteTitle'));
+          INSERT INTO embeddings_fts(rowid, content, note_title)
+          VALUES (new.rowid, new.content, json_extract(new.metadata, '$.noteTitle'));
+        END;
+      `)
+
+      // If embeddings has data but FTS5 is empty, rebuild the FTS index
+      const embeddingsCount = this.db.prepare('SELECT COUNT(*) as count FROM embeddings').get() as {
+        count: number
+      }
+
+      if (embeddingsCount.count > 0) {
+        const ftsCount = this.db.prepare('SELECT COUNT(*) as count FROM embeddings_fts').get() as {
+          count: number
+        }
+
+        if (ftsCount.count === 0) {
+          console.log(
+            '[VectorDBManager] FTS5 table empty with existing embeddings, rebuilding index...'
+          )
+          this.db.exec("INSERT INTO embeddings_fts(embeddings_fts) VALUES('rebuild')")
+        }
+      }
+
+      // Record migration
+      this.db
+        .prepare("INSERT OR REPLACE INTO db_meta (key, value) VALUES ('migration_fts5', 'done')")
+        .run()
+
+      console.log('[VectorDBManager] Migration: created FTS5 table and sync triggers')
+    } catch (error) {
+      console.error('[VectorDBManager] FTS5 migration failed:', error)
     }
   }
 
