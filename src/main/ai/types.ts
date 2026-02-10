@@ -269,6 +269,38 @@ export interface BM25SearchResult {
 }
 
 /**
+ * Options for hybrid search combining vector KNN and BM25.
+ * Reference: docs/RAG_ARCHITECTURE.md §8.4
+ */
+export interface HybridSearchOptions {
+  query: string
+  queryEmbedding: Float32Array
+  limit: number
+  vectorWeight?: number // default 1.0
+  bm25Weight?: number // default 0.7
+  rrfK?: number // default 60
+  noteIds?: string[]
+  contextWindow?: number // default 1
+}
+
+/**
+ * A single result from hybrid search, ranked by Reciprocal Rank Fusion.
+ * Reference: docs/RAG_ARCHITECTURE.md §8.4
+ */
+export interface RankedResult {
+  id: string
+  noteId: string
+  chunkIndex: number
+  content: string
+  sectionId: string | null
+  sectionHeader: string | null
+  metadata: Record<string, unknown>
+  rrfScore: number
+  vectorDistance: number | null // null if found only via BM25
+  bm25Rank: number | null // null if found only via vector
+}
+
+/**
  * Result from embedding generation
  */
 export interface EmbeddingResult {

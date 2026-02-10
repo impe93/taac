@@ -399,7 +399,7 @@ NOTA: il tokenizer `unicode61` supporta caratteri Unicode multilingua. Non serve
 
 ---
 
-### Task D2 — Implementare Reciprocal Rank Fusion (RRF) ⬜
+### Task D2 — Implementare Reciprocal Rank Fusion (RRF) ✅
 
 **File coinvolti:** `src/main/ai/VectorDBManager.ts`
 **Sezione RAG_ARCHITECTURE.md:** §8.3 Reciprocal Rank Fusion (RRF), §8.4 Implementazione

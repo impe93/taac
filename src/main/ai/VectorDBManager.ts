@@ -9,7 +9,14 @@
  * Reference: docs/AI_ARCHITECTURE.md section 6.5
  */
 
-import type { BM25SearchResult, EmbeddingResult, SearchResult, VectorDocument } from './types'
+import type {
+  BM25SearchResult,
+  EmbeddingResult,
+  HybridSearchOptions,
+  RankedResult,
+  SearchResult,
+  VectorDocument
+} from './types'
 import { VectorDBError } from './errors'
 import Database from 'better-sqlite3'
 import * as sqliteVec from 'sqlite-vec'
@@ -472,6 +479,188 @@ export class VectorDBManager {
       )
       return []
     }
+  }
+
+  /**
+   * Hybrid search combining vector KNN and BM25 keyword search via Reciprocal Rank Fusion.
+   * Reference: docs/RAG_ARCHITECTURE.md §8.3–8.4
+   *
+   * @param options - Search configuration
+   * @returns Top results ranked by RRF score (descending)
+   */
+  hybridSearch(options: HybridSearchOptions): RankedResult[] {
+    if (!this.db || !this.initialized) {
+      throw new VectorDBError('hybridSearch', 'Database not initialized')
+    }
+
+    const {
+      query,
+      queryEmbedding,
+      limit,
+      vectorWeight = 1.0,
+      bm25Weight = 0.7,
+      rrfK = 60,
+      noteIds
+    } = options
+
+    // --- Step 1: Vector KNN search (k=20) ---
+    const vectorK = 20
+
+    type VectorRow = {
+      id: string
+      distance: number
+      note_id: string
+      chunk_index: number
+      content: string
+      section_id: string | null
+      section_header: string | null
+      metadata: string
+    }
+
+    let vectorResults: VectorRow[]
+
+    if (noteIds && noteIds.length > 0) {
+      // Fetch extra results to account for noteId filtering
+      const fetchLimit = Math.max(vectorK * 10, 100)
+      const allResults = this.db
+        .prepare(
+          `
+          SELECT v.id, v.distance, e.note_id, e.chunk_index, e.content,
+                 e.section_id, e.section_header, e.metadata
+          FROM vec_embeddings v
+          JOIN embeddings e ON v.id = e.id
+          WHERE v.embedding MATCH ? AND k = ?
+          ORDER BY v.distance
+        `
+        )
+        .all(queryEmbedding, fetchLimit) as VectorRow[]
+
+      const noteIdSet = new Set(noteIds)
+      vectorResults = allResults.filter((r) => noteIdSet.has(r.note_id)).slice(0, vectorK)
+    } else {
+      vectorResults = this.db
+        .prepare(
+          `
+          SELECT v.id, v.distance, e.note_id, e.chunk_index, e.content,
+                 e.section_id, e.section_header, e.metadata
+          FROM vec_embeddings v
+          JOIN embeddings e ON v.id = e.id
+          WHERE v.embedding MATCH ? AND k = ?
+          ORDER BY v.distance
+        `
+        )
+        .all(queryEmbedding, vectorK) as VectorRow[]
+    }
+
+    // Pre-filter: exclude chunks with cosine distance > 1.2
+    vectorResults = vectorResults.filter((r) => r.distance <= 1.2)
+
+    // --- Step 2: BM25 search (limit=20) ---
+    const bm25Limit = 20
+
+    type BM25Row = {
+      id: string
+      note_id: string
+      chunk_index: number
+      content: string
+      section_id: string | null
+      section_header: string | null
+      metadata: string
+      bm25_score: number
+    }
+
+    let bm25Results: BM25Row[] = []
+
+    const sanitized = this.sanitizeFTS5Query(query)
+    if (sanitized.length > 0) {
+      try {
+        if (noteIds && noteIds.length > 0) {
+          const placeholders = noteIds.map(() => '?').join(', ')
+          bm25Results = this.db
+            .prepare(
+              `
+              SELECT e.id, e.note_id, e.chunk_index, e.content,
+                     e.section_id, e.section_header, e.metadata,
+                     rank AS bm25_score
+              FROM embeddings_fts
+              JOIN embeddings e ON embeddings_fts.rowid = e.rowid
+              WHERE embeddings_fts MATCH ?
+                AND e.note_id IN (${placeholders})
+              ORDER BY rank
+              LIMIT ?
+            `
+            )
+            .all(sanitized, ...noteIds, bm25Limit) as BM25Row[]
+        } else {
+          bm25Results = this.db
+            .prepare(
+              `
+              SELECT e.id, e.note_id, e.chunk_index, e.content,
+                     e.section_id, e.section_header, e.metadata,
+                     rank AS bm25_score
+              FROM embeddings_fts
+              JOIN embeddings e ON embeddings_fts.rowid = e.rowid
+              WHERE embeddings_fts MATCH ?
+              ORDER BY rank
+              LIMIT ?
+            `
+            )
+            .all(sanitized, bm25Limit) as BM25Row[]
+        }
+      } catch {
+        // FTS5 table empty or query invalid — fallback to vector-only
+        bm25Results = []
+      }
+    }
+
+    // --- Step 3: Build rank maps (rank is 1-based) ---
+    const vectorRankMap = new Map<string, { rank: number; distance: number; data: VectorRow }>()
+    vectorResults.forEach((r, i) => {
+      vectorRankMap.set(r.id, { rank: i + 1, distance: r.distance, data: r })
+    })
+
+    const bm25RankMap = new Map<string, { rank: number; data: BM25Row }>()
+    bm25Results.forEach((r, i) => {
+      bm25RankMap.set(r.id, { rank: i + 1, data: r })
+    })
+
+    // --- Step 4: Merge and compute RRF scores ---
+    const allIds = new Set([...vectorRankMap.keys(), ...bm25RankMap.keys()])
+    const fusedResults: RankedResult[] = []
+
+    for (const id of allIds) {
+      const vecEntry = vectorRankMap.get(id)
+      const bm25Entry = bm25RankMap.get(id)
+
+      // RRF_score(doc) = Σ (weight_i / (k + rank_i(doc)))
+      let rrfScore = 0
+      if (vecEntry) {
+        rrfScore += vectorWeight / (rrfK + vecEntry.rank)
+      }
+      if (bm25Entry) {
+        rrfScore += bm25Weight / (rrfK + bm25Entry.rank)
+      }
+
+      // Get metadata from whichever source has it (prefer vector for distance)
+      const data = vecEntry?.data ?? bm25Entry!.data
+
+      fusedResults.push({
+        id,
+        noteId: data.note_id,
+        chunkIndex: data.chunk_index,
+        content: data.content,
+        sectionId: data.section_id,
+        sectionHeader: data.section_header,
+        metadata: JSON.parse(data.metadata || '{}'),
+        rrfScore,
+        vectorDistance: vecEntry?.distance ?? null,
+        bm25Rank: bm25Entry?.rank ?? null
+      })
+    }
+
+    // --- Step 5: Sort by RRF score descending, return top limit ---
+    fusedResults.sort((a, b) => b.rrfScore - a.rrfScore)
+    return fusedResults.slice(0, limit)
   }
 
   /**
