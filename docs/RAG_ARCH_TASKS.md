@@ -316,7 +316,7 @@ Task:
 
 ---
 
-### Task C3 — Aggiornare indexNote() per i chunk strutturati ⬜
+### Task C3 — Aggiornare indexNote() per i chunk strutturati ✅
 
 **File coinvolti:** `src/main/ai/EmbeddingService.ts`, `src/main/ai/VectorDBManager.ts`
 **Sezione RAG_ARCHITECTURE.md:** §4.1 Pipeline di Indicizzazione, §6.3 Implementazione headers
@@ -359,7 +359,7 @@ Implementazione della ricerca ibrida che combina similarità vettoriale e keywor
 
 ---
 
-### Task D1 — Implementare la query BM25 su FTS5 ⬜
+### Task D1 — Implementare la query BM25 su FTS5 ✅
 
 **File coinvolti:** `src/main/ai/VectorDBManager.ts`
 **Sezione RAG_ARCHITECTURE.md:** §8.5 Query BM25
