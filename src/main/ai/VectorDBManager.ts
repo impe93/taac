@@ -15,6 +15,7 @@ import Database from 'better-sqlite3'
 import * as sqliteVec from 'sqlite-vec'
 import { mkdirSync } from 'fs'
 import { dirname } from 'path'
+import { createHash } from 'crypto'
 
 export interface VectorDBConfig {
   dbPath: string
@@ -84,6 +85,16 @@ export class VectorDBManager {
         );
 
         CREATE INDEX IF NOT EXISTS idx_embeddings_note_id ON embeddings(note_id);
+      `)
+
+      // Create indexing status table for content-hash delta indexing
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS indexing_status (
+          note_id TEXT PRIMARY KEY,
+          content_hash TEXT NOT NULL,
+          indexed_at TEXT DEFAULT (datetime('now')),
+          chunk_count INTEGER NOT NULL
+        );
       `)
 
       // Migration: add embedding_model column if missing (existing databases)
@@ -369,6 +380,9 @@ export class VectorDBManager {
 
         // Delete from embeddings table
         this.db!.prepare('DELETE FROM embeddings WHERE note_id = ?').run(noteId)
+
+        // Delete from indexing status
+        this.db!.prepare('DELETE FROM indexing_status WHERE note_id = ?').run(noteId)
       })
 
       transaction()
@@ -474,6 +488,82 @@ export class VectorDBManager {
     }
   }
 
+  // ===========================================================================
+  // Content-Hash Delta Indexing
+  // ===========================================================================
+
+  /**
+   * Compute SHA-256 hash of content
+   */
+  private computeHash(content: string): string {
+    return createHash('sha256').update(content).digest('hex')
+  }
+
+  /**
+   * Check if a note needs re-indexing by comparing content hash
+   * Returns true if the note has never been indexed or its content has changed
+   */
+  isNoteStale(noteId: string, currentContent: string): boolean {
+    if (!this.db || !this.initialized) return true
+
+    try {
+      const row = this.db
+        .prepare('SELECT content_hash FROM indexing_status WHERE note_id = ?')
+        .get(noteId) as { content_hash: string } | undefined
+
+      if (!row) return true
+
+      return row.content_hash !== this.computeHash(currentContent)
+    } catch {
+      return true
+    }
+  }
+
+  /**
+   * Update or insert indexing status for a note
+   */
+  updateIndexingStatus(noteId: string, contentHash: string, chunkCount: number): void {
+    if (!this.db || !this.initialized) return
+
+    this.db
+      .prepare(
+        `
+        INSERT OR REPLACE INTO indexing_status (note_id, content_hash, chunk_count)
+        VALUES (?, ?, ?)
+      `
+      )
+      .run(noteId, contentHash, chunkCount)
+  }
+
+  /**
+   * Get indexing status for a note
+   */
+  getIndexingStatus(
+    noteId: string
+  ): { contentHash: string; indexedAt: string; chunkCount: number } | null {
+    if (!this.db || !this.initialized) return null
+
+    try {
+      const row = this.db
+        .prepare(
+          'SELECT content_hash, indexed_at, chunk_count FROM indexing_status WHERE note_id = ?'
+        )
+        .get(noteId) as
+        | { content_hash: string; indexed_at: string; chunk_count: number }
+        | undefined
+
+      if (!row) return null
+
+      return {
+        contentHash: row.content_hash,
+        indexedAt: row.indexed_at,
+        chunkCount: row.chunk_count
+      }
+    } catch {
+      return null
+    }
+  }
+
   /**
    * Clear all embeddings
    */
@@ -486,10 +576,11 @@ export class VectorDBManager {
       const transaction = this.db.transaction(() => {
         this.db!.exec('DELETE FROM vec_embeddings')
         this.db!.exec('DELETE FROM embeddings')
+        this.db!.exec('DELETE FROM indexing_status')
       })
 
       transaction()
-      console.log('[VectorDBManager] Cleared all embeddings')
+      console.log('[VectorDBManager] Cleared all embeddings and indexing status')
     } catch (error) {
       throw new VectorDBError('clear', error instanceof Error ? error.message : 'Unknown error')
     }

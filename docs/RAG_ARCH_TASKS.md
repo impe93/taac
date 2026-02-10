@@ -116,7 +116,7 @@ IMPORTANTE: il contextual header va usato SOLO per l'embedding. Nel database `em
 
 ---
 
-### Task A4 — Content-hash per delta indexing ⬜
+### Task A4 — Content-hash per delta indexing ✅
 
 **File coinvolti:** `src/main/ai/VectorDBManager.ts`, `src/main/ai/EmbeddingService.ts`, `src/main/ipc/aiHandlers.ts`
 **Sezione RAG_ARCHITECTURE.md:** §11.2 Content-Hash Delta Indexing

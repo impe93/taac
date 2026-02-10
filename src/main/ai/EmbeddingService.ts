@@ -17,6 +17,7 @@ import type { EmbeddingResult, ChunkingOptions } from './types'
 import { DEFAULT_CHUNKING_OPTIONS } from './types'
 import { EmbeddingFailedError, AINotInitializedError } from './errors'
 import { v4 as uuidv4 } from 'uuid'
+import { createHash } from 'crypto'
 
 /**
  * Extended chunking options with token-based limits
@@ -211,22 +212,32 @@ export class EmbeddingService {
    * Index a note into the vector database
    *
    * This method:
-   * 1. Deletes existing embeddings for the note
-   * 2. Extracts text from Markdown content
-   * 3. Chunks the text with overlap
-   * 4. Generates embeddings for each chunk
-   * 5. Stores in VectorDB
+   * 1. Checks content hash — skips if note is unchanged
+   * 2. Deletes existing embeddings for the note
+   * 3. Extracts text from Markdown content
+   * 4. Chunks the text with overlap
+   * 5. Generates embeddings for each chunk
+   * 6. Stores in VectorDB and updates indexing status
    *
    * @param note - The note to index
    * @param vectorDB - The VectorDBManager instance
    * @param options - Optional chunking configuration
+   * @returns true if the note was indexed, false if skipped (unchanged)
    */
   async indexNote(
     note: IndexableNote,
     vectorDB: VectorDBManager,
     options: ExtendedChunkingOptions = DEFAULT_EXTENDED_OPTIONS
-  ): Promise<void> {
+  ): Promise<boolean> {
     try {
+      // Check if note content has changed since last indexing
+      if (!vectorDB.isNoteStale(note.id, note.content)) {
+        console.log(`[EmbeddingService] Note ${note.id} is unchanged, skipping`)
+        return false
+      }
+
+      const contentHash = createHash('sha256').update(note.content).digest('hex')
+
       // Delete existing chunks for this note
       await vectorDB.deleteDocumentsForNote(note.id)
 
@@ -235,7 +246,8 @@ export class EmbeddingService {
 
       if (!textContent.trim()) {
         console.log(`[EmbeddingService] Note ${note.id} has no text content, skipping indexing`)
-        return
+        vectorDB.updateIndexingStatus(note.id, contentHash, 0)
+        return true
       }
 
       // Chunk the content with token-aware paragraph splitting
@@ -243,7 +255,8 @@ export class EmbeddingService {
 
       if (chunks.length === 0) {
         console.log(`[EmbeddingService] Note ${note.id} produced no valid chunks, skipping`)
-        return
+        vectorDB.updateIndexingStatus(note.id, contentHash, 0)
+        return true
       }
 
       // Generate embeddings and store each chunk
@@ -270,7 +283,11 @@ export class EmbeddingService {
         })
       }
 
+      // Update indexing status with content hash
+      vectorDB.updateIndexingStatus(note.id, contentHash, chunks.length)
+
       console.log(`[EmbeddingService] Indexed note ${note.id} with ${chunks.length} chunks`)
+      return true
     } catch (error) {
       throw new EmbeddingFailedError(
         note.id,

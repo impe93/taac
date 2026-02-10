@@ -478,6 +478,7 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
       const totalNotes = allNotes.length
       let completedNotes = 0
       let erroredNotes = 0
+      let skippedNotes = 0
 
       // Send initial progress
       event.sender.send('ai:indexing-progress', {
@@ -485,6 +486,7 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
         completed: 0,
         total: totalNotes,
         currentNote: null,
+        skippedNotes: 0,
         status: 'started'
       })
 
@@ -497,13 +499,14 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
             completed: completedNotes,
             total: totalNotes,
             currentNote: { id: note.id, title: note.title },
+            skippedNotes,
             status: 'indexing'
           })
 
           // Convert Lexical content to markdown text
           const textContent = extractTextFromLexicalContent(note.content)
 
-          await service.indexNote(
+          const wasIndexed = await service.indexNote(
             {
               id: note.id,
               folderId,
@@ -514,6 +517,10 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
             },
             vectorDB
           )
+
+          if (!wasIndexed) {
+            skippedNotes++
+          }
 
           completedNotes++
         } catch (error) {
@@ -529,13 +536,15 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
         completed: totalNotes,
         total: totalNotes,
         currentNote: null,
+        skippedNotes,
         status: 'completed'
       })
 
       return {
         success: true,
         totalNotes,
-        indexedNotes: completedNotes - erroredNotes,
+        indexedNotes: completedNotes - erroredNotes - skippedNotes,
+        skippedNotes,
         erroredNotes
       }
     } catch (error) {
