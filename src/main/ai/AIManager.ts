@@ -99,6 +99,7 @@ export class AIManager {
   private readonly MAX_LOADED_MODELS = 2
   private readonly IDLE_UNLOAD_TIMEOUT = 5 * 60 * 1000 // 5 minutes
   private cleanupInterval: NodeJS.Timeout | null = null
+  private modelUnloadListeners: Array<(modelId: string) => void> = []
 
   private constructor() {
     this.config = {
@@ -256,6 +257,11 @@ export class AIManager {
     await loaded.model.dispose()
 
     this.loadedModels.delete(modelId)
+
+    // Notify listeners
+    for (const listener of this.modelUnloadListeners) {
+      listener(modelId)
+    }
   }
 
   /**
@@ -274,6 +280,18 @@ export class AIManager {
    */
   isInitialized(): boolean {
     return this.initialized
+  }
+
+  /**
+   * Register a listener for model unload events
+   *
+   * Called whenever a model is unloaded (explicit, idle cleanup, or LRU eviction).
+   * Useful for invalidating cached contexts that reference the unloaded model.
+   *
+   * @param listener - Callback receiving the unloaded model's ID
+   */
+  onModelUnload(listener: (modelId: string) => void): void {
+    this.modelUnloadListeners.push(listener)
   }
 
   /**

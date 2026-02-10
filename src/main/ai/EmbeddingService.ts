@@ -12,7 +12,7 @@
 
 import type { AIManager } from './AIManager'
 import type { VectorDBManager } from './VectorDBManager'
-import type { LlamaModel } from 'node-llama-cpp'
+import type { LlamaModel, LlamaEmbeddingContext } from 'node-llama-cpp'
 import type { EmbeddingResult, ChunkingOptions } from './types'
 import { DEFAULT_CHUNKING_OPTIONS } from './types'
 import { EmbeddingFailedError, AINotInitializedError } from './errors'
@@ -66,6 +66,8 @@ const DEFAULT_EXTENDED_OPTIONS: ExtendedChunkingOptions = {
 export class EmbeddingService {
   private aiManager: AIManager
   private embeddingModelId: string = 'nomic-embed-text-v2-moe'
+  private embeddingContext: LlamaEmbeddingContext | null = null
+  private cachedModelId: string | null = null
 
   /**
    * Create an EmbeddingService instance
@@ -73,6 +75,13 @@ export class EmbeddingService {
    */
   constructor(aiManager: AIManager) {
     this.aiManager = aiManager
+
+    // Invalidate cached context when the embedding model is unloaded
+    this.aiManager.onModelUnload((modelId: string) => {
+      if (modelId === this.embeddingModelId) {
+        this.invalidateContext()
+      }
+    })
   }
 
   /**
@@ -80,6 +89,9 @@ export class EmbeddingService {
    * @param modelId - The model ID from ModelRegistry
    */
   setEmbeddingModel(modelId: string): void {
+    if (this.embeddingModelId !== modelId) {
+      this.invalidateContext()
+    }
     this.embeddingModelId = modelId
   }
 
@@ -91,16 +103,43 @@ export class EmbeddingService {
   }
 
   /**
+   * Get or create the cached LlamaEmbeddingContext
+   *
+   * Reuses the existing context if the model hasn't changed.
+   * Creates a new one via AIManager if the context doesn't exist
+   * or the embedding model has been switched.
+   */
+  private async getOrCreateContext(): Promise<LlamaEmbeddingContext> {
+    if (!this.aiManager.isInitialized()) {
+      throw new AINotInitializedError()
+    }
+
+    if (!this.embeddingContext || this.cachedModelId !== this.embeddingModelId) {
+      this.embeddingContext = await this.aiManager.getEmbeddingContext(this.embeddingModelId)
+      this.cachedModelId = this.embeddingModelId
+    }
+
+    return this.embeddingContext
+  }
+
+  /**
+   * Invalidate the cached embedding context
+   *
+   * Should be called when the embedding model is unloaded or changed.
+   * The next embedding call will create a fresh context.
+   */
+  invalidateContext(): void {
+    this.embeddingContext = null
+    this.cachedModelId = null
+  }
+
+  /**
    * Generate embedding for a single text (no task prefix)
    * @param text - The text to embed
    * @returns The embedding vector as returned by the model
    */
   async embedText(text: string): Promise<number[]> {
-    if (!this.aiManager.isInitialized()) {
-      throw new AINotInitializedError()
-    }
-
-    const context = await this.aiManager.getEmbeddingContext(this.embeddingModelId)
+    const context = await this.getOrCreateContext()
     const embedding = await context.getEmbeddingFor(text)
     return [...embedding.vector]
   }
@@ -111,11 +150,7 @@ export class EmbeddingService {
    * for proper asymmetric search quality
    */
   private async embedWithPrefix(prefix: string, text: string): Promise<number[]> {
-    if (!this.aiManager.isInitialized()) {
-      throw new AINotInitializedError()
-    }
-
-    const context = await this.aiManager.getEmbeddingContext(this.embeddingModelId)
+    const context = await this.getOrCreateContext()
     const prefixedText = `${prefix}: ${text}`
     const embedding = await context.getEmbeddingFor(prefixedText)
     return [...embedding.vector]
@@ -136,11 +171,7 @@ export class EmbeddingService {
    * @returns Array of embedding vectors (same order as input)
    */
   async embedTexts(texts: string[]): Promise<number[][]> {
-    if (!this.aiManager.isInitialized()) {
-      throw new AINotInitializedError()
-    }
-
-    const context = await this.aiManager.getEmbeddingContext(this.embeddingModelId)
+    const context = await this.getOrCreateContext()
     const embeddings: number[][] = []
 
     for (const text of texts) {

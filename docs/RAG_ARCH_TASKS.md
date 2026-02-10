@@ -54,7 +54,7 @@ NON modificare la tabella vec0 né VectorDBManager — la distance_metric=cosine
 
 ---
 
-### Task A2 — Cache dell'embedding context ⬜
+### Task A2 — Cache dell'embedding context ✅
 
 **File coinvolti:** `src/main/ai/EmbeddingService.ts`, `src/main/ai/AIManager.ts`
 **Sezione RAG_ARCHITECTURE.md:** §3.4 Cache del Contesto
