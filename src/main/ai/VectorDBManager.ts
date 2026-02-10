@@ -9,7 +9,7 @@
  * Reference: docs/AI_ARCHITECTURE.md section 6.5
  */
 
-import type { EmbeddingResult, SearchResult, VectorDocument } from './types'
+import type { BM25SearchResult, EmbeddingResult, SearchResult, VectorDocument } from './types'
 import { VectorDBError } from './errors'
 import Database from 'better-sqlite3'
 import * as sqliteVec from 'sqlite-vec'
@@ -372,6 +372,105 @@ export class VectorDBManager {
       }))
     } catch (error) {
       throw new VectorDBError('search', error instanceof Error ? error.message : 'Unknown error')
+    }
+  }
+
+  /**
+   * Sanitize a query string for FTS5 MATCH syntax.
+   * Wraps each token in double quotes to treat them as literals,
+   * preventing FTS5 operator characters (*, +, -, ^, :, etc.) from
+   * being interpreted as syntax.
+   */
+  private sanitizeFTS5Query(query: string): string {
+    // Split on whitespace, filter empty tokens, escape internal double quotes, wrap each in quotes
+    const tokens = query
+      .split(/\s+/)
+      .filter((t) => t.length > 0)
+      .map((t) => `"${t.replace(/"/g, '""')}"`)
+
+    return tokens.join(' ')
+  }
+
+  /**
+   * Search for matching chunks using BM25 keyword search via FTS5.
+   *
+   * @param query - The search query (natural language)
+   * @param limit - Maximum number of results to return
+   * @param noteIds - Optional filter to search only within specific notes
+   * @returns Array of BM25SearchResult. The bm25Score is the raw FTS5 rank
+   *          (negative; more negative = more relevant).
+   */
+  async bm25Search(
+    query: string,
+    limit: number = 10,
+    noteIds?: string[]
+  ): Promise<BM25SearchResult[]> {
+    if (!this.db || !this.initialized) {
+      return []
+    }
+
+    const sanitized = this.sanitizeFTS5Query(query)
+    if (sanitized.length === 0) return []
+
+    try {
+      let results: Array<{
+        id: string
+        note_id: string
+        content: string
+        section_id: string | null
+        section_header: string | null
+        metadata: string
+        bm25_score: number
+      }>
+
+      if (noteIds && noteIds.length > 0) {
+        const placeholders = noteIds.map(() => '?').join(', ')
+        results = this.db
+          .prepare(
+            `
+            SELECT e.id, e.note_id, e.content, e.section_id, e.section_header, e.metadata,
+                   rank AS bm25_score
+            FROM embeddings_fts
+            JOIN embeddings e ON embeddings_fts.rowid = e.rowid
+            WHERE embeddings_fts MATCH ?
+              AND e.note_id IN (${placeholders})
+            ORDER BY rank
+            LIMIT ?
+          `
+          )
+          .all(sanitized, ...noteIds, limit) as typeof results
+      } else {
+        results = this.db
+          .prepare(
+            `
+            SELECT e.id, e.note_id, e.content, e.section_id, e.section_header, e.metadata,
+                   rank AS bm25_score
+            FROM embeddings_fts
+            JOIN embeddings e ON embeddings_fts.rowid = e.rowid
+            WHERE embeddings_fts MATCH ?
+            ORDER BY rank
+            LIMIT ?
+          `
+          )
+          .all(sanitized, limit) as typeof results
+      }
+
+      return results.map((row) => ({
+        id: row.id,
+        noteId: row.note_id,
+        content: row.content,
+        sectionId: row.section_id || undefined,
+        sectionHeader: row.section_header || undefined,
+        metadata: JSON.parse(row.metadata || '{}'),
+        bm25Score: row.bm25_score
+      }))
+    } catch (error) {
+      // Graceful fallback: log and return empty array for invalid queries or empty FTS table
+      console.warn(
+        '[VectorDBManager] BM25 search failed:',
+        error instanceof Error ? error.message : error
+      )
+      return []
     }
   }
 

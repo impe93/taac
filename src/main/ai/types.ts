@@ -254,6 +254,21 @@ export interface SearchResult {
 }
 
 /**
+ * Result from a BM25 (keyword) search via FTS5.
+ * Note: bm25Score is the raw FTS5 rank value, which is negative.
+ * More negative = more relevant (e.g. -5.2 is more relevant than -1.3).
+ */
+export interface BM25SearchResult {
+  id: string
+  noteId: string
+  content: string
+  sectionId?: string
+  sectionHeader?: string
+  metadata: Record<string, unknown>
+  bm25Score: number
+}
+
+/**
  * Result from embedding generation
  */
 export interface EmbeddingResult {
