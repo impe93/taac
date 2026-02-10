@@ -85,7 +85,7 @@ Ricorda: node-llama-cpp è ESM, usa solo type-only imports al top level e dynami
 
 ---
 
-### Task A3 — Contextual Chunk Headers ⬜
+### Task A3 — Contextual Chunk Headers ✅
 
 **File coinvolti:** `src/main/ai/EmbeddingService.ts`
 **Sezione RAG_ARCHITECTURE.md:** §6 Contextual Chunk Headers

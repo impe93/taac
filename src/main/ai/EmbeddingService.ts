@@ -183,6 +183,31 @@ export class EmbeddingService {
   }
 
   /**
+   * Build the contextual header text used for embedding generation.
+   *
+   * Prepends note title (and optionally section header) to the chunk text
+   * so the embedding model has context about provenance. The original chunk
+   * text is still stored in the database for display / LLM context.
+   *
+   * Format: Note: "{noteTitle}" | Section: "{sectionHeader}" | {chunkText}
+   *
+   * @param chunkText - The raw chunk text
+   * @param noteTitle - Title of the parent note
+   * @param sectionHeader - Optional Markdown section header
+   * @returns The enriched text to pass to embedDocument()
+   */
+  buildEmbeddingText(chunkText: string, noteTitle: string, sectionHeader?: string): string {
+    const parts: string[] = [`Note: "${noteTitle}"`]
+
+    if (sectionHeader) {
+      parts.push(`Section: "${sectionHeader}"`)
+    }
+
+    parts.push(chunkText)
+    return parts.join(' | ')
+  }
+
+  /**
    * Index a note into the vector database
    *
    * This method:
@@ -224,7 +249,9 @@ export class EmbeddingService {
       // Generate embeddings and store each chunk
       for (let i = 0; i < chunks.length; i++) {
         const chunk = chunks[i]
-        const embedding = await this.embedDocument(chunk.text)
+        // Use contextual header for embedding, but store original text in DB
+        const textToEmbed = this.buildEmbeddingText(chunk.text, note.title)
+        const embedding = await this.embedDocument(textToEmbed)
 
         await vectorDB.upsertDocument({
           id: uuidv4(),
@@ -289,7 +316,9 @@ export class EmbeddingService {
 
         for (let j = 0; j < chunks.length; j++) {
           const chunk = chunks[j]
-          const embedding = await this.embedDocument(chunk.text)
+          // Use contextual header for embedding, but store original text in DB
+          const textToEmbed = this.buildEmbeddingText(chunk.text, note.title)
+          const embedding = await this.embedDocument(textToEmbed)
 
           await vectorDB.upsertDocument({
             id: uuidv4(),
