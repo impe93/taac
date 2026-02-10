@@ -285,3 +285,35 @@ export const DEFAULT_CHUNKING_OPTIONS: ChunkingOptions = {
   overlapTokens: 32,
   splitOnParagraph: true
 }
+
+/**
+ * A structure-aware chunk with section metadata.
+ * Reference: docs/RAG_ARCHITECTURE.md §5.4
+ */
+export interface StructuredChunk {
+  text: string
+  index: number
+  sectionId: string
+  sectionHeader: string
+  startOffset: number
+  endOffset: number
+}
+
+/**
+ * Options for structure-aware chunking.
+ * Reference: docs/RAG_ARCHITECTURE.md §5.3
+ */
+export interface StructureAwareChunkingOptions {
+  maxChunkTokens?: number
+  overlapTokens?: number
+  minChunkTokens?: number
+}
+
+/**
+ * Default structure-aware chunking options
+ */
+export const DEFAULT_STRUCTURE_AWARE_OPTIONS: Required<StructureAwareChunkingOptions> = {
+  maxChunkTokens: 384,
+  overlapTokens: 32,
+  minChunkTokens: 32
+}

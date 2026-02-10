@@ -13,8 +13,13 @@
 import type { AIManager } from './AIManager'
 import type { VectorDBManager } from './VectorDBManager'
 import type { LlamaModel, LlamaEmbeddingContext } from 'node-llama-cpp'
-import type { EmbeddingResult, ChunkingOptions } from './types'
-import { DEFAULT_CHUNKING_OPTIONS } from './types'
+import type {
+  EmbeddingResult,
+  ChunkingOptions,
+  StructuredChunk,
+  StructureAwareChunkingOptions
+} from './types'
+import { DEFAULT_CHUNKING_OPTIONS, DEFAULT_STRUCTURE_AWARE_OPTIONS } from './types'
 import { EmbeddingFailedError, AINotInitializedError } from './errors'
 import { v4 as uuidv4 } from 'uuid'
 import { createHash } from 'crypto'
@@ -25,6 +30,16 @@ import { createHash } from 'crypto'
 export interface ExtendedChunkingOptions extends ChunkingOptions {
   /** Minimum chunk size in tokens to keep (avoids tiny fragments) */
   minChunkTokens?: number
+}
+
+/**
+ * A Markdown section parsed from headers
+ */
+interface ParsedSection {
+  header: string // Header text without # markers, '' for intro
+  content: string // Full section content including the header line
+  startOffset: number
+  endOffset: number
 }
 
 /**
@@ -227,7 +242,7 @@ export class EmbeddingService {
   async indexNote(
     note: IndexableNote,
     vectorDB: VectorDBManager,
-    options: ExtendedChunkingOptions = DEFAULT_EXTENDED_OPTIONS
+    _options: ExtendedChunkingOptions = DEFAULT_EXTENDED_OPTIONS
   ): Promise<boolean> {
     try {
       // Check if note content has changed since last indexing
@@ -250,8 +265,8 @@ export class EmbeddingService {
         return true
       }
 
-      // Chunk the content with token-aware paragraph splitting
-      const chunks = await this.chunkText(textContent, options)
+      // Chunk the content with structure-aware section splitting
+      const chunks = await this.structureAwareChunk(textContent, note.id)
 
       if (chunks.length === 0) {
         console.log(`[EmbeddingService] Note ${note.id} produced no valid chunks, skipping`)
@@ -263,7 +278,7 @@ export class EmbeddingService {
       for (let i = 0; i < chunks.length; i++) {
         const chunk = chunks[i]
         // Use contextual header for embedding, but store original text in DB
-        const textToEmbed = this.buildEmbeddingText(chunk.text, note.title)
+        const textToEmbed = this.buildEmbeddingText(chunk.text, note.title, chunk.sectionHeader)
         const embedding = await this.embedDocument(textToEmbed)
 
         await vectorDB.upsertDocument({
@@ -273,6 +288,8 @@ export class EmbeddingService {
           content: chunk.text,
           embedding,
           embeddingModel: this.embeddingModelId,
+          sectionId: chunk.sectionId,
+          sectionHeader: chunk.sectionHeader,
           metadata: {
             noteTitle: note.title,
             folderId: note.folderId,
@@ -308,7 +325,7 @@ export class EmbeddingService {
   async indexNotesBatch(
     notes: IndexableNote[],
     vectorDB: VectorDBManager,
-    options: ExtendedChunkingOptions = DEFAULT_EXTENDED_OPTIONS,
+    _options: ExtendedChunkingOptions = DEFAULT_EXTENDED_OPTIONS,
     onProgress?: (completed: number, total: number) => void
   ): Promise<Map<string, EmbeddingResult[]>> {
     const results = new Map<string, EmbeddingResult[]>()
@@ -328,13 +345,13 @@ export class EmbeddingService {
           continue
         }
 
-        const chunks = await this.chunkText(textContent, options)
+        const chunks = await this.structureAwareChunk(textContent, note.id)
         const noteResults: EmbeddingResult[] = []
 
         for (let j = 0; j < chunks.length; j++) {
           const chunk = chunks[j]
           // Use contextual header for embedding, but store original text in DB
-          const textToEmbed = this.buildEmbeddingText(chunk.text, note.title)
+          const textToEmbed = this.buildEmbeddingText(chunk.text, note.title, chunk.sectionHeader)
           const embedding = await this.embedDocument(textToEmbed)
 
           await vectorDB.upsertDocument({
@@ -344,6 +361,8 @@ export class EmbeddingService {
             content: chunk.text,
             embedding,
             embeddingModel: this.embeddingModelId,
+            sectionId: chunk.sectionId,
+            sectionHeader: chunk.sectionHeader,
             metadata: {
               noteTitle: note.title,
               folderId: note.folderId,
@@ -612,5 +631,306 @@ export class EmbeddingService {
     }
 
     return chunks
+  }
+
+  // ===========================================================================
+  // Structure-Aware Chunking
+  // ===========================================================================
+
+  /**
+   * Structure-aware chunking for Markdown notes
+   *
+   * Splits text by Markdown sections (H1/H2/H3), keeps small sections
+   * whole, and splits large sections on block boundaries (paragraphs,
+   * lists, blockquotes, tables). Never breaks in the middle of an
+   * atomic block.
+   *
+   * Reference: docs/RAG_ARCHITECTURE.md §5.2
+   *
+   * @param text - Extracted text (with Markdown structural markers preserved)
+   * @param noteId - Note ID for generating section IDs
+   * @param options - Chunking configuration
+   * @returns Array of structured chunks with section metadata
+   */
+  async structureAwareChunk(
+    text: string,
+    noteId: string,
+    options: StructureAwareChunkingOptions = DEFAULT_STRUCTURE_AWARE_OPTIONS
+  ): Promise<StructuredChunk[]> {
+    const { maxChunkTokens, overlapTokens, minChunkTokens } = {
+      ...DEFAULT_STRUCTURE_AWARE_OPTIONS,
+      ...options
+    }
+    const minFilterTokens = 10
+    const model = await this.aiManager.getModelInstance(this.embeddingModelId)
+
+    // Step 1: Parse sections from Markdown headers
+    const rawSections = this.parseSections(text)
+
+    // Step 4 (early): Merge sections shorter than minChunkTokens with next section
+    const sections = this.mergeShortSections(rawSections, model, minChunkTokens)
+
+    const chunks: StructuredChunk[] = []
+
+    // Step 2: Process each section
+    for (const section of sections) {
+      const sectionId = createHash('sha256')
+        .update(noteId + section.header)
+        .digest('hex')
+        .slice(0, 16)
+
+      const sectionTokens = model.tokenize(section.content).length
+
+      if (sectionTokens <= maxChunkTokens) {
+        // Section fits in one chunk — Step 3: filter tiny chunks
+        if (sectionTokens >= minFilterTokens) {
+          chunks.push({
+            text: section.content,
+            index: chunks.length,
+            sectionId,
+            sectionHeader: section.header,
+            startOffset: section.startOffset,
+            endOffset: section.endOffset
+          })
+        }
+      } else {
+        // Section too large — split respecting block boundaries
+        const subChunks = this.splitSectionByBlocks(
+          section,
+          model,
+          maxChunkTokens,
+          overlapTokens,
+          minFilterTokens
+        )
+
+        for (const sub of subChunks) {
+          chunks.push({
+            text: sub.text,
+            index: chunks.length,
+            sectionId,
+            sectionHeader: section.header,
+            startOffset: sub.startOffset,
+            endOffset: sub.endOffset
+          })
+        }
+      }
+    }
+
+    return chunks
+  }
+
+  /**
+   * Parse Markdown text into sections by H1/H2/H3 headers.
+   * Text before the first header becomes an "intro" section with empty header.
+   */
+  private parseSections(text: string): ParsedSection[] {
+    const sections: ParsedSection[] = []
+    const headerRegex = /^#{1,3} .+$/gm
+    const headerPositions: Array<{ index: number; headerText: string }> = []
+
+    let match: RegExpExecArray | null
+    while ((match = headerRegex.exec(text)) !== null) {
+      const headerText = match[0].replace(/^#{1,3}\s+/, '')
+      headerPositions.push({ index: match.index, headerText })
+    }
+
+    if (headerPositions.length === 0) {
+      // No headers — entire text is one intro section
+      const trimmed = text.trim()
+      if (trimmed) {
+        return [{ header: '', content: trimmed, startOffset: 0, endOffset: text.length }]
+      }
+      return []
+    }
+
+    // Intro section (before first header)
+    if (headerPositions[0].index > 0) {
+      const introContent = text.slice(0, headerPositions[0].index).trim()
+      if (introContent) {
+        sections.push({
+          header: '',
+          content: introContent,
+          startOffset: 0,
+          endOffset: headerPositions[0].index
+        })
+      }
+    }
+
+    // Header sections
+    for (let i = 0; i < headerPositions.length; i++) {
+      const start = headerPositions[i].index
+      const end = i < headerPositions.length - 1 ? headerPositions[i + 1].index : text.length
+      const content = text.slice(start, end).trim()
+      if (content) {
+        sections.push({
+          header: headerPositions[i].headerText,
+          content,
+          startOffset: start,
+          endOffset: end
+        })
+      }
+    }
+
+    return sections
+  }
+
+  /**
+   * Merge sections shorter than minChunkTokens with the following section.
+   */
+  private mergeShortSections(
+    sections: ParsedSection[],
+    model: LlamaModel,
+    minChunkTokens: number
+  ): ParsedSection[] {
+    if (sections.length <= 1) return sections
+
+    const input = [...sections]
+    const result: ParsedSection[] = []
+
+    for (let i = 0; i < input.length; i++) {
+      const section = input[i]
+      const tokenCount = model.tokenize(section.content).length
+
+      if (tokenCount < minChunkTokens && i < input.length - 1) {
+        // Merge with next section
+        const next = input[i + 1]
+        input[i + 1] = {
+          header: next.header || section.header,
+          content: section.content + '\n\n' + next.content,
+          startOffset: section.startOffset,
+          endOffset: next.endOffset
+        }
+      } else {
+        result.push(section)
+      }
+    }
+
+    return result
+  }
+
+  /**
+   * Split a large section into chunks respecting atomic block boundaries.
+   *
+   * Atomic blocks (paragraphs, list groups, blockquotes, tables — separated
+   * by double newlines) are never broken. If a single block exceeds
+   * maxChunkTokens, it falls back to token-level splitting.
+   * Consecutive sub-chunks share 32-token overlap for context continuity.
+   */
+  private splitSectionByBlocks(
+    section: ParsedSection,
+    model: LlamaModel,
+    maxChunkTokens: number,
+    overlapTokens: number,
+    minFilterTokens: number
+  ): Array<{ text: string; startOffset: number; endOffset: number }> {
+    const blocks = this.parseAtomicBlocks(section.content)
+    const result: Array<{ text: string; startOffset: number; endOffset: number }> = []
+
+    let accumParts: string[] = []
+    let accumTokens = 0
+    let accumFirstBlockOffset = 0
+    let accumLastBlockEnd = 0
+    let previousChunkText = ''
+
+    const flushChunk = (): void => {
+      if (accumParts.length > 0 && accumTokens >= minFilterTokens) {
+        const chunkText = accumParts.join('\n\n')
+        result.push({
+          text: chunkText,
+          startOffset: section.startOffset + accumFirstBlockOffset,
+          endOffset: section.startOffset + accumLastBlockEnd
+        })
+        previousChunkText = chunkText
+      }
+      accumParts = []
+      accumTokens = 0
+    }
+
+    for (const block of blocks) {
+      const blockTokens = model.tokenize(block.text).length
+      const sepTokens = accumParts.length > 0 ? 1 : 0
+
+      if (accumTokens + blockTokens + sepTokens <= maxChunkTokens) {
+        // Fits in current chunk
+        if (accumParts.length === 0) {
+          accumFirstBlockOffset = block.offset
+        }
+        accumParts.push(block.text)
+        accumTokens += blockTokens + sepTokens
+        accumLastBlockEnd = block.offset + block.text.length
+      } else {
+        // Would exceed limit — flush and start new chunk
+        flushChunk()
+
+        if (blockTokens > maxChunkTokens) {
+          // Single block too large — token-level fallback
+          const subs = this.splitLongTextByTokens(
+            block.text,
+            model,
+            maxChunkTokens,
+            overlapTokens,
+            minFilterTokens
+          )
+          for (const sub of subs) {
+            result.push({
+              text: sub,
+              startOffset: section.startOffset + block.offset,
+              endOffset: section.startOffset + block.offset + block.text.length
+            })
+          }
+          previousChunkText = subs.length > 0 ? subs[subs.length - 1] : ''
+        } else {
+          // Add overlap from previous chunk if available
+          if (previousChunkText && overlapTokens > 0) {
+            const prevTokens = model.tokenize(previousChunkText)
+            if (prevTokens.length > overlapTokens) {
+              const overlapText = model.detokenize(prevTokens.slice(-overlapTokens)).trim()
+              accumParts = [overlapText, block.text]
+              accumTokens = overlapTokens + 1 + blockTokens
+            } else {
+              accumParts = [block.text]
+              accumTokens = blockTokens
+            }
+          } else {
+            accumParts = [block.text]
+            accumTokens = blockTokens
+          }
+          accumFirstBlockOffset = block.offset
+          accumLastBlockEnd = block.offset + block.text.length
+        }
+      }
+    }
+
+    // Flush remaining
+    flushChunk()
+
+    return result
+  }
+
+  /**
+   * Parse text into atomic blocks separated by double newlines.
+   * Each block (paragraph, list group, blockquote, table) is an indivisible unit.
+   */
+  private parseAtomicBlocks(text: string): Array<{ text: string; offset: number }> {
+    const blocks: Array<{ text: string; offset: number }> = []
+    const separator = /\n{2,}/g
+    let lastEnd = 0
+    let match: RegExpExecArray | null
+
+    while ((match = separator.exec(text)) !== null) {
+      const blockText = text.slice(lastEnd, match.index).trim()
+      if (blockText) {
+        blocks.push({ text: blockText, offset: lastEnd })
+      }
+      lastEnd = match.index + match[0].length
+    }
+
+    // Last block
+    const lastBlock = text.slice(lastEnd).trim()
+    if (lastBlock) {
+      blocks.push({ text: lastBlock, offset: lastEnd })
+    }
+
+    return blocks
   }
 }

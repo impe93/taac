@@ -271,7 +271,7 @@ NOTA: questa funzione è un prerequisito per il chunking structure-aware (Task C
 
 ---
 
-### Task C2 — Implementare il chunking structure-aware ⬜
+### Task C2 — Implementare il chunking structure-aware ✅
 
 **File coinvolti:** `src/main/ai/EmbeddingService.ts`
 **Sezione RAG_ARCHITECTURE.md:** §5 Chunking Structure-Aware (§5.2, §5.3, §5.4)
