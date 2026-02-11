@@ -101,7 +101,6 @@ const EmptyState: FC = () => (
 )
 
 const DEFAULT_RAG_SEARCH_LIMIT = 5
-const RAG_RELEVANCE_THRESHOLD = 20 // Minimum relevance % (relative to best result) to include in context
 
 /**
  * Builds a context prompt from relevant notes
@@ -274,19 +273,9 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
       })
       console.log('[RAG Debug] Raw search results:', results)
 
-      // Transform results (RRF scores normalized to 0-100%) and filter by relevance threshold
-      const transformedNotes = rankedResultsToContextNotes(results)
-      console.log('[RAG Debug] Transformed notes:', transformedNotes)
-
-      const notes = transformedNotes.filter(
-        (note) => note.relevanceScore >= RAG_RELEVANCE_THRESHOLD
-      )
-      console.log(
-        '[RAG Debug] Filtered notes (threshold:',
-        RAG_RELEVANCE_THRESHOLD,
-        '):',
-        notes
-      )
+      // Transform results — already filtered and scored by the backend
+      const notes = rankedResultsToContextNotes(results)
+      console.log('[RAG Debug] Context notes:', notes)
 
       setContextNotes(notes)
       return notes

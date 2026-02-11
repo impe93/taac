@@ -707,15 +707,28 @@ export class VectorDBManager {
         sectionHeader: data.section_header,
         metadata: JSON.parse(data.metadata || '{}'),
         rrfScore,
+        relevancePercent: 0, // Computed in Step 6 after sorting
         vectorDistance: vecEntry?.distance ?? null,
         bm25Rank: bm25Entry?.rank ?? null
       })
     }
 
-    // --- Step 5: Apply heuristic boosts and return top limit ---
+    // --- Step 5: Apply heuristic boosts ---
     // Pipeline: same-note boost → title match + recency boost → re-sort → top N
     const boosted = applyHeuristicBoosts(applySameNoteBoost(fusedResults), query)
-    return boosted.slice(0, limit)
+    const topN = boosted.slice(0, limit)
+
+    if (topN.length === 0) return []
+
+    // --- Step 6: Compute relevancePercent and apply dynamic threshold ---
+    const maxRRF = Math.max(...topN.map((r) => r.rrfScore))
+
+    return topN
+      .filter((r) => r.rrfScore >= maxRRF * 0.25) // Dynamic threshold: 25% of best
+      .map((r) => ({
+        ...r,
+        relevancePercent: Math.round((r.rrfScore / maxRRF) * 100)
+      }))
   }
 
   /**

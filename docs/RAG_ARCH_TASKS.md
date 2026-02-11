@@ -527,7 +527,7 @@ Task:
 
 ---
 
-### Task E2 — Nuovo sistema di scoring per la UI e threshold dinamico ⬜
+### Task E2 — Nuovo sistema di scoring per la UI e threshold dinamico ✅
 
 **File coinvolti:** `src/renderer/src/components/ai/ChatContextNotes.tsx`, `src/main/ai/VectorDBManager.ts`
 **Sezione RAG_ARCHITECTURE.md:** §9.3 Relevance Score per la UI, §9.4 Threshold di rilevanza

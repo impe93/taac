@@ -32,31 +32,21 @@ const getRelevanceBadgeVariant = (score: number): 'default' | 'secondary' | 'out
 
 /**
  * Transforms a single RankedResult to ContextNote.
- * rrfScore is normalized to a percentage relative to the max score in the batch.
- * Pass maxRrfScore from the result set for proper normalization.
+ * relevancePercent is already computed by the backend (relative to best result).
  */
-export const searchResultToContextNote = (
-  result: RankedResult,
-  maxRrfScore?: number
-): ContextNote => ({
+const searchResultToContextNote = (result: RankedResult): ContextNote => ({
   noteId: result.noteId,
   title: (result.metadata?.noteTitle as string) || (result.metadata?.title as string) || 'Untitled',
   excerpt: result.content.slice(0, 200) + (result.content.length > 200 ? '...' : ''),
-  relevanceScore:
-    maxRrfScore && maxRrfScore > 0
-      ? Math.round((result.rrfScore / maxRrfScore) * 100)
-      : Math.round(Math.min(100, result.rrfScore * 3600))
+  relevanceScore: result.relevancePercent
 })
 
 /**
- * Transforms a batch of RankedResults to ContextNotes with normalized relevance scores.
- * The top result gets 100%, others are scaled proportionally.
+ * Transforms a batch of RankedResults to ContextNotes.
+ * Results are already filtered and scored by the backend.
  */
-export const rankedResultsToContextNotes = (results: RankedResult[]): ContextNote[] => {
-  if (results.length === 0) return []
-  const maxRrfScore = Math.max(...results.map((r) => r.rrfScore))
-  return results.map((r) => searchResultToContextNote(r, maxRrfScore))
-}
+export const rankedResultsToContextNotes = (results: RankedResult[]): ContextNote[] =>
+  results.map(searchResultToContextNote)
 
 /**
  * ChatContextNotes component displays notes used as context for RAG

@@ -296,6 +296,7 @@ export interface RankedResult {
   sectionHeader: string | null
   metadata: Record<string, unknown>
   rrfScore: number
+  relevancePercent: number // 0-100, relative to best result in the set
   vectorDistance: number | null // null if found only via BM25
   bm25Rank: number | null // null if found only via vector
 }
