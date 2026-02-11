@@ -607,7 +607,7 @@ Task:
 
 ---
 
-### Task F2 — Implementare section-based retrieval ⬜
+### Task F2 — Implementare section-based retrieval ✅
 
 **File coinvolti:** `src/main/ai/VectorDBManager.ts`
 **Sezione RAG_ARCHITECTURE.md:** §10.2 Livello 2: Section-Based Retrieval

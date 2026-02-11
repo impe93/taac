@@ -1038,7 +1038,7 @@ export class VectorDBManager {
   }
 
   // ===========================================================================
-  // Window Expansion (Multi-Chunk Retrieval)
+  // Multi-Chunk Retrieval (Window + Section Expansion)
   // Reference: docs/RAG_ARCHITECTURE.md §10.2
   // ===========================================================================
 
@@ -1091,6 +1091,88 @@ export class VectorDBManager {
       )
       return []
     }
+  }
+
+  /**
+   * Retrieve all chunks belonging to a section.
+   * Used by expandToSection to fetch the complete section content.
+   * Reference: docs/RAG_ARCHITECTURE.md §10.2 — Livello 2: Section-Based Retrieval
+   */
+  getChunksBySection(
+    sectionId: string
+  ): {
+    id: string
+    chunkIndex: number
+    content: string
+    sectionHeader: string | null
+  }[] {
+    if (!this.db || !this.initialized) return []
+
+    try {
+      const rows = this.db
+        .prepare(
+          `
+          SELECT id, chunk_index, content, section_header
+          FROM embeddings
+          WHERE section_id = ?
+          ORDER BY chunk_index
+        `
+        )
+        .all(sectionId) as Array<{
+        id: string
+        chunk_index: number
+        content: string
+        section_header: string | null
+      }>
+
+      return rows.map((r) => ({
+        id: r.id,
+        chunkIndex: r.chunk_index,
+        content: r.content,
+        sectionHeader: r.section_header
+      }))
+    } catch (error) {
+      console.warn(
+        '[VectorDBManager] getChunksBySection failed:',
+        error instanceof Error ? error.message : error
+      )
+      return []
+    }
+  }
+
+  /**
+   * Expand matched chunks by retrieving all chunks from the same section.
+   * For each chunk that has a sectionId, fetches the complete section content.
+   * Chunks without a sectionId are skipped (handled by window expansion instead).
+   *
+   * Reference: docs/RAG_ARCHITECTURE.md §10.2 — Livello 2: Section-Based Retrieval
+   */
+  expandToSection(matchedChunks: RankedResult[]): ExpandedResult[] {
+    const expanded: ExpandedResult[] = []
+    const processedSections = new Set<string>()
+
+    for (const chunk of matchedChunks) {
+      // Skip chunks without sectionId — they'll be handled by window expansion
+      if (!chunk.sectionId || processedSections.has(chunk.sectionId)) continue
+      processedSections.add(chunk.sectionId)
+
+      const sectionChunks = this.getChunksBySection(chunk.sectionId)
+
+      if (sectionChunks.length === 0) continue
+
+      const combinedContent = sectionChunks.map((c) => c.content).join('\n\n')
+
+      expanded.push({
+        ...chunk,
+        expandedContent: combinedContent,
+        chunkRange: {
+          from: sectionChunks[0].chunkIndex,
+          to: sectionChunks[sectionChunks.length - 1].chunkIndex
+        }
+      })
+    }
+
+    return expanded
   }
 
   /**
