@@ -495,7 +495,7 @@ Nuovo sistema di scoring basato su RRF con boost euristici.
 
 ---
 
-### Task E1 — Implementare heuristic re-ranking e same-note boost ⬜
+### Task E1 — Implementare heuristic re-ranking e same-note boost ✅
 
 **File coinvolti:** `src/main/ai/VectorDBManager.ts`
 **Sezione RAG_ARCHITECTURE.md:** §9.1 Heuristic Re-Ranking, §9.2 Same-Note Grouping

@@ -29,6 +29,60 @@ export interface VectorDBConfig {
   embeddingDimension: number
 }
 
+/**
+ * Apply same-note boost: when multiple chunks from the same note appear in results,
+ * the note is likely very relevant. Applies a logarithmic boost proportional to chunk count.
+ * Pure function — no side effects.
+ * Reference: docs/RAG_ARCHITECTURE.md §9.2
+ */
+export function applySameNoteBoost(results: RankedResult[]): RankedResult[] {
+  const noteChunkCount = new Map<string, number>()
+  for (const r of results) {
+    noteChunkCount.set(r.noteId, (noteChunkCount.get(r.noteId) || 0) + 1)
+  }
+
+  return results.map((r) => {
+    const count = noteChunkCount.get(r.noteId) || 1
+    if (count > 1) {
+      // Logarithmic boost: 2 chunks = +0.002, 3 chunks = +0.003, etc.
+      return { ...r, rrfScore: r.rrfScore + 0.002 * Math.log2(count) }
+    }
+    return r
+  })
+}
+
+/**
+ * Apply heuristic boosts for title match and recency, then re-sort by rrfScore descending.
+ * Pure function — no side effects.
+ * Reference: docs/RAG_ARCHITECTURE.md §9.1
+ */
+export function applyHeuristicBoosts(results: RankedResult[], query: string): RankedResult[] {
+  return results
+    .map((result) => {
+      let boost = 0
+
+      // 1. TITLE MATCH: if note title contains query terms (> 2 chars), boost per match
+      const queryTerms = query.toLowerCase().split(/\s+/)
+      const title = ((result.metadata.noteTitle as string) || '').toLowerCase()
+      const titleMatches = queryTerms.filter((t) => t.length > 2 && title.includes(t)).length
+      if (titleMatches > 0) {
+        boost += 0.003 * titleMatches
+      }
+
+      // 2. RECENCY: recently modified notes are more relevant
+      const updatedAt = result.metadata.updatedAt as string
+      if (updatedAt) {
+        const daysSinceUpdate = (Date.now() - new Date(updatedAt).getTime()) / (1000 * 60 * 60 * 24)
+        if (daysSinceUpdate < 7) boost += 0.002
+        else if (daysSinceUpdate < 30) boost += 0.001
+      }
+
+      if (boost === 0) return result
+      return { ...result, rrfScore: result.rrfScore + boost }
+    })
+    .sort((a, b) => b.rrfScore - a.rrfScore)
+}
+
 export class VectorDBManager {
   private static instances: Map<string, VectorDBManager> = new Map()
 
@@ -658,9 +712,10 @@ export class VectorDBManager {
       })
     }
 
-    // --- Step 5: Sort by RRF score descending, return top limit ---
-    fusedResults.sort((a, b) => b.rrfScore - a.rrfScore)
-    return fusedResults.slice(0, limit)
+    // --- Step 5: Apply heuristic boosts and return top limit ---
+    // Pipeline: same-note boost → title match + recency boost → re-sort → top N
+    const boosted = applyHeuristicBoosts(applySameNoteBoost(fusedResults), query)
+    return boosted.slice(0, limit)
   }
 
   /**
