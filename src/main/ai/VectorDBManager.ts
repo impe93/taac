@@ -617,7 +617,7 @@ export class VectorDBManager {
    * @param options - Search configuration
    * @returns Top results ranked by RRF score (descending)
    */
-  hybridSearch(options: HybridSearchOptions): RankedResult[] {
+  hybridSearch(options: HybridSearchOptions): ExpandedResult[] {
     if (!this.db || !this.initialized) {
       throw new VectorDBError('hybridSearch', 'Database not initialized')
     }
@@ -798,12 +798,19 @@ export class VectorDBManager {
     // --- Step 6: Compute relevancePercent and apply dynamic threshold ---
     const maxRRF = Math.max(...topN.map((r) => r.rrfScore))
 
-    return topN
+    const filtered = topN
       .filter((r) => r.rrfScore >= maxRRF * 0.25) // Dynamic threshold: 25% of best
       .map((r) => ({
         ...r,
         relevancePercent: Math.round((r.rrfScore / maxRRF) * 100)
       }))
+
+    // --- Step 7: Expand results with section/window expansion + token budget ---
+    return this.expandResults(filtered, {
+      topN: limit,
+      windowSize: options.contextWindow ?? 1,
+      tokenBudget: options.tokenBudget
+    })
   }
 
   /**
@@ -1209,6 +1216,52 @@ export class VectorDBManager {
     }
 
     return deduplicateOverlaps(expanded)
+  }
+
+  /**
+   * Orchestrate the full expansion pipeline: section expansion → window expansion
+   * → deduplication → token budget truncation.
+   * Reference: docs/RAG_ARCHITECTURE.md §10.3, §10.4
+   */
+  expandResults(
+    rankedResults: RankedResult[],
+    options?: { topN?: number; windowSize?: number; tokenBudget?: number }
+  ): ExpandedResult[] {
+    const topN = options?.topN ?? 10
+    const windowSize = options?.windowSize ?? 1
+    const tokenBudget = options?.tokenBudget ?? 4000
+    const CHARS_PER_TOKEN = 4
+
+    // Step 1: Take top-N results
+    const topResults = rankedResults.slice(0, topN)
+    if (topResults.length === 0) return []
+
+    // Step 2: Section expansion for chunks with sectionId
+    const withSection = topResults.filter((r) => r.sectionId !== null)
+    const sectionExpanded = this.expandToSection(withSection)
+
+    // Step 3: Window expansion for chunks without sectionId
+    const withoutSection = topResults.filter((r) => r.sectionId === null)
+    const windowExpanded = this.expandWithWindow(withoutSection, windowSize)
+
+    // Step 4: Deduplicate overlapping ranges (also re-sorts by rrfScore desc)
+    const allExpanded = [...sectionExpanded, ...windowExpanded]
+    const deduplicated = deduplicateOverlaps(allExpanded)
+
+    // Step 5: Token budget — estimate ~4 chars per token, truncate lowest-scored results
+    let totalTokens = 0
+    const withinBudget: ExpandedResult[] = []
+
+    for (const result of deduplicated) {
+      const estimatedTokens = Math.ceil(result.expandedContent.length / CHARS_PER_TOKEN)
+      if (totalTokens + estimatedTokens > tokenBudget && withinBudget.length > 0) {
+        break
+      }
+      totalTokens += estimatedTokens
+      withinBudget.push(result)
+    }
+
+    return withinBudget
   }
 
   /**

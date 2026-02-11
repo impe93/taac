@@ -281,6 +281,7 @@ export interface HybridSearchOptions {
   rrfK?: number // default 60
   noteIds?: string[]
   contextWindow?: number // default 1
+  tokenBudget?: number // default 4000
 }
 
 /**

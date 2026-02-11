@@ -643,7 +643,7 @@ Task:
 
 ---
 
-### Task F3 — Pipeline di espansione completa con token budget ⬜
+### Task F3 — Pipeline di espansione completa con token budget ✅
 
 **File coinvolti:** `src/main/ai/VectorDBManager.ts`
 **Sezione RAG_ARCHITECTURE.md:** §10.3 Strategia di espansione, §10.4 Token Budget
