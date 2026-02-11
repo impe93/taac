@@ -4,7 +4,7 @@ import { Badge } from '@renderer/components/ui/badge'
 import { Button } from '@renderer/components/ui/button'
 import { ScrollArea } from '@renderer/components/ui/scroll-area'
 import { cn } from '@renderer/lib/utils'
-import type { SearchResult } from '@preload/index.d'
+import type { RankedResult } from '@preload/index.d'
 
 export interface ContextNote {
   noteId: string
@@ -22,20 +22,6 @@ interface ChatContextNotesProps {
 }
 
 /**
- * Converts cosine distance to a rescaled relevance percentage.
- * nomic-embed-text-v2-moe produces cosine similarities in a compressed range:
- *   ~0.9 for identical, ~0.5-0.7 highly relevant, ~0.3-0.5 relevant, <0.2 noise
- * Rescaled from model's effective range [0.15, 0.55] to [0, 100] for intuitive display.
- */
-const distanceToRelevance = (distance: number): number => {
-  const similarity = 1 - distance
-  const MIN_SIM = 0.15
-  const MAX_SIM = 0.55
-  const rescaled = ((similarity - MIN_SIM) / (MAX_SIM - MIN_SIM)) * 100
-  return Math.round(Math.max(0, Math.min(100, rescaled)))
-}
-
-/**
  * Gets badge variant based on relevance score
  */
 const getRelevanceBadgeVariant = (score: number): 'default' | 'secondary' | 'outline' => {
@@ -45,14 +31,32 @@ const getRelevanceBadgeVariant = (score: number): 'default' | 'secondary' | 'out
 }
 
 /**
- * Transforms SearchResult to ContextNote
+ * Transforms a single RankedResult to ContextNote.
+ * rrfScore is normalized to a percentage relative to the max score in the batch.
+ * Pass maxRrfScore from the result set for proper normalization.
  */
-export const searchResultToContextNote = (result: SearchResult): ContextNote => ({
+export const searchResultToContextNote = (
+  result: RankedResult,
+  maxRrfScore?: number
+): ContextNote => ({
   noteId: result.noteId,
   title: (result.metadata?.noteTitle as string) || (result.metadata?.title as string) || 'Untitled',
   excerpt: result.content.slice(0, 200) + (result.content.length > 200 ? '...' : ''),
-  relevanceScore: distanceToRelevance(result.distance)
+  relevanceScore:
+    maxRrfScore && maxRrfScore > 0
+      ? Math.round((result.rrfScore / maxRrfScore) * 100)
+      : Math.round(Math.min(100, result.rrfScore * 3600))
 })
+
+/**
+ * Transforms a batch of RankedResults to ContextNotes with normalized relevance scores.
+ * The top result gets 100%, others are scaled proportionally.
+ */
+export const rankedResultsToContextNotes = (results: RankedResult[]): ContextNote[] => {
+  if (results.length === 0) return []
+  const maxRrfScore = Math.max(...results.map((r) => r.rrfScore))
+  return results.map((r) => searchResultToContextNote(r, maxRrfScore))
+}
 
 /**
  * ChatContextNotes component displays notes used as context for RAG

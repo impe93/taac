@@ -22,7 +22,7 @@ import {
   VectorDBManager,
   EmbeddingService
 } from '../ai'
-import type { GenerationOptions, SearchResult } from '../ai'
+import type { GenerationOptions, RankedResult } from '../ai'
 import type { FileSystemManager, Note, FolderMetadata } from '../utils/fileSystem'
 
 type GetFsManager = (spaceId: string) => FileSystemManager
@@ -553,7 +553,7 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
   })
 
   /**
-   * Search notes using semantic similarity
+   * Search notes using hybrid search (vector KNN + BM25 with RRF)
    */
   ipcMain.handle(
     'ai:searchNotes',
@@ -563,7 +563,7 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
       query: string,
       limit?: number,
       noteIds?: string[]
-    ): Promise<SearchResult[]> => {
+    ): Promise<RankedResult[]> => {
       try {
         console.log('[RAG Backend] searchNotes called:', { spaceId, query, limit, noteIds })
 
@@ -582,11 +582,17 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
 
         const service = getEmbeddingService()
         console.log('[RAG Backend] Generating query embedding...')
-        const queryEmbedding = await service.embedQuery(query)
+        const queryEmbeddingArray = await service.embedQuery(query)
+        const queryEmbedding = new Float32Array(queryEmbeddingArray)
         console.log('[RAG Backend] Query embedding generated, length:', queryEmbedding.length)
 
-        const results = await vectorDB.search(queryEmbedding, limit ?? 10, noteIds)
-        console.log('[RAG Backend] Search results:', results.length, 'results')
+        const results = vectorDB.hybridSearch({
+          query,
+          queryEmbedding,
+          limit: limit ?? 10,
+          noteIds
+        })
+        console.log('[RAG Backend] Hybrid search results:', results.length, 'results')
         console.log('[RAG Backend] Results details:', JSON.stringify(results, null, 2))
 
         return results

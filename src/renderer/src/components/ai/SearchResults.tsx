@@ -5,10 +5,10 @@ import { Badge } from '@renderer/components/ui/badge'
 import { ScrollArea } from '@renderer/components/ui/scroll-area'
 import { Skeleton } from '@renderer/components/ui/skeleton'
 import { cn } from '@renderer/lib/utils'
-import type { SearchResult } from '@main/ai/types'
+import type { RankedResult } from '@main/ai/types'
 
 interface SearchResultsProps {
-  results: SearchResult[]
+  results: RankedResult[]
   onSelectNote: (noteId: string) => void
   isLoading?: boolean
   query?: string
@@ -64,14 +64,12 @@ const escapeRegex = (str: string): string => {
 }
 
 /**
- * Converts distance score to a relevance percentage (0-100)
- * Lower distance = higher relevance
+ * Converts RRF score to a relevance percentage (0-100).
+ * Receives a pre-computed maxRrfScore for normalization.
  */
-const distanceToRelevance = (distance: number): number => {
-  // Distance typically ranges from 0 to 2 for cosine similarity
-  // 0 = identical, 2 = completely different
-  const relevance = Math.max(0, Math.min(100, (1 - distance / 2) * 100))
-  return Math.round(relevance)
+const rrfScoreToRelevance = (rrfScore: number, maxRrfScore: number): number => {
+  if (maxRrfScore <= 0) return 0
+  return Math.round((rrfScore / maxRrfScore) * 100)
 }
 
 /**
@@ -124,22 +122,26 @@ const EmptyState: FC = () => (
  * Single search result item
  */
 interface ResultItemProps {
-  result: SearchResult
+  result: RankedResult
   query?: string
   onSelect: (noteId: string) => void
+  maxRrfScore: number
 }
 
-const ResultItem: FC<ResultItemProps> = ({ result, query, onSelect }) => {
-  const { noteId, content, distance, metadata } = result
+const ResultItem: FC<ResultItemProps> = ({ result, query, onSelect, maxRrfScore }) => {
+  const { noteId, content, metadata } = result
 
   const title = useMemo(() => {
     if (metadata?.title && typeof metadata.title === 'string') {
       return metadata.title
     }
+    if (metadata?.noteTitle && typeof metadata.noteTitle === 'string') {
+      return metadata.noteTitle
+    }
     return 'Untitled Note'
   }, [metadata])
 
-  const relevance = distanceToRelevance(distance)
+  const relevance = rrfScoreToRelevance(result.rrfScore, maxRrfScore)
   const badgeVariant = getRelevanceBadgeVariant(relevance)
 
   // Truncate content to ~150 characters for snippet
@@ -211,6 +213,11 @@ export const SearchResults: FC<SearchResultsProps> = ({
   query,
   className
 }) => {
+  const maxRrfScore = useMemo(
+    () => (results.length > 0 ? Math.max(...results.map((r) => r.rrfScore)) : 0),
+    [results]
+  )
+
   if (isLoading) {
     return (
       <div className={cn('w-full', className)}>
@@ -231,7 +238,13 @@ export const SearchResults: FC<SearchResultsProps> = ({
     <ScrollArea className={cn('w-full', className)}>
       <div className="flex flex-col gap-2 p-2">
         {results.map((result) => (
-          <ResultItem key={result.id} result={result} query={query} onSelect={onSelectNote} />
+          <ResultItem
+            key={result.id}
+            result={result}
+            query={query}
+            onSelect={onSelectNote}
+            maxRrfScore={maxRrfScore}
+          />
         ))}
       </div>
     </ScrollArea>

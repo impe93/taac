@@ -458,7 +458,7 @@ NOTA: la formula RRF è `RRF_score(doc) = Σ (weight_i / (k + rank_i(doc)))` dov
 
 ---
 
-### Task D3 — Aggiornare il metodo search() esistente per usare hybrid search ⬜
+### Task D3 — Aggiornare il metodo search() esistente per usare hybrid search ✅
 
 **File coinvolti:** `src/main/ai/VectorDBManager.ts`, `src/main/ipc/aiHandlers.ts`
 **Sezione RAG_ARCHITECTURE.md:** §8.2 Architettura della ricerca

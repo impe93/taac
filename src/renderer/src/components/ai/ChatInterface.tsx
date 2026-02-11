@@ -8,7 +8,7 @@ import { Alert, AlertDescription, AlertTitle } from '@renderer/components/ui/ale
 import { cn } from '@renderer/lib/utils'
 import { ChatMessage } from './ChatMessage'
 import { ChatInput } from './ChatInput'
-import { searchResultToContextNote, type ContextNote } from './ChatContextNotes'
+import { rankedResultsToContextNotes, type ContextNote } from './ChatContextNotes'
 import { ConversationHeader } from './ConversationHeader'
 import { useAIChat, useLoadedModels, useAIInitialize } from '@renderer/hooks/useAI'
 import { useVectorSearch, useEnsureEmbeddingModel } from '@renderer/hooks/useVectorSearch'
@@ -101,7 +101,7 @@ const EmptyState: FC = () => (
 )
 
 const DEFAULT_RAG_SEARCH_LIMIT = 5
-const RAG_RELEVANCE_THRESHOLD = 20 // Minimum cosine similarity % to include in context
+const RAG_RELEVANCE_THRESHOLD = 20 // Minimum relevance % (relative to best result) to include in context
 
 /**
  * Builds a context prompt from relevant notes
@@ -274,8 +274,8 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
       })
       console.log('[RAG Debug] Raw search results:', results)
 
-      // Transform results and filter by relevance threshold
-      const transformedNotes = results.map(searchResultToContextNote)
+      // Transform results (RRF scores normalized to 0-100%) and filter by relevance threshold
+      const transformedNotes = rankedResultsToContextNotes(results)
       console.log('[RAG Debug] Transformed notes:', transformedNotes)
 
       const notes = transformedNotes.filter(

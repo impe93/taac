@@ -16,6 +16,7 @@ import type {
   GenerationOptions,
   ChatCompletionResult,
   SearchResult,
+  RankedResult,
   Conversation,
   ConversationSummary,
   NoteReference,
@@ -35,6 +36,7 @@ export type {
   GenerationOptions,
   ChatCompletionResult,
   SearchResult,
+  RankedResult,
   Conversation,
   ConversationSummary,
   NoteReference,
@@ -204,7 +206,7 @@ export interface AIAPI {
     query: string,
     limit?: number,
     noteIds?: string[]
-  ) => Promise<SearchResult[]>
+  ) => Promise<RankedResult[]>
   getIndexedNotes: (spaceId: string) => Promise<string[]>
   deleteNoteIndex: (spaceId: string, noteId: string) => Promise<void>
   getEmbeddingModelStatus: () => Promise<EmbeddingModelStatus>
