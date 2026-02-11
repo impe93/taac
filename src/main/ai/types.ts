@@ -302,6 +302,16 @@ export interface RankedResult {
 }
 
 /**
+ * A result after window expansion — contains the original RankedResult fields
+ * plus the concatenated content of adjacent chunks and the effective range.
+ * Reference: docs/RAG_ARCHITECTURE.md §10.2
+ */
+export interface ExpandedResult extends RankedResult {
+  expandedContent: string
+  chunkRange: { from: number; to: number }
+}
+
+/**
  * Result from embedding generation
  */
 export interface EmbeddingResult {

@@ -570,7 +570,7 @@ Recupero di contesto espanso per fornire all'LLM informazioni complete.
 
 ---
 
-### Task F1 — Implementare window expansion (chunk adiacenti) ⬜
+### Task F1 — Implementare window expansion (chunk adiacenti) ✅
 
 **File coinvolti:** `src/main/ai/VectorDBManager.ts`
 **Sezione RAG_ARCHITECTURE.md:** §10.2 Livello 1: Window Expansion

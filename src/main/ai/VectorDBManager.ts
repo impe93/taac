@@ -12,6 +12,7 @@
 import type {
   BM25SearchResult,
   EmbeddingResult,
+  ExpandedResult,
   HybridSearchOptions,
   RankedResult,
   SearchResult,
@@ -81,6 +82,80 @@ export function applyHeuristicBoosts(results: RankedResult[], query: string): Ra
       return { ...result, rrfScore: result.rrfScore + boost }
     })
     .sort((a, b) => b.rrfScore - a.rrfScore)
+}
+
+/**
+ * Deduplicate overlapping expanded results from the same note.
+ * When two expanded chunks overlap (same noteId, intersecting chunkRange),
+ * they are merged into one result: the merged range covers both, and
+ * the content is re-fetched/re-joined from the union of unique chunks.
+ * The result with the higher rrfScore is kept as the base.
+ * Pure function — no side effects.
+ * Reference: docs/RAG_ARCHITECTURE.md §10.2
+ */
+export function deduplicateOverlaps(expanded: ExpandedResult[]): ExpandedResult[] {
+  if (expanded.length <= 1) return expanded
+
+  // Group by noteId
+  const byNote = new Map<string, ExpandedResult[]>()
+  for (const e of expanded) {
+    const group = byNote.get(e.noteId) || []
+    group.push(e)
+    byNote.set(e.noteId, group)
+  }
+
+  const deduplicated: ExpandedResult[] = []
+
+  for (const [, group] of byNote) {
+    // Sort by range start so we can merge overlapping intervals
+    group.sort((a, b) => a.chunkRange.from - b.chunkRange.from)
+
+    const merged: ExpandedResult[] = [group[0]]
+
+    for (let i = 1; i < group.length; i++) {
+      const prev = merged[merged.length - 1]
+      const curr = group[i]
+
+      // Check overlap: curr.from <= prev.to means ranges intersect or are adjacent
+      if (curr.chunkRange.from <= prev.chunkRange.to) {
+        // Merge: take the higher rrfScore as the base, union the range
+        const base = curr.rrfScore > prev.rrfScore ? curr : prev
+        const mergedFrom = Math.min(prev.chunkRange.from, curr.chunkRange.from)
+        const mergedTo = Math.max(prev.chunkRange.to, curr.chunkRange.to)
+
+        // Re-join content: split both by separator, deduplicate by position
+        const prevParts = prev.expandedContent.split('\n\n')
+        const currParts = curr.expandedContent.split('\n\n')
+
+        // Build ordered content from the union of chunks.
+        // Map each part to its absolute chunk index.
+        const contentByIndex = new Map<number, string>()
+        for (let j = 0; j < prevParts.length; j++) {
+          contentByIndex.set(prev.chunkRange.from + j, prevParts[j])
+        }
+        for (let j = 0; j < currParts.length; j++) {
+          contentByIndex.set(curr.chunkRange.from + j, currParts[j])
+        }
+
+        // Sort by index and join
+        const sortedIndices = [...contentByIndex.keys()].sort((a, b) => a - b)
+        const mergedContent = sortedIndices.map((idx) => contentByIndex.get(idx)!).join('\n\n')
+
+        merged[merged.length - 1] = {
+          ...base,
+          expandedContent: mergedContent,
+          chunkRange: { from: mergedFrom, to: mergedTo }
+        }
+      } else {
+        merged.push(curr)
+      }
+    }
+
+    deduplicated.push(...merged)
+  }
+
+  // Re-sort by rrfScore descending to maintain ranking order
+  return deduplicated.sort((a, b) => b.rrfScore - a.rrfScore)
 }
 
 export class VectorDBManager {
@@ -960,6 +1035,98 @@ export class VectorDBManager {
     } catch (error) {
       throw new VectorDBError('clear', error instanceof Error ? error.message : 'Unknown error')
     }
+  }
+
+  // ===========================================================================
+  // Window Expansion (Multi-Chunk Retrieval)
+  // Reference: docs/RAG_ARCHITECTURE.md §10.2
+  // ===========================================================================
+
+  /**
+   * Retrieve chunks for a note within a chunk_index range.
+   * Used by expandWithWindow to fetch adjacent chunks.
+   */
+  getChunksByNoteAndRange(
+    noteId: string,
+    fromIndex: number,
+    toIndex: number
+  ): {
+    id: string
+    chunkIndex: number
+    content: string
+    sectionId: string | null
+    sectionHeader: string | null
+  }[] {
+    if (!this.db || !this.initialized) return []
+
+    try {
+      const rows = this.db
+        .prepare(
+          `
+          SELECT id, chunk_index, content, section_id, section_header
+          FROM embeddings
+          WHERE note_id = ? AND chunk_index BETWEEN ? AND ?
+          ORDER BY chunk_index
+        `
+        )
+        .all(noteId, fromIndex, toIndex) as Array<{
+        id: string
+        chunk_index: number
+        content: string
+        section_id: string | null
+        section_header: string | null
+      }>
+
+      return rows.map((r) => ({
+        id: r.id,
+        chunkIndex: r.chunk_index,
+        content: r.content,
+        sectionId: r.section_id,
+        sectionHeader: r.section_header
+      }))
+    } catch (error) {
+      console.warn(
+        '[VectorDBManager] getChunksByNoteAndRange failed:',
+        error instanceof Error ? error.message : error
+      )
+      return []
+    }
+  }
+
+  /**
+   * Expand matched chunks by retrieving adjacent chunks within a window.
+   * For each matched chunk at index N, fetches chunks from N-windowSize to N+windowSize,
+   * concatenates them in order, then deduplicates overlapping ranges.
+   *
+   * Reference: docs/RAG_ARCHITECTURE.md §10.2 — Livello 1: Window Expansion
+   */
+  expandWithWindow(matchedChunks: RankedResult[], windowSize: number = 1): ExpandedResult[] {
+    const expanded: ExpandedResult[] = []
+
+    for (const chunk of matchedChunks) {
+      const fromIndex = Math.max(0, chunk.chunkIndex - windowSize)
+      const toIndex = chunk.chunkIndex + windowSize
+
+      const adjacentChunks = this.getChunksByNoteAndRange(chunk.noteId, fromIndex, toIndex)
+
+      const combinedContent = adjacentChunks.map((c) => c.content).join('\n\n')
+
+      // Determine effective range from actually retrieved chunks
+      const effectiveFrom =
+        adjacentChunks.length > 0 ? adjacentChunks[0].chunkIndex : chunk.chunkIndex
+      const effectiveTo =
+        adjacentChunks.length > 0
+          ? adjacentChunks[adjacentChunks.length - 1].chunkIndex
+          : chunk.chunkIndex
+
+      expanded.push({
+        ...chunk,
+        expandedContent: combinedContent,
+        chunkRange: { from: effectiveFrom, to: effectiveTo }
+      })
+    }
+
+    return deduplicateOverlaps(expanded)
   }
 
   /**
