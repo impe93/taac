@@ -4,7 +4,22 @@ import type { SerializedEditorState } from 'lexical'
 
 type GetFsManager = (spaceId: string) => FileSystemManager
 
-export function registerFileHandlers(getOrCreateFsManager: GetFsManager): void {
+/**
+ * Callback invoked after a note is saved (create or update).
+ * Used by the auto-indexing system to enqueue background indexing.
+ */
+export type OnNoteSaved = (
+  noteId: string,
+  spaceId: string,
+  folderId: string,
+  rawContent: unknown,
+  title: string
+) => void
+
+export function registerFileHandlers(
+  getOrCreateFsManager: GetFsManager,
+  onNoteSaved?: OnNoteSaved
+): void {
   // Note operations
   ipcMain.handle(
     'fs:createNote',
@@ -17,7 +32,12 @@ export function registerFileHandlers(getOrCreateFsManager: GetFsManager): void {
     ) => {
       try {
         const fsManager = getOrCreateFsManager(spaceId)
-        return await fsManager.createNote(folderId, content, title)
+        const note = await fsManager.createNote(folderId, content, title)
+
+        // Enqueue background indexing (non-blocking)
+        onNoteSaved?.(note.id, spaceId, folderId, note.content, note.title)
+
+        return note
       } catch (error) {
         throw new Error(`Failed to create note: ${(error as Error).message}`)
       }
@@ -47,7 +67,14 @@ export function registerFileHandlers(getOrCreateFsManager: GetFsManager): void {
     ) => {
       try {
         const fsManager = getOrCreateFsManager(spaceId)
-        return await fsManager.updateNote(folderId, noteId, updates)
+        const updatedNote = await fsManager.updateNote(folderId, noteId, updates)
+
+        // Enqueue background indexing when content or title changes (non-blocking)
+        if (updates.content !== undefined || updates.title !== undefined) {
+          onNoteSaved?.(noteId, spaceId, folderId, updatedNote.content, updatedNote.title)
+        }
+
+        return updatedNote
       } catch (error) {
         throw new Error(`Failed to update note: ${(error as Error).message}`)
       }

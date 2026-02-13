@@ -684,7 +684,7 @@ Sistema di indicizzazione automatico con debounce e background processing.
 
 ---
 
-### Task G1 — Creare la classe IndexingQueue ⬜
+### Task G1 — Creare la classe IndexingQueue ✅
 
 **File coinvolti:** Nuovo file `src/main/ai/IndexingQueue.ts`
 **Sezione RAG_ARCHITECTURE.md:** §11.3 Indexing Queue
@@ -728,7 +728,7 @@ NOTA: la coda è `Map<string, IndexingJob>` per deduplicare automaticamente: se 
 
 ---
 
-### Task G2 — Hook di auto-indexing nel salvataggio note ⬜
+### Task G2 — Hook di auto-indexing nel salvataggio note ✅
 
 **File coinvolti:** `src/main/ipc/aiHandlers.ts` (o `fileHandlers.ts`), `src/main/ai/IndexingQueue.ts`
 **Sezione RAG_ARCHITECTURE.md:** §11.1 Auto-indexing con debounce, §11.4 Hook nel salvataggio note

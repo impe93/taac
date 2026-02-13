@@ -20,9 +20,10 @@ import {
   AIManager,
   ConversationManager,
   VectorDBManager,
-  EmbeddingService
+  EmbeddingService,
+  IndexingQueue
 } from '../ai'
-import type { GenerationOptions, RankedResult } from '../ai'
+import type { GenerationOptions, RankedResult, IndexingProgressEvent } from '../ai'
 import type { FileSystemManager, Note, FolderMetadata } from '../utils/fileSystem'
 
 type GetFsManager = (spaceId: string) => FileSystemManager
@@ -32,6 +33,7 @@ let downloader: ModelDownloader | null = null
 let aiManager: AIManager | null = null
 let conversationManager: ConversationManager | null = null
 let embeddingService: EmbeddingService | null = null
+let indexingQueue: IndexingQueue | null = null
 
 // Per-space VectorDBManager instances
 const vectorDBManagers: Map<string, VectorDBManager> = new Map()
@@ -95,6 +97,85 @@ function getOrCreateVectorDB(spaceId: string, getFsManager: GetFsManager): Vecto
   const instance = VectorDBManager.getInstance(spaceId, dbPath)
   vectorDBManagers.set(spaceId, instance)
   return instance
+}
+
+/**
+ * Get or create the IndexingQueue singleton.
+ *
+ * The queue requires EmbeddingService and a way to get VectorDBManagers.
+ * It won't process jobs until setEmbeddingAvailable(true) is called.
+ */
+function getOrCreateIndexingQueue(getFsManager: GetFsManager): IndexingQueue {
+  if (!indexingQueue) {
+    indexingQueue = new IndexingQueue(getEmbeddingService(), (spaceId: string) =>
+      getOrCreateVectorDB(spaceId, getFsManager)
+    )
+
+    // Forward progress events to all BrowserWindows
+    indexingQueue.on('progress', (event: IndexingProgressEvent) => {
+      const windows = BrowserWindow.getAllWindows()
+      for (const win of windows) {
+        win.webContents.send('ai:indexing-progress', event)
+      }
+    })
+  }
+  return indexingQueue
+}
+
+/**
+ * Try to enable auto-indexing if the embedding model is downloaded.
+ * Called after AI initialization and model downloads.
+ */
+async function tryEnableAutoIndexing(getFsManager: GetFsManager): Promise<void> {
+  try {
+    const service = getEmbeddingService()
+    const modelId = service.getEmbeddingModel()
+    const dl = await getDownloader()
+    const isDownloaded = await dl.isModelDownloaded(modelId)
+
+    const queue = getOrCreateIndexingQueue(getFsManager)
+    queue.setEmbeddingAvailable(isDownloaded)
+
+    if (isDownloaded) {
+      console.log('[IndexingQueue] Auto-indexing enabled — embedding model available')
+    }
+  } catch (error) {
+    console.error('[IndexingQueue] Failed to check embedding model availability:', error)
+  }
+}
+
+/**
+ * Notify that a note was saved. Enqueues background indexing (debounced).
+ *
+ * This function is non-blocking: it extracts text from the Lexical content
+ * and enqueues it for later processing. Returns immediately.
+ *
+ * Called from fileHandlers after fs:updateNote / fs:createNote.
+ */
+export function notifyNoteSaved(
+  noteId: string,
+  spaceId: string,
+  folderId: string,
+  rawContent: unknown,
+  title: string
+): void {
+  if (!indexingQueue) return
+
+  // Extract text from Lexical editor state
+  const textContent = extractTextFromLexicalContent(rawContent)
+  if (!textContent.trim()) return
+
+  indexingQueue.enqueue(noteId, spaceId, folderId, textContent, title)
+}
+
+/**
+ * Dispose the IndexingQueue (e.g. when app is closing).
+ */
+export function disposeIndexingQueue(): void {
+  if (indexingQueue) {
+    indexingQueue.dispose()
+    indexingQueue = null
+  }
 }
 
 /**
@@ -193,6 +274,12 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
 
       const dl = await getDownloader()
       await dl.downloadModel(modelId, model.downloadUrl, model.filename)
+
+      // Re-check auto-indexing availability (the embedding model may have just been downloaded)
+      if (isAIInitialized) {
+        await tryEnableAutoIndexing(getOrCreateFsManager)
+      }
+
       return { success: true }
     } catch (error) {
       throw new Error(`Failed to download model: ${(error as Error).message}`)
@@ -270,6 +357,10 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
       await convManager.initialize()
 
       isAIInitialized = true
+
+      // Enable auto-indexing if embedding model is available
+      await tryEnableAutoIndexing(getOrCreateFsManager)
+
       return { success: true }
     } catch (error) {
       throw new Error(`Failed to initialize AI: ${(error as Error).message}`)
@@ -678,6 +769,26 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
         modelName: 'Nomic Embed Text',
         error: (error as Error).message
       }
+    }
+  })
+
+  /**
+   * Get the current status of the background indexing queue
+   */
+  ipcMain.handle('ai:getIndexingQueueStatus', (_event: IpcMainInvokeEvent) => {
+    if (!indexingQueue) {
+      return {
+        enabled: false,
+        pending: 0,
+        debouncing: 0,
+        processing: false
+      }
+    }
+    return {
+      enabled: indexingQueue.isEmbeddingAvailable(),
+      pending: indexingQueue.pendingCount,
+      debouncing: indexingQueue.debouncingCount,
+      processing: indexingQueue.processing
     }
   })
 

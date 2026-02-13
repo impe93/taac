@@ -9,7 +9,7 @@ import { configStore } from './utils/configStore'
 import { registerFileHandlers } from './ipc/fileHandlers'
 import { registerConfigHandlers } from './ipc/configHandlers'
 import { registerSpaceHandlers } from './ipc/spaceHandlers'
-import { registerAIHandlers } from './ipc/aiHandlers'
+import { registerAIHandlers, notifyNoteSaved, disposeIndexingQueue } from './ipc/aiHandlers'
 
 // Register custom protocol for serving local assets
 // Must be called before app is ready
@@ -144,7 +144,7 @@ app.whenReady().then(async () => {
 
   // Register IPC handlers
   registerSpaceHandlers(spaceManager)
-  registerFileHandlers(getOrCreateFsManager)
+  registerFileHandlers(getOrCreateFsManager, notifyNoteSaved)
   registerConfigHandlers()
   registerAIHandlers(getOrCreateFsManager)
 
@@ -179,6 +179,10 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
   }
+})
+
+app.on('before-quit', () => {
+  disposeIndexingQueue()
 })
 
 // In this file you can include the rest of your app's specific main process

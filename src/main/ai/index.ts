@@ -29,3 +29,6 @@ export { ConversationManager } from './ConversationManager'
 
 export { EmbeddingService } from './EmbeddingService'
 export type { ExtendedChunkingOptions, TextChunk, IndexableNote } from './EmbeddingService'
+
+export { IndexingQueue } from './IndexingQueue'
+export type { IndexingJob, IndexingProgressEvent, IndexingQueueOptions } from './IndexingQueue'
