@@ -9,7 +9,12 @@ import { configStore } from './utils/configStore'
 import { registerFileHandlers } from './ipc/fileHandlers'
 import { registerConfigHandlers } from './ipc/configHandlers'
 import { registerSpaceHandlers } from './ipc/spaceHandlers'
-import { registerAIHandlers, notifyNoteSaved, disposeIndexingQueue } from './ipc/aiHandlers'
+import {
+  registerAIHandlers,
+  notifyNoteSaved,
+  disposeIndexingQueue,
+  cancelBatchIndexing
+} from './ipc/aiHandlers'
 
 // Register custom protocol for serving local assets
 // Must be called before app is ready
@@ -182,6 +187,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
+  cancelBatchIndexing()
   disposeIndexingQueue()
 })
 

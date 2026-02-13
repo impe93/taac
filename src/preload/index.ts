@@ -183,11 +183,25 @@ const aiAPI = {
   getEmbeddingModelStatus: () => ipcRenderer.invoke('ai:getEmbeddingModelStatus'),
 
   onIndexingProgress: (
-    callback: (data: { current: number; total: number; noteId: string; noteTitle: string }) => void
+    callback: (data: {
+      current: number
+      total: number
+      noteId: string | null
+      noteTitle: string | null
+      status: 'checking' | 'indexing' | 'complete'
+      staleCount?: number
+    }) => void
   ) => {
     const handler = (
       _: unknown,
-      data: { current: number; total: number; noteId: string; noteTitle: string }
+      data: {
+        current: number
+        total: number
+        noteId: string | null
+        noteTitle: string | null
+        status: 'checking' | 'indexing' | 'complete'
+        staleCount?: number
+      }
     ): void => callback(data)
     ipcRenderer.on('ai:indexing-progress', handler)
     return (): void => {

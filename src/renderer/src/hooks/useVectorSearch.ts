@@ -51,7 +51,9 @@ export const useIndexAllNotes = (spaceId: string) => {
   const [progress, setProgress] = useState<{
     current: number
     total: number
-    noteTitle: string
+    noteTitle: string | null
+    status: 'checking' | 'indexing' | 'complete'
+    staleCount?: number
   } | null>(null)
 
   useEffect(() => {
@@ -59,7 +61,9 @@ export const useIndexAllNotes = (spaceId: string) => {
       setProgress({
         current: data.current,
         total: data.total,
-        noteTitle: data.noteTitle
+        noteTitle: data.noteTitle,
+        status: data.status,
+        staleCount: data.staleCount
       })
     })
 

@@ -762,7 +762,7 @@ NOTA: l'enqueue NON deve bloccare il salvataggio della nota. Il flusso è: salva
 
 ---
 
-### Task G3 — Batch initial indexing ottimizzato ⬜
+### Task G3 — Batch initial indexing ottimizzato ✅
 
 **File coinvolti:** `src/main/ipc/aiHandlers.ts`, `src/main/ai/IndexingQueue.ts`
 **Sezione RAG_ARCHITECTURE.md:** §11.5 Batch Initial Indexing

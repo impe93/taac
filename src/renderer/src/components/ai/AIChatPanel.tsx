@@ -363,7 +363,9 @@ export const AIChatPanel: FC<AIChatPanelProps> = ({ className, defaultModelId })
                     <>
                       <Loader2 className="mr-1 size-3 animate-spin" />
                       {indexingProgress
-                        ? `${indexingProgress.current}/${indexingProgress.total}`
+                        ? indexingProgress.status === 'checking'
+                          ? `Checking ${indexingProgress.current}/${indexingProgress.total}`
+                          : `${indexingProgress.current}/${indexingProgress.total}`
                         : 'Indexing...'}
                     </>
                   ) : (

@@ -38,6 +38,9 @@ let indexingQueue: IndexingQueue | null = null
 // Per-space VectorDBManager instances
 const vectorDBManagers: Map<string, VectorDBManager> = new Map()
 
+// AbortController for batch indexing (ai:indexAllNotes)
+let batchIndexAbort: AbortController | null = null
+
 /**
  * Flag to track initialization state
  */
@@ -175,6 +178,32 @@ export function disposeIndexingQueue(): void {
   if (indexingQueue) {
     indexingQueue.dispose()
     indexingQueue = null
+  }
+}
+
+/**
+ * Cancel any running batch indexing (ai:indexAllNotes).
+ * Safe to call even if no batch is running.
+ */
+export function cancelBatchIndexing(): void {
+  if (batchIndexAbort) {
+    batchIndexAbort.abort()
+    batchIndexAbort = null
+  }
+}
+
+/**
+ * Safely send an IPC event to a webContents sender.
+ * Checks if the sender is destroyed before sending to avoid errors
+ * when the window is closed during batch processing.
+ */
+function safeSend(
+  sender: Electron.WebContents,
+  channel: string,
+  data: unknown
+): void {
+  if (!sender.isDestroyed()) {
+    sender.send(channel, data)
   }
 }
 
@@ -532,8 +561,13 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
   )
 
   /**
-   * Index all notes in a space
-   * Sends progress events via 'ai:indexing-progress'
+   * Index all notes in a space (two-phase: hash-check then index stale only).
+   *
+   * Phase 1 (checking): Extract text + content-hash check for every note.
+   * Phase 2 (indexing): Embed only the stale notes.
+   *
+   * Sends 'ai:indexing-progress' events with status: 'checking' | 'indexing' | 'complete'.
+   * Supports cancellation via batchIndexAbort AbortController.
    */
   ipcMain.handle('ai:indexAllNotes', async (event: IpcMainInvokeEvent, spaceId: string) => {
     try {
@@ -562,41 +596,80 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
 
       const fsManager = getOrCreateFsManager(spaceId)
 
+      // Set up abort controller for this batch
+      batchIndexAbort = new AbortController()
+      const { signal } = batchIndexAbort
+
       // Collect all notes recursively from folder tree
       const allNotes: Array<{ note: Note; folderId: string }> = []
       await collectNotesRecursively(fsManager, 'root', allNotes)
 
       const totalNotes = allNotes.length
-      let completedNotes = 0
-      let erroredNotes = 0
-      let skippedNotes = 0
 
-      // Send initial progress
-      event.sender.send('ai:indexing-progress', {
-        spaceId,
-        completed: 0,
-        total: totalNotes,
-        currentNote: null,
-        skippedNotes: 0,
-        status: 'started'
-      })
+      // ================================================================
+      // PHASE 1: Check staleness — extract text + hash check each note
+      // ================================================================
 
-      // Index each note
-      for (const { note, folderId } of allNotes) {
+      const staleNotes: Array<{ note: Note; folderId: string; textContent: string }> = []
+
+      for (let i = 0; i < allNotes.length; i++) {
+        if (signal.aborted) break
+
+        const { note, folderId } = allNotes[i]
+
+        safeSend(event.sender, 'ai:indexing-progress', {
+          current: i,
+          total: totalNotes,
+          noteId: note.id,
+          noteTitle: note.title,
+          status: 'checking'
+        })
+
         try {
-          // Send progress update for current note
-          event.sender.send('ai:indexing-progress', {
-            spaceId,
-            completed: completedNotes,
-            total: totalNotes,
-            currentNote: { id: note.id, title: note.title },
-            skippedNotes,
-            status: 'indexing'
-          })
-
-          // Convert Lexical content to markdown text
           const textContent = extractTextFromLexicalContent(note.content)
+          if (textContent.trim() && vectorDB.isNoteStale(note.id, textContent)) {
+            staleNotes.push({ note, folderId, textContent })
+          }
+        } catch (error) {
+          console.error(`[ai:indexAllNotes] Failed to check note ${note.id}:`, error)
+        }
+      }
 
+      if (signal.aborted) {
+        batchIndexAbort = null
+        return {
+          success: false,
+          totalNotes,
+          indexedNotes: 0,
+          skippedNotes: totalNotes,
+          erroredNotes: 0,
+          cancelled: true
+        }
+      }
+
+      // ================================================================
+      // PHASE 2: Index only stale notes
+      // ================================================================
+
+      const staleCount = staleNotes.length
+      let indexedNotes = 0
+      let erroredNotes = 0
+
+      for (let i = 0; i < staleNotes.length; i++) {
+        if (signal.aborted) break
+
+        const { note, folderId, textContent } = staleNotes[i]
+
+        safeSend(event.sender, 'ai:indexing-progress', {
+          current: i,
+          total: staleCount,
+          noteId: note.id,
+          noteTitle: note.title,
+          status: 'indexing',
+          staleCount
+        })
+
+        try {
           const wasIndexed = await service.indexNote(
             {
               id: note.id,
@@ -609,36 +682,38 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
             vectorDB
           )
 
-          if (!wasIndexed) {
-            skippedNotes++
+          if (wasIndexed) {
+            indexedNotes++
           }
-
-          completedNotes++
         } catch (error) {
           console.error(`[ai:indexAllNotes] Failed to index note ${note.id}:`, error)
           erroredNotes++
-          completedNotes++
         }
       }
 
-      // Send completion progress
-      event.sender.send('ai:indexing-progress', {
-        spaceId,
-        completed: totalNotes,
-        total: totalNotes,
-        currentNote: null,
-        skippedNotes,
-        status: 'completed'
+      const cancelled = signal.aborted
+      batchIndexAbort = null
+
+      // Send completion event
+      safeSend(event.sender, 'ai:indexing-progress', {
+        current: cancelled ? indexedNotes : staleCount,
+        total: staleCount,
+        noteId: null,
+        noteTitle: null,
+        status: 'complete',
+        staleCount
       })
 
       return {
-        success: true,
+        success: !cancelled,
         totalNotes,
-        indexedNotes: completedNotes - erroredNotes - skippedNotes,
-        skippedNotes,
-        erroredNotes
+        indexedNotes,
+        skippedNotes: totalNotes - staleCount + (staleCount - indexedNotes - erroredNotes),
+        erroredNotes,
+        cancelled
       }
     } catch (error) {
+      batchIndexAbort = null
       throw new Error(`Failed to index all notes: ${(error as Error).message}`)
     }
   })

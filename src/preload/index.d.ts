@@ -47,8 +47,10 @@ export type {
 export interface IndexingProgress {
   current: number
   total: number
-  noteId: string
-  noteTitle: string
+  noteId: string | null
+  noteTitle: string | null
+  status: 'checking' | 'indexing' | 'complete'
+  staleCount?: number
 }
 
 // Embedding model status for RAG operations
