@@ -23,7 +23,7 @@ import {
   EmbeddingService,
   IndexingQueue
 } from '../ai'
-import type { GenerationOptions, RankedResult, IndexingProgressEvent } from '../ai'
+import type { GenerationOptions, ExpandedResult, IndexingProgressEvent } from '../ai'
 import type { FileSystemManager, Note, FolderMetadata } from '../utils/fileSystem'
 
 type GetFsManager = (spaceId: string) => FileSystemManager
@@ -729,28 +729,18 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
       query: string,
       limit?: number,
       noteIds?: string[]
-    ): Promise<RankedResult[]> => {
+    ): Promise<ExpandedResult[]> => {
       try {
-        console.log('[RAG Backend] searchNotes called:', { spaceId, query, limit, noteIds })
-
         // Ensure AIManager is initialized (required for embedding generation)
         const manager = getAIManager()
-        if (!manager.isInitialized()) {
-          console.log('[RAG Backend] Initializing AIManager...')
-          await manager.initialize()
-        }
+        if (!manager.isInitialized()) await manager.initialize()
 
         const vectorDB = getOrCreateVectorDB(spaceId, getOrCreateFsManager)
-        if (!vectorDB.isInitialized()) {
-          console.log('[RAG Backend] Initializing VectorDB...')
-          await vectorDB.initialize()
-        }
+        if (!vectorDB.isInitialized()) await vectorDB.initialize()
 
         const service = getEmbeddingService()
-        console.log('[RAG Backend] Generating query embedding...')
         const queryEmbeddingArray = await service.embedQuery(query)
         const queryEmbedding = new Float32Array(queryEmbeddingArray)
-        console.log('[RAG Backend] Query embedding generated, length:', queryEmbedding.length)
 
         const results = vectorDB.hybridSearch({
           query,
@@ -758,12 +748,10 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
           limit: limit ?? 10,
           noteIds
         })
-        console.log('[RAG Backend] Hybrid search results:', results.length, 'results')
-        console.log('[RAG Backend] Results details:', JSON.stringify(results, null, 2))
 
         return results
       } catch (error) {
-        console.error('[RAG Backend] Search error:', error)
+        console.error('[RAG] Search error:', error)
         throw new Error(`Failed to search notes: ${(error as Error).message}`)
       }
     }

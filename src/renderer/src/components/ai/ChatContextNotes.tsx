@@ -4,12 +4,14 @@ import { Badge } from '@renderer/components/ui/badge'
 import { Button } from '@renderer/components/ui/button'
 import { ScrollArea } from '@renderer/components/ui/scroll-area'
 import { cn } from '@renderer/lib/utils'
-import type { RankedResult } from '@preload/index.d'
+import type { ExpandedResult } from '@preload/index.d'
 
 export interface ContextNote {
   noteId: string
   title: string
   excerpt: string
+  fullContent: string
+  sectionHeader: string | null
   relevanceScore: number
 }
 
@@ -31,21 +33,23 @@ const getRelevanceBadgeVariant = (score: number): 'default' | 'secondary' | 'out
 }
 
 /**
- * Transforms a single RankedResult to ContextNote.
+ * Transforms a single ExpandedResult to ContextNote.
  * relevancePercent is already computed by the backend (relative to best result).
  */
-const searchResultToContextNote = (result: RankedResult): ContextNote => ({
+const searchResultToContextNote = (result: ExpandedResult): ContextNote => ({
   noteId: result.noteId,
   title: (result.metadata?.noteTitle as string) || (result.metadata?.title as string) || 'Untitled',
   excerpt: result.content.slice(0, 200) + (result.content.length > 200 ? '...' : ''),
+  fullContent: result.expandedContent,
+  sectionHeader: result.sectionHeader,
   relevanceScore: result.relevancePercent
 })
 
 /**
- * Transforms a batch of RankedResults to ContextNotes.
- * Results are already filtered and scored by the backend.
+ * Transforms a batch of ExpandedResults to ContextNotes.
+ * Results are already filtered, scored, and expanded by the backend.
  */
-export const rankedResultsToContextNotes = (results: RankedResult[]): ContextNote[] =>
+export const rankedResultsToContextNotes = (results: ExpandedResult[]): ContextNote[] =>
   results.map(searchResultToContextNote)
 
 /**

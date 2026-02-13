@@ -109,10 +109,12 @@ const buildContextPrompt = (notes: ContextNote[], userMessage: string): string =
   if (notes.length === 0) return userMessage
 
   const notesContext = notes
-    .map(
-      (note, i) =>
-        `[Note ${i + 1}: "${note.title}" (${note.relevanceScore}% relevant)]\n${note.excerpt}`
-    )
+    .map((note, i) => {
+      const header = note.sectionHeader
+        ? `[Note ${i + 1}: "${note.title}" | Section: "${note.sectionHeader}" (${note.relevanceScore}% relevant)]`
+        : `[Note ${i + 1}: "${note.title}" (${note.relevanceScore}% relevant)]`
+      return `${header}\n${note.fullContent}`
+    })
     .join('\n\n')
 
   return `Given the following notes as context:
@@ -206,6 +208,8 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
       noteId: ref.noteId,
       title: ref.title,
       excerpt: ref.excerpt,
+      fullContent: ref.excerpt, // Pinned notes only have excerpt stored
+      sectionHeader: null,
       relevanceScore: ref.relevanceScore ?? 100 // Pinned notes get 100% relevance
     }))
   }, [conversation?.noteContext])
@@ -246,17 +250,10 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
    * Searches for relevant notes and updates context state
    */
   const searchRelevantNotes = async (query: string): Promise<ContextNote[]> => {
-    console.log('[RAG Debug] searchRelevantNotes called with query:', query)
-    console.log('[RAG Debug] isRAGEnabled:', isRAGEnabled, 'spaceId:', spaceId)
-
-    if (!isRAGEnabled) {
-      console.log('[RAG Debug] RAG not enabled, returning empty')
-      return []
-    }
+    if (!isRAGEnabled) return []
 
     // Check embedding model availability first
     if (!isEmbeddingAvailable) {
-      console.log('[RAG Debug] Embedding model not available')
       setRagError(
         `Il modello di embedding "${embeddingModelName}" non è disponibile. Scaricalo per abilitare la ricerca nelle note.`
       )
@@ -266,21 +263,17 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
     setIsSearchingContext(true)
     setRagError(null)
     try {
-      console.log('[RAG Debug] Calling vectorSearch.mutateAsync...')
       const results = await vectorSearch.mutateAsync({
         query,
         limit: ragSearchLimit
       })
-      console.log('[RAG Debug] Raw search results:', results)
 
       // Transform results — already filtered and scored by the backend
       const notes = rankedResultsToContextNotes(results)
-      console.log('[RAG Debug] Context notes:', notes)
-
       setContextNotes(notes)
       return notes
     } catch (error) {
-      console.error('[RAG Debug] Error searching for relevant notes:', error)
+      console.error('[RAG] Error searching for relevant notes:', error)
       const errorMessage =
         error instanceof Error ? error.message : 'Errore nella ricerca delle note'
       setRagError(errorMessage)
@@ -333,6 +326,8 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
       ...messages.map((m) => ({ role: m.role, content: m.content })),
       { role: 'user' as const, content: messageContentForAPI }
     ]
+
+    console.log('[RAG] LLM prompt content:\n', messageContentForAPI)
 
     try {
       // Send to AI and wait for response

@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState, useCallback } from 'react'
-import type { RankedResult, IndexingProgress, EmbeddingModelStatus } from '@preload/index.d'
+import type { ExpandedResult, IndexingProgress, EmbeddingModelStatus } from '@preload/index.d'
 import { useModelDownload } from './useModels'
 
 /**
@@ -94,7 +94,7 @@ export const useIndexAllNotes = (spaceId: string) => {
  */
 export const useVectorSearch = (spaceId: string) => {
   return useMutation<
-    RankedResult[],
+    ExpandedResult[],
     Error,
     {
       query: string

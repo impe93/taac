@@ -17,6 +17,7 @@ import type {
   ChatCompletionResult,
   SearchResult,
   RankedResult,
+  ExpandedResult,
   Conversation,
   ConversationSummary,
   NoteReference,
@@ -37,6 +38,7 @@ export type {
   ChatCompletionResult,
   SearchResult,
   RankedResult,
+  ExpandedResult,
   Conversation,
   ConversationSummary,
   NoteReference,
@@ -208,7 +210,7 @@ export interface AIAPI {
     query: string,
     limit?: number,
     noteIds?: string[]
-  ) => Promise<RankedResult[]>
+  ) => Promise<ExpandedResult[]>
   getIndexedNotes: (spaceId: string) => Promise<string[]>
   deleteNoteIndex: (spaceId: string, noteId: string) => Promise<void>
   getEmbeddingModelStatus: () => Promise<EmbeddingModelStatus>
