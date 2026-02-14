@@ -681,8 +681,8 @@ export class VectorDBManager {
         .all(queryEmbedding, vectorK) as VectorRow[]
     }
 
-    // Pre-filter: exclude chunks with cosine distance > 1.2
-    vectorResults = vectorResults.filter((r) => r.distance <= 1.2)
+    // Pre-filter: exclude chunks with cosine distance > 0.75 (cosine similarity < 0.25)
+    vectorResults = vectorResults.filter((r) => r.distance <= 0.75)
 
     // --- Step 2: BM25 search (limit=20) ---
     const bm25Limit = 20
@@ -761,10 +761,12 @@ export class VectorDBManager {
       const vecEntry = vectorRankMap.get(id)
       const bm25Entry = bm25RankMap.get(id)
 
-      // RRF_score(doc) = Σ (weight_i / (k + rank_i(doc)))
+      // RRF_score(doc) = Σ (weight_i * quality_i / (k + rank_i(doc)))
+      // Vector contribution scaled by cosine similarity for absolute quality signal
       let rrfScore = 0
       if (vecEntry) {
-        rrfScore += vectorWeight / (rrfK + vecEntry.rank)
+        const cosineSim = Math.max(0, 1 - vecEntry.distance)
+        rrfScore += (vectorWeight * cosineSim) / (rrfK + vecEntry.rank)
       }
       if (bm25Entry) {
         rrfScore += bm25Weight / (rrfK + bm25Entry.rank)
@@ -799,7 +801,7 @@ export class VectorDBManager {
     const maxRRF = Math.max(...topN.map((r) => r.rrfScore))
 
     const filtered = topN
-      .filter((r) => r.rrfScore >= maxRRF * 0.25) // Dynamic threshold: 25% of best
+      .filter((r) => r.rrfScore >= maxRRF * 0.4) // Dynamic threshold: 40% of best
       .map((r) => ({
         ...r,
         relevancePercent: Math.round((r.rrfScore / maxRRF) * 100)
