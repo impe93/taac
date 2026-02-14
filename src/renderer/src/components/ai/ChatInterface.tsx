@@ -292,11 +292,16 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
   // }
 
   const handleSend = async (content: string): Promise<void> => {
-    // Search for relevant notes if RAG is enabled and no context notes yet
-    let relevantNotes = allContextNotes
-    if (isRAGEnabled && contextNotes.length === 0 && conversationContextNotes.length === 0) {
+    // Always search for relevant notes if RAG is enabled
+    let relevantNotes: ContextNote[] = []
+    if (isRAGEnabled) {
       const searchedNotes = await searchRelevantNotes(content)
-      relevantNotes = searchedNotes
+      // Merge: pinned conversation notes + fresh search results, dedup by noteId
+      const pinnedIds = new Set(conversationContextNotes.map((n) => n.noteId))
+      const freshNotes = searchedNotes.filter((n) => !pinnedIds.has(n.noteId))
+      relevantNotes = [...conversationContextNotes, ...freshNotes]
+    } else {
+      relevantNotes = allContextNotes
     }
 
     // Build content with context if RAG is enabled and we have context
