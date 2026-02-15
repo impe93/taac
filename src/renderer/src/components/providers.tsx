@@ -1,4 +1,4 @@
-import { ReactQueryDevtools as ReactQueryDevtoolsBase } from '@tanstack/react-query-devtools'
+// import { ReactQueryDevtools as ReactQueryDevtoolsBase } from '@tanstack/react-query-devtools'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ThemeProvider } from 'next-themes'
 import { Toaster } from './ui/sonner'
@@ -35,15 +35,15 @@ type SpacesCacheStructure = Record<
 >
 
 // https://tanstack.com/router/v1/docs/framework/react/devtools
-const TanStackRouterDevtools = import.meta.env.PROD
-  ? () => null
-  : React.lazy(() =>
-      import('@tanstack/router-devtools').then((res) => ({
-        default: res.TanStackRouterDevtools
-      }))
-    )
+// const TanStackRouterDevtools = import.meta.env.PROD
+//   ? () => null
+//   : React.lazy(() =>
+//       import('@tanstack/router-devtools').then((res) => ({
+//         default: res.TanStackRouterDevtools
+//       }))
+//     )
 
-const ReactQueryDevtools = import.meta.env.PROD ? () => null : ReactQueryDevtoolsBase
+// const ReactQueryDevtools = import.meta.env.PROD ? () => null : ReactQueryDevtoolsBase
 
 const queryClient = new QueryClient()
 
