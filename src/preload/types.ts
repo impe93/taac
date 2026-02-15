@@ -44,6 +44,15 @@ export interface Space {
   order: number
 }
 
+// Import types re-exported for renderer consumption
+export type {
+  ImportSource,
+  ImportOptions,
+  ImportScanResult,
+  ImportResult,
+  ImportProgressEvent
+} from '../main/import/types'
+
 // App configuration type
 export interface AppConfig {
   theme: 'light' | 'dark' | 'system'

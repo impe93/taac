@@ -238,6 +238,26 @@ const aiAPI = {
   deleteConversation: (id: string) => ipcRenderer.invoke('ai:deleteConversation', id)
 }
 
+// Import API
+const importAPI = {
+  selectFolder: () => ipcRenderer.invoke('import:selectFolder'),
+
+  scan: (sourcePath: string, source: string) =>
+    ipcRenderer.invoke('import:scan', sourcePath, source),
+
+  checkAppleNotesAccess: () => ipcRenderer.invoke('import:checkAppleNotesAccess'),
+
+  start: (options: unknown) => ipcRenderer.invoke('import:start', options),
+
+  onProgress: (callback: (event: unknown) => void) => {
+    const handler = (_: unknown, event: unknown): void => callback(event)
+    ipcRenderer.on('import:progress', handler)
+    return (): void => {
+      ipcRenderer.removeListener('import:progress', handler)
+    }
+  }
+}
+
 // Use `contextBridge` APIs to expose Electron APIs to
 // renderer only if context isolation is enabled, otherwise
 // just add to the DOM global.
@@ -249,6 +269,7 @@ if (process.contextIsolated) {
     contextBridge.exposeInMainWorld('space', spaceAPI)
     contextBridge.exposeInMainWorld('platform', process.platform)
     contextBridge.exposeInMainWorld('ai', aiAPI)
+    contextBridge.exposeInMainWorld('import', importAPI)
   } catch (error) {
     console.error(error)
   }
@@ -265,4 +286,6 @@ if (process.contextIsolated) {
   window.platform = process.platform
   // @ts-ignore (define in dts)
   window.ai = aiAPI
+  // @ts-ignore (define in dts)
+  window.import = importAPI
 }

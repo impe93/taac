@@ -23,6 +23,13 @@ import type {
   NoteReference,
   ChatMessage
 } from '../main/ai/types'
+import type {
+  ImportSource,
+  ImportOptions,
+  ImportScanResult,
+  ImportResult,
+  ImportProgressEvent
+} from '../main/import/types'
 
 // Re-export types from types.ts for convenience
 export type { Note, FolderMetadata, Asset, AppConfig, Space, MoveFolderToSpaceResult }
@@ -44,6 +51,9 @@ export type {
   NoteReference,
   ChatMessage
 }
+
+// Re-export import types for convenience
+export type { ImportSource, ImportOptions, ImportScanResult, ImportResult, ImportProgressEvent }
 
 // Indexing progress data for vector search
 export interface IndexingProgress {
@@ -236,6 +246,15 @@ export interface AIAPI {
   deleteConversation: (id: string) => Promise<void>
 }
 
+// Import API interface
+export interface ImportAPI {
+  selectFolder: () => Promise<string | null>
+  scan: (sourcePath: string, source: ImportSource) => Promise<ImportScanResult>
+  checkAppleNotesAccess: () => Promise<{ accessible: boolean; error?: string }>
+  start: (options: ImportOptions) => Promise<ImportResult>
+  onProgress: (callback: (event: ImportProgressEvent) => void) => () => void
+}
+
 // Global window interface
 declare global {
   interface Window {
@@ -245,5 +264,6 @@ declare global {
     space: SpaceAPI
     platform: NodeJS.Platform
     ai: AIAPI
+    import: ImportAPI
   }
 }

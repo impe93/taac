@@ -15,6 +15,7 @@ import {
   disposeIndexingQueue,
   cancelBatchIndexing
 } from './ipc/aiHandlers'
+import { registerImportHandlers } from './ipc/importHandlers'
 
 // Register custom protocol for serving local assets
 // Must be called before app is ready
@@ -153,6 +154,7 @@ app.whenReady().then(async () => {
   registerFileHandlers(getOrCreateFsManager, notifyNoteSaved)
   registerConfigHandlers()
   registerAIHandlers(getOrCreateFsManager)
+  registerImportHandlers(spaceManager, getOrCreateFsManager)
 
   // Default open or close DevTools by F12 in development
   // and ignore CommandOrControl + R in production.
