@@ -124,9 +124,10 @@ app.whenReady().then(async () => {
   spaceManager = new SpaceManager()
   await spaceManager.initialize()
 
-  // Ensure default "Personal" space exists
+  // Ensure default "Personal" space exists (only for post-onboarding users)
   const spaces = await spaceManager.listSpaces()
-  if (spaces.length === 0) {
+  const onboardingDone = configStore.get('onboardingCompleted')
+  if (spaces.length === 0 && onboardingDone) {
     await spaceManager.createSpace('Personal', 'Home')
     configStore.set('spacesInitialized', true)
   }
