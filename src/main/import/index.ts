@@ -10,3 +10,4 @@ export type {
 } from './types'
 
 export { BaseParser } from './parsers/BaseParser'
+export { ObsidianParser } from './parsers/ObsidianParser'
