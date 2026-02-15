@@ -16,6 +16,7 @@ export interface AppConfig {
   recentNotes: string[]
   activeSpaceId: string | null
   spacesInitialized: boolean
+  onboardingCompleted: boolean
   // AI Chat Panel state
   aiChatPanelOpen: boolean
   aiChatPanelSize: number
@@ -100,6 +101,10 @@ const schema = {
     default: null
   },
   spacesInitialized: {
+    type: 'boolean',
+    default: false
+  },
+  onboardingCompleted: {
     type: 'boolean',
     default: false
   },

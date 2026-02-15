@@ -61,6 +61,7 @@ export interface AppConfig {
   recentNotes: string[]
   activeSpaceId: string | null
   spacesInitialized: boolean
+  onboardingCompleted: boolean
   // AI Chat Panel state
   aiChatPanelOpen: boolean
   aiChatPanelSize: number
