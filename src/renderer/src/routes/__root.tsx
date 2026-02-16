@@ -16,10 +16,32 @@ import {
 } from '@renderer/components/window'
 import { Bot } from 'lucide-react'
 import { cn } from '@renderer/lib/utils'
+import { useConfig } from '@renderer/hooks/useConfig'
 
 const RootLayout: FC = () => {
   const isMacOS = window.platform === 'darwin'
   const { isOpen, toggle } = useAIChatPanel()
+  const { data: onboardingDone, isLoading } = useConfig('onboardingCompleted')
+
+  // Show minimal layout during onboarding or while loading config
+  if (isLoading || !onboardingDone) {
+    return (
+      <>
+        <WindowDragBorder />
+        <div
+          className="h-screen w-full"
+          style={{
+            padding: WINDOW_BORDER_WIDTH,
+            paddingTop: isMacOS ? WINDOW_TRAFFIC_LIGHTS_HEIGHT : WINDOW_BORDER_WIDTH
+          }}
+        >
+          <div className="h-full overflow-hidden rounded-xl bg-background">
+            <Outlet />
+          </div>
+        </div>
+      </>
+    )
+  }
 
   return (
     <>
