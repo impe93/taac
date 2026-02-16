@@ -3,6 +3,8 @@ import { useNavigate } from '@tanstack/react-router'
 import type { ImportScanResult, ImportResult } from '@preload/types'
 import { Badge } from '@renderer/components/ui/badge'
 import { Button } from '@renderer/components/ui/button'
+import { ImportSourceSelector } from './ImportSourceSelector'
+import { ImportTargetSelector } from './ImportTargetSelector'
 import { OnboardingComplete } from './OnboardingComplete'
 import { TutorialStep } from './TutorialStep'
 import { WelcomeStep } from './WelcomeStep'
@@ -17,6 +19,7 @@ export interface OnboardingState {
   currentStep: OnboardingStep
 
   import: {
+    subStep: 'source' | 'target'
     source: 'apple-notes' | 'obsidian' | null
     sourcePath: string | null
     targetMode: 'new-space' | 'existing-space' | null
@@ -42,6 +45,8 @@ export type OnboardingAction =
   | { type: 'SET_IMPORT_SOURCE'; source: 'apple-notes' | 'obsidian' }
   | { type: 'SET_IMPORT_PATH'; path: string }
   | { type: 'SET_IMPORT_TARGET'; mode: 'new-space' | 'existing-space'; spaceId?: string }
+  | { type: 'SET_NEW_SPACE_NAME'; name: string }
+  | { type: 'GO_BACK_IMPORT' }
   | { type: 'SET_SCAN_RESULT'; result: ImportScanResult }
   | { type: 'SET_IMPORT_RESULT'; result: ImportResult }
   | { type: 'SET_IMPORTING'; value: boolean }
@@ -59,6 +64,7 @@ const STEP_ORDER: OnboardingStep[] = ['welcome', 'import', 'models', 'tutorial',
 const initialState: OnboardingState = {
   currentStep: 'welcome',
   import: {
+    subStep: 'source',
     source: null,
     sourcePath: null,
     targetMode: null,
@@ -88,7 +94,15 @@ function onboardingReducer(state: OnboardingState, action: OnboardingAction): On
     case 'GO_TO_STEP':
       return { ...state, currentStep: action.step }
     case 'SET_IMPORT_SOURCE':
-      return { ...state, import: { ...state.import, source: action.source } }
+      return {
+        ...state,
+        import: {
+          ...state.import,
+          source: action.source,
+          subStep: 'target',
+          newSpaceName: action.source === 'apple-notes' ? 'Apple Notes' : 'Obsidian'
+        }
+      }
     case 'SET_IMPORT_PATH':
       return { ...state, import: { ...state.import, sourcePath: action.path } }
     case 'SET_IMPORT_TARGET':
@@ -100,6 +114,24 @@ function onboardingReducer(state: OnboardingState, action: OnboardingAction): On
           targetSpaceId: action.spaceId ?? null
         }
       }
+    case 'SET_NEW_SPACE_NAME':
+      return { ...state, import: { ...state.import, newSpaceName: action.name } }
+    case 'GO_BACK_IMPORT': {
+      if (state.import.subStep === 'target') {
+        return {
+          ...state,
+          import: {
+            ...state.import,
+            subStep: 'source',
+            source: null,
+            targetMode: null,
+            targetSpaceId: null,
+            newSpaceName: ''
+          }
+        }
+      }
+      return state
+    }
     case 'SET_SCAN_RESULT':
       return { ...state, import: { ...state.import, scanResult: action.result } }
     case 'SET_IMPORT_RESULT':
@@ -185,7 +217,14 @@ export const OnboardingWizard: FC = () => {
       case 'welcome':
         return <WelcomeStep dispatch={dispatch} />
       case 'import':
-        return <div className="text-center text-muted-foreground">Import step placeholder</div>
+        switch (state.import.subStep) {
+          case 'source':
+            return <ImportSourceSelector dispatch={dispatch} />
+          case 'target':
+            return <ImportTargetSelector state={state} dispatch={dispatch} />
+          default:
+            return null
+        }
       case 'models':
         return <div className="text-center text-muted-foreground">Models step placeholder</div>
       case 'tutorial':
