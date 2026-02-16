@@ -250,7 +250,7 @@ export interface AIAPI {
 export interface ImportAPI {
   selectFolder: () => Promise<string | null>
   scan: (sourcePath: string, source: ImportSource) => Promise<ImportScanResult>
-  checkAppleNotesAccess: () => Promise<{ accessible: boolean; error?: string }>
+  checkAppleNotesAccess: () => Promise<{ accessible: boolean; dbPath?: string; error?: string }>
   start: (options: ImportOptions) => Promise<ImportResult>
   onProgress: (callback: (event: ImportProgressEvent) => void) => () => void
 }

@@ -3,8 +3,7 @@ import { useNavigate } from '@tanstack/react-router'
 import type { ImportScanResult, ImportResult } from '@preload/types'
 import { Badge } from '@renderer/components/ui/badge'
 import { Button } from '@renderer/components/ui/button'
-import { ImportSourceSelector } from './ImportSourceSelector'
-import { ImportTargetSelector } from './ImportTargetSelector'
+import { ImportStep } from './ImportStep'
 import { ModelDownloadStep } from './ModelDownloadStep'
 import { OnboardingComplete } from './OnboardingComplete'
 import { TutorialStep } from './TutorialStep'
@@ -218,14 +217,7 @@ export const OnboardingWizard: FC = () => {
       case 'welcome':
         return <WelcomeStep dispatch={dispatch} />
       case 'import':
-        switch (state.import.subStep) {
-          case 'source':
-            return <ImportSourceSelector dispatch={dispatch} />
-          case 'target':
-            return <ImportTargetSelector state={state} dispatch={dispatch} />
-          default:
-            return null
-        }
+        return <ImportStep state={state} dispatch={dispatch} />
       case 'models':
         return <ModelDownloadStep state={state} dispatch={dispatch} />
       case 'tutorial':

@@ -21,7 +21,7 @@ export const useSelectImportFolder = () => {
  * Mutation for checking Apple Notes Full Disk Access permission
  */
 export const useCheckAppleNotesAccess = () => {
-  return useMutation<{ accessible: boolean; error?: string }>({
+  return useMutation<{ accessible: boolean; dbPath?: string; error?: string }>({
     mutationFn: () => window.import.checkAppleNotesAccess()
   })
 }

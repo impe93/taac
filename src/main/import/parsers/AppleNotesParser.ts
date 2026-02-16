@@ -217,10 +217,10 @@ export class AppleNotesParser extends BaseParser {
   // Static: Permission Check
   // --------------------------------------------------------------------------
 
-  static async checkAccess(): Promise<{ accessible: boolean; error?: string }> {
+  static async checkAccess(): Promise<{ accessible: boolean; dbPath?: string; error?: string }> {
     try {
       await fs.access(DB_PATH, fsConstants.R_OK)
-      return { accessible: true }
+      return { accessible: true, dbPath: DB_PATH }
     } catch {
       return {
         accessible: false,

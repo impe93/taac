@@ -3,22 +3,17 @@ import { FolderInput, FolderOpen, Laptop } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { Card, CardContent } from '@renderer/components/ui/card'
 import { cn } from '@renderer/lib/utils'
-import type { OnboardingAction } from './OnboardingWizard'
 
 interface ImportSourceSelectorProps {
-  dispatch: React.Dispatch<OnboardingAction>
+  onSourceSelected: (source: 'apple-notes' | 'obsidian') => void
+  onSkip: () => void
 }
 
-export const ImportSourceSelector: FC<ImportSourceSelectorProps> = ({ dispatch }) => {
+export const ImportSourceSelector: FC<ImportSourceSelectorProps> = ({
+  onSourceSelected,
+  onSkip
+}) => {
   const isMacOS = window.platform === 'darwin'
-
-  const handleSelectSource = (source: 'apple-notes' | 'obsidian'): void => {
-    dispatch({ type: 'SET_IMPORT_SOURCE', source })
-  }
-
-  const handleSkip = (): void => {
-    dispatch({ type: 'SKIP_IMPORT' })
-  }
 
   return (
     <div className="flex flex-col items-center space-y-6 text-center">
@@ -37,7 +32,7 @@ export const ImportSourceSelector: FC<ImportSourceSelectorProps> = ({ dispatch }
         {isMacOS && (
           <Card
             className="cursor-pointer transition-colors hover:border-primary"
-            onClick={() => handleSelectSource('apple-notes')}
+            onClick={() => onSourceSelected('apple-notes')}
           >
             <CardContent className="flex flex-col items-center gap-3 pt-6">
               <div className="flex size-12 items-center justify-center rounded-xl bg-primary/10">
@@ -53,7 +48,7 @@ export const ImportSourceSelector: FC<ImportSourceSelectorProps> = ({ dispatch }
 
         <Card
           className="cursor-pointer transition-colors hover:border-primary"
-          onClick={() => handleSelectSource('obsidian')}
+          onClick={() => onSourceSelected('obsidian')}
         >
           <CardContent className="flex flex-col items-center gap-3 pt-6">
             <div className="flex size-12 items-center justify-center rounded-xl bg-primary/10">
@@ -67,7 +62,7 @@ export const ImportSourceSelector: FC<ImportSourceSelectorProps> = ({ dispatch }
         </Card>
       </div>
 
-      <Button variant="ghost" onClick={handleSkip}>
+      <Button variant="ghost" onClick={onSkip}>
         Skip import
       </Button>
     </div>

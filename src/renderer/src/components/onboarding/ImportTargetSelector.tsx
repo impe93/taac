@@ -18,9 +18,16 @@ import type { OnboardingAction, OnboardingState } from './OnboardingWizard'
 interface ImportTargetSelectorProps {
   state: OnboardingState
   dispatch: React.Dispatch<OnboardingAction>
+  onContinue: () => void
+  onBack: () => void
 }
 
-export const ImportTargetSelector: FC<ImportTargetSelectorProps> = ({ state, dispatch }) => {
+export const ImportTargetSelector: FC<ImportTargetSelectorProps> = ({
+  state,
+  dispatch,
+  onContinue,
+  onBack
+}) => {
   const { data: spaces } = useSpaces()
 
   const { targetMode, newSpaceName, source, targetSpaceId } = state.import
@@ -44,11 +51,11 @@ export const ImportTargetSelector: FC<ImportTargetSelectorProps> = ({ state, dis
   }
 
   const handleContinue = (): void => {
-    dispatch({ type: 'NEXT_STEP' })
+    onContinue()
   }
 
   const handleBack = (): void => {
-    dispatch({ type: 'GO_BACK_IMPORT' })
+    onBack()
   }
 
   return (

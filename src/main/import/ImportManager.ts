@@ -82,7 +82,7 @@ export class ImportManager {
    * Check if the Apple Notes SQLite database is accessible.
    * Delegates to AppleNotesParser.checkAccess().
    */
-  async checkAppleNotesAccess(): Promise<{ accessible: boolean; error?: string }> {
+  async checkAppleNotesAccess(): Promise<{ accessible: boolean; dbPath?: string; error?: string }> {
     return AppleNotesParser.checkAccess()
   }
 
