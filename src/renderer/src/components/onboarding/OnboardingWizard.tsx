@@ -3,6 +3,8 @@ import { useNavigate } from '@tanstack/react-router'
 import type { ImportScanResult, ImportResult } from '@preload/types'
 import { Badge } from '@renderer/components/ui/badge'
 import { Button } from '@renderer/components/ui/button'
+import { OnboardingComplete } from './OnboardingComplete'
+import { TutorialStep } from './TutorialStep'
 import { WelcomeStep } from './WelcomeStep'
 
 // =============================================================================
@@ -187,9 +189,9 @@ export const OnboardingWizard: FC = () => {
       case 'models':
         return <div className="text-center text-muted-foreground">Models step placeholder</div>
       case 'tutorial':
-        return <div className="text-center text-muted-foreground">Tutorial step placeholder</div>
+        return <TutorialStep dispatch={dispatch} />
       case 'complete':
-        return <div className="text-center text-muted-foreground">Complete step placeholder</div>
+        return <OnboardingComplete state={state} dispatch={dispatch} />
       default:
         return null
     }
