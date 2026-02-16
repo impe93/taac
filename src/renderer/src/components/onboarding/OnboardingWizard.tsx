@@ -5,6 +5,7 @@ import { Badge } from '@renderer/components/ui/badge'
 import { Button } from '@renderer/components/ui/button'
 import { ImportSourceSelector } from './ImportSourceSelector'
 import { ImportTargetSelector } from './ImportTargetSelector'
+import { ModelDownloadStep } from './ModelDownloadStep'
 import { OnboardingComplete } from './OnboardingComplete'
 import { TutorialStep } from './TutorialStep'
 import { WelcomeStep } from './WelcomeStep'
@@ -226,7 +227,7 @@ export const OnboardingWizard: FC = () => {
             return null
         }
       case 'models':
-        return <div className="text-center text-muted-foreground">Models step placeholder</div>
+        return <ModelDownloadStep state={state} dispatch={dispatch} />
       case 'tutorial':
         return <TutorialStep dispatch={dispatch} />
       case 'complete':

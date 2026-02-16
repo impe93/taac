@@ -1,0 +1,314 @@
+import { type FC, useEffect, useMemo } from 'react'
+import {
+  Bot,
+  Search,
+  Download,
+  Pause,
+  Play,
+  CheckCircle2,
+  AlertCircle,
+  Loader2
+} from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
+import type { DownloadProgress } from '@main/ai/types'
+import { Button } from '@renderer/components/ui/button'
+import { Card, CardContent } from '@renderer/components/ui/card'
+import { Progress } from '@renderer/components/ui/progress'
+import { Badge } from '@renderer/components/ui/badge'
+import { Alert, AlertDescription } from '@renderer/components/ui/alert'
+import { Separator } from '@renderer/components/ui/separator'
+import { Skeleton } from '@renderer/components/ui/skeleton'
+import { useDownloadedModels, useModelDownload } from '@renderer/hooks/useModels'
+import { useHardwareInfo } from '@renderer/hooks/useHardware'
+import { formatSize, formatSpeed, formatETA } from '@renderer/lib/format'
+import type { OnboardingAction, OnboardingState } from './OnboardingWizard'
+
+// =============================================================================
+// Constants
+// =============================================================================
+
+interface ModelConfig {
+  id: string
+  name: string
+  size: string
+  purpose: string
+  icon: LucideIcon
+  label: string
+}
+
+const MODELS: ModelConfig[] = [
+  {
+    id: 'qwen3-4b-instruct-2507-q8',
+    name: 'Qwen3 4B Instruct',
+    size: '~4.3 GB',
+    purpose: 'Powers the AI assistant',
+    icon: Bot,
+    label: 'AI Chat Model'
+  },
+  {
+    id: 'nomic-embed-text-v2-moe',
+    name: 'Nomic Embed v2',
+    size: '~512 MB',
+    purpose: 'Powers semantic note search',
+    icon: Search,
+    label: 'Search Model'
+  }
+]
+
+// =============================================================================
+// Component
+// =============================================================================
+
+interface ModelDownloadStepProps {
+  state: OnboardingState
+  dispatch: React.Dispatch<OnboardingAction>
+}
+
+export const ModelDownloadStep: FC<ModelDownloadStepProps> = ({ state, dispatch }) => {
+  const { data: downloadedModels, isLoading: isLoadingModels } = useDownloadedModels()
+  const { data: hardwareInfo, isLoading: isLoadingHardware } = useHardwareInfo()
+  const { progress, download, pause, resume } = useModelDownload()
+
+  const downloadedModelIds = useMemo(
+    () => new Set(downloadedModels?.map((m) => m.id) ?? []),
+    [downloadedModels]
+  )
+
+  const isModelComplete = (modelId: string): boolean => {
+    return downloadedModelIds.has(modelId) || progress.get(modelId)?.status === 'completed'
+  }
+
+  const allDownloaded = MODELS.every((m) => isModelComplete(m.id))
+
+  // Sync completion state to wizard
+  useEffect(() => {
+    if (allDownloaded && !state.models.chatModelDownloaded) {
+      dispatch({ type: 'SET_MODEL_STATUS', chat: true, embedding: true })
+    }
+  }, [allDownloaded, state.models.chatModelDownloaded, dispatch])
+
+  // Handlers
+  const handleDownloadAll = (): void => {
+    for (const model of MODELS) {
+      if (!isModelComplete(model.id)) {
+        download(model.id)
+      }
+    }
+  }
+
+  const handlePause = (modelId: string): void => {
+    pause(modelId)
+  }
+
+  const handleResume = (modelId: string): void => {
+    resume(modelId)
+  }
+
+  const handleRetry = (modelId: string): void => {
+    download(modelId)
+  }
+
+  const handleContinue = (): void => {
+    dispatch({ type: 'NEXT_STEP' })
+  }
+
+  const handleSkip = (): void => {
+    dispatch({ type: 'SKIP_MODELS' })
+  }
+
+  // Loading state
+  if (isLoadingModels || isLoadingHardware) {
+    return (
+      <div className="flex flex-col items-center space-y-6 text-center">
+        <Skeleton className="h-16 w-16 rounded-2xl" />
+        <div className="w-full space-y-3">
+          <Skeleton className="mx-auto h-8 w-64" />
+          <Skeleton className="mx-auto h-5 w-96" />
+        </div>
+        <Skeleton className="h-8 w-48" />
+        <div className="grid w-full gap-4">
+          <Skeleton className="h-32 w-full rounded-lg" />
+          <Skeleton className="h-32 w-full rounded-lg" />
+        </div>
+      </div>
+    )
+  }
+
+  const isAnyDownloading = MODELS.some((m) => {
+    const status = progress.get(m.id)?.status
+    return status === 'downloading' || status === 'pending'
+  })
+
+  return (
+    <div className="flex flex-col items-center space-y-6 text-center">
+      <div className="flex size-16 items-center justify-center rounded-2xl bg-primary/10">
+        <Download className="size-8 text-primary" />
+      </div>
+
+      <div className="space-y-2">
+        <h1 className="text-3xl font-bold tracking-tight">Set Up AI Models</h1>
+        <p className="text-lg text-muted-foreground">
+          TaacNotes uses local AI models for chat and semantic search. Download them now to unlock
+          the full experience.
+        </p>
+      </div>
+
+      {/* Hardware info */}
+      {hardwareInfo && (
+        <Badge variant="secondary">
+          {hardwareInfo.tier.charAt(0).toUpperCase() + hardwareInfo.tier.slice(1)} tier
+          <Separator orientation="vertical" className="mx-2 h-3" />
+          {formatSize(hardwareInfo.memory.totalBytes)} RAM
+        </Badge>
+      )}
+
+      {/* Model cards */}
+      <div className="grid w-full gap-4">
+        {MODELS.map((model) => (
+          <ModelCard
+            key={model.id}
+            model={model}
+            isDownloaded={isModelComplete(model.id)}
+            progress={progress.get(model.id)}
+            onPause={handlePause}
+            onResume={handleResume}
+            onRetry={handleRetry}
+          />
+        ))}
+      </div>
+
+      {/* Total size note */}
+      <p className="text-sm text-muted-foreground">Total download: ~4.8 GB</p>
+
+      {/* Action buttons */}
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" onClick={handleSkip}>
+          Skip for now
+        </Button>
+        {allDownloaded ? (
+          <Button size="lg" onClick={handleContinue}>
+            Continue
+          </Button>
+        ) : (
+          <Button size="lg" onClick={handleDownloadAll} disabled={isAnyDownloading}>
+            {isAnyDownloading && <Loader2 className="size-4 animate-spin" />}
+            Download All
+          </Button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// =============================================================================
+// Model Card (internal)
+// =============================================================================
+
+interface ModelCardProps {
+  model: ModelConfig
+  isDownloaded: boolean
+  progress: DownloadProgress | undefined
+  onPause: (modelId: string) => void
+  onResume: (modelId: string) => void
+  onRetry: (modelId: string) => void
+}
+
+const ModelCard: FC<ModelCardProps> = ({
+  model,
+  isDownloaded,
+  progress,
+  onPause,
+  onResume,
+  onRetry
+}) => {
+  const Icon = model.icon
+  const status = progress?.status
+
+  return (
+    <Card className="text-left">
+      <CardContent className="space-y-3 pt-6">
+        {/* Header row */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex size-10 items-center justify-center rounded-lg bg-primary/10">
+              <Icon className="size-5 text-primary" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <p className="font-semibold">{model.name}</p>
+                <Badge variant="outline" className="text-xs">
+                  {model.label}
+                </Badge>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                {model.size} &middot; {model.purpose}
+              </p>
+            </div>
+          </div>
+
+          {/* Status indicator */}
+          {isDownloaded && (
+            <Badge variant="secondary" className="gap-1">
+              <CheckCircle2 className="size-3" />
+              Downloaded
+            </Badge>
+          )}
+        </div>
+
+        {/* Download progress */}
+        {!isDownloaded && (status === 'downloading' || status === 'paused') && progress && (
+          <div className="space-y-2">
+            <Progress value={progress.percentage} />
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>
+                {formatSize(progress.bytesDownloaded)} / {formatSize(progress.totalBytes)}
+                {status === 'downloading' && (
+                  <>
+                    {' '}
+                    &middot; {formatSpeed(progress.speed)} &middot; ~{formatETA(progress.eta)} left
+                  </>
+                )}
+                {status === 'paused' && ' · Paused'}
+              </span>
+              <span>{Math.round(progress.percentage)}%</span>
+            </div>
+            <div className="flex justify-end">
+              {status === 'downloading' ? (
+                <Button variant="ghost" size="sm" onClick={() => onPause(model.id)}>
+                  <Pause className="size-3.5" />
+                  Pause
+                </Button>
+              ) : (
+                <Button variant="ghost" size="sm" onClick={() => onResume(model.id)}>
+                  <Play className="size-3.5" />
+                  Resume
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Pending state (download triggered but not started) */}
+        {!isDownloaded && status === 'pending' && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" />
+            Preparing download...
+          </div>
+        )}
+
+        {/* Error state */}
+        {!isDownloaded && status === 'error' && progress && (
+          <Alert variant="destructive">
+            <AlertCircle className="size-4" />
+            <AlertDescription className="flex items-center justify-between">
+              <span>{progress.error ?? 'Download failed'}</span>
+              <Button variant="ghost" size="sm" onClick={() => onRetry(model.id)}>
+                Retry
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
