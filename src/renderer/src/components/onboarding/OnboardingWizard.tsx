@@ -1,5 +1,6 @@
 import { type FC, type ReactNode, useReducer } from 'react'
 import { useNavigate } from '@tanstack/react-router'
+import { useQueryClient } from '@tanstack/react-query'
 import type { ImportScanResult, ImportResult } from '@preload/types'
 import { Badge } from '@renderer/components/ui/badge'
 import { Button } from '@renderer/components/ui/button'
@@ -202,13 +203,26 @@ function getStepVariant(
 export const OnboardingWizard: FC = () => {
   const [state, dispatch] = useReducer(onboardingReducer, initialState)
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
 
   const handleSkipSetup = async (): Promise<void> => {
     await window.config.set('onboardingCompleted', true)
+    queryClient.setQueryData(['config', 'onboardingCompleted'], true)
+
     const spaces = await window.space.list()
     if (spaces.length === 0) {
       await window.space.create('Personal', 'Home')
     }
+
+    const activeSpaceId = await window.config.get('activeSpaceId')
+    if (!activeSpaceId) {
+      const currentSpaces = await window.space.list()
+      if (currentSpaces.length > 0) {
+        await window.config.set('activeSpaceId', currentSpaces[0].id)
+        queryClient.setQueryData(['config', 'activeSpaceId'], currentSpaces[0].id)
+      }
+    }
+
     navigate({ to: '/' })
   }
 

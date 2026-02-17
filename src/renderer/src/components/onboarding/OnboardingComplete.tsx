@@ -1,5 +1,6 @@
 import { type FC } from 'react'
 import { useNavigate } from '@tanstack/react-router'
+import { useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2 } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { Card, CardContent } from '@renderer/components/ui/card'
@@ -13,9 +14,11 @@ interface OnboardingCompleteProps {
 
 export const OnboardingComplete: FC<OnboardingCompleteProps> = ({ state }) => {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
 
   const handleComplete = async (): Promise<void> => {
     await window.config.set('onboardingCompleted', true)
+    queryClient.setQueryData(['config', 'onboardingCompleted'], true)
 
     const spaces = await window.space.list()
     if (spaces.length === 0) {
@@ -27,6 +30,7 @@ export const OnboardingComplete: FC<OnboardingCompleteProps> = ({ state }) => {
       const currentSpaces = await window.space.list()
       if (currentSpaces.length > 0) {
         await window.config.set('activeSpaceId', currentSpaces[0].id)
+        queryClient.setQueryData(['config', 'activeSpaceId'], currentSpaces[0].id)
       }
     }
 
