@@ -176,14 +176,15 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
   // AI hooks
   const { sendMessage, isGenerating, currentResponse } = useAIChat(effectiveModelId)
   const { loadedModels, isLoadingModels, loadModel, isLoadingModel } = useLoadedModels()
-  const { isInitialized, isCheckingInitialized, initialize, isInitializing } = useAIInitialize()
+  const { isInitialized, isCheckingInitialized, initialize, isInitializing, initializeError } =
+    useAIInitialize()
 
-  // Auto-initialize AI if not initialized
+  // Auto-initialize AI if not initialized (guard on initializeError to prevent infinite retry loop)
   useEffect(() => {
-    if (!isCheckingInitialized && !isInitialized && !isInitializing) {
+    if (!isCheckingInitialized && !isInitialized && !isInitializing && !initializeError) {
       initialize()
     }
-  }, [isCheckingInitialized, isInitialized, isInitializing, initialize])
+  }, [isCheckingInitialized, isInitialized, isInitializing, initializeError, initialize])
 
   // Vector search hook - only used when RAG is enabled
   const vectorSearch = useVectorSearch(spaceId || '')
@@ -428,6 +429,37 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
               </>
             )}
           </Badge>
+        </div>
+      )}
+
+      {/* AI initialization error */}
+      {initializeError && (
+        <div className="px-4 pt-3 shrink-0">
+          <Alert variant="destructive">
+            <AlertTriangle className="size-4" />
+            <AlertTitle>Inizializzazione AI fallita</AlertTitle>
+            <AlertDescription className="flex items-center justify-between gap-4">
+              <span className="text-sm">
+                {(initializeError as Error)?.message ?? "Errore sconosciuto. Riavvia l'app."}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => initialize()}
+                disabled={isInitializing}
+                className="shrink-0"
+              >
+                {isInitializing ? (
+                  <>
+                    <Loader2 className="size-4 mr-2 animate-spin" />
+                    Caricamento...
+                  </>
+                ) : (
+                  'Riprova'
+                )}
+              </Button>
+            </AlertDescription>
+          </Alert>
         </div>
       )}
 

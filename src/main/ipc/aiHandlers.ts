@@ -13,6 +13,7 @@
 import { ipcMain, BrowserWindow, type IpcMainInvokeEvent } from 'electron'
 import { app } from 'electron'
 import { join } from 'path'
+import fs from 'node:fs'
 import {
   HardwareDetector,
   ModelRegistry,
@@ -27,6 +28,17 @@ import type { GenerationOptions, ExpandedResult, IndexingProgressEvent } from '.
 import type { FileSystemManager, Note, FolderMetadata } from '../utils/fileSystem'
 
 type GetFsManager = (spaceId: string) => FileSystemManager
+
+function writeAILog(message: string): void {
+  try {
+    const logDir = app.getPath('logs')
+    const logFile = join(logDir, 'ai.log')
+    const timestamp = new Date().toISOString()
+    fs.appendFileSync(logFile, `[${timestamp}] ${message}\n`)
+  } catch {
+    // ignore logging errors
+  }
+}
 
 // Singleton instances
 let downloader: ModelDownloader | null = null
@@ -377,7 +389,7 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
   ipcMain.handle('ai:initialize', async (_event: IpcMainInvokeEvent) => {
     try {
       const manager = getAIManager()
-      await manager.initialize()
+      const { gpuFallback } = await manager.initialize()
 
       // Ensure downloader is initialized (already happens in getDownloader())
       await getDownloader()
@@ -390,8 +402,10 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
       // Enable auto-indexing if embedding model is available
       await tryEnableAutoIndexing(getOrCreateFsManager)
 
-      return { success: true }
+      return { success: true, gpuFallback }
     } catch (error) {
+      const errorMsg = (error as Error).stack ?? String(error)
+      writeAILog(`[ai:initialize] FAILED: ${errorMsg}`)
       throw new Error(`Failed to initialize AI: ${(error as Error).message}`)
     }
   })

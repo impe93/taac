@@ -119,6 +119,9 @@
     "vite": "^6.2.3"
   },
   "pnpm": {
+    "overrides": {
+      "chalk": "^4.1.2"
+    },
     "neverBuiltDependencies": []
   }
 }

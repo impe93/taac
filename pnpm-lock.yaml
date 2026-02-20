@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  chalk: ^4.1.2
+
 importers:
 
   .:
@@ -3227,10 +3230,6 @@ packages:
   chalk@4.1.2:
     resolution: {integrity: sha512-oKnbhFyRIXpUuez8iBMmyEa4nbj4IOQyuhc/wy9kY7/WVPcwIO9VA668Pu8RkO7+0G76SLROeyw9CpQ061i4mA==}
     engines: {node: '>=10'}
-
-  chalk@5.6.2:
-    resolution: {integrity: sha512-7NzBL0rN6fMUW+f7A6Io4h40qQlG+xGmtMxfbnH/K7TAtt8JQWVQK+6g0UXKMeVJoyV5EkkNsErQ8pVD3bLHbA==}
-    engines: {node: ^12.17.0 || ^14.13 || >=16.0.0}
 
   character-entities-html4@2.1.0:
     resolution: {integrity: sha512-1v7fgQRj6hnSwFpq1Eu0ynr/CDEw0rXo2B61qXrLNdHZmPKgb7fqS1a2JwF0rISo9q77jDI8VMEHoApn8qDoZA==}
@@ -9802,8 +9801,6 @@ snapshots:
       ansi-styles: 4.3.0
       supports-color: 7.2.0
 
-  chalk@5.6.2: {}
-
   character-entities-html4@2.1.0: {}
 
   character-entities-legacy@3.0.0: {}
@@ -11048,7 +11045,7 @@ snapshots:
     dependencies:
       '@tinyhttp/content-disposition': 2.2.3
       async-retry: 1.3.3
-      chalk: 5.6.2
+      chalk: 4.1.2
       ci-info: 4.3.1
       cli-spinners: 2.9.2
       commander: 10.0.1
@@ -11399,7 +11396,7 @@ snapshots:
 
   log-symbols@6.0.0:
     dependencies:
-      chalk: 5.6.2
+      chalk: 4.1.2
       is-unicode-supported: 1.3.0
 
   log-symbols@7.0.1:
@@ -12020,7 +12017,7 @@ snapshots:
       '@huggingface/jinja': 0.5.4
       async-retry: 1.3.3
       bytes: 3.1.2
-      chalk: 5.6.2
+      chalk: 4.1.2
       chmodrp: 1.0.2
       cmake-js: 7.4.0
       cross-spawn: 7.0.6
@@ -12166,7 +12163,7 @@ snapshots:
 
   ora@8.2.0:
     dependencies:
-      chalk: 5.6.2
+      chalk: 4.1.2
       cli-cursor: 5.0.0
       cli-spinners: 2.9.2
       is-interactive: 2.0.0

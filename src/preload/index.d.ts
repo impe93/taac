@@ -180,7 +180,7 @@ export interface ResponseChunkData {
 // AI API interface
 export interface AIAPI {
   // Initialization
-  initialize: () => Promise<void>
+  initialize: () => Promise<{ gpuFallback: boolean }>
   isInitialized: () => Promise<boolean>
 
   // Hardware

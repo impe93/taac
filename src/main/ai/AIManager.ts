@@ -127,8 +127,8 @@ export class AIManager {
    *
    * @throws {Error} If initialization fails
    */
-  async initialize(): Promise<void> {
-    if (this.initialized) return
+  async initialize(): Promise<{ gpuFallback: boolean }> {
+    if (this.initialized) return { gpuFallback: false }
 
     // Dynamically import node-llama-cpp (ESM module with top-level await)
     // This must be done with dynamic import() to avoid CJS/ESM compatibility issues
@@ -141,15 +141,30 @@ export class AIManager {
     // Determine optimal GPU backend using HardwareDetector
     const gpuBackend = HardwareDetector.getRecommendedGpuBackend(hardware)
 
-    // Initialize llama.cpp with detected backend
-    this.llama = await this.nodeLlamaCpp.getLlama({
-      gpu: gpuBackend
-    })
+    // Try GPU first; fall back to CPU if GPU initialization fails
+    // (e.g. unsigned dylibs blocked by macOS Hardened Runtime in production builds)
+    let gpuFallback = false
+    if (gpuBackend !== false) {
+      try {
+        this.llama = await this.nodeLlamaCpp.getLlama({ gpu: gpuBackend })
+      } catch (gpuError) {
+        console.error(
+          `[AIManager] GPU backend (${gpuBackend}) init failed, falling back to CPU:`,
+          gpuError
+        )
+        this.llama = await this.nodeLlamaCpp.getLlama({ gpu: false })
+        gpuFallback = true
+      }
+    } else {
+      this.llama = await this.nodeLlamaCpp.getLlama({ gpu: false })
+    }
 
     this.initialized = true
 
     // Start idle model cleanup interval (check every minute)
     this.cleanupInterval = setInterval(() => this.cleanupIdleModels(), 60000)
+
+    return { gpuFallback }
   }
 
   /**

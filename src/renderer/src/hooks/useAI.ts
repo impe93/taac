@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState, useCallback } from 'react'
+import { toast } from 'sonner'
 import type { LoadedModel, ChatCompletionResult, GenerationOptions } from '@main/ai/types'
 
 /**
@@ -21,15 +22,29 @@ export const useAIInitialize = () => {
 
   const initializeMutation = useMutation({
     mutationFn: () => window.ai.initialize(),
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.setQueryData(['ai', 'initialized'], true)
+      if (data?.gpuFallback) {
+        toast.warning('Accelerazione GPU non disponibile', {
+          description:
+            'Il modello AI verrà eseguito in modalità CPU. Le prestazioni potrebbero essere ridotte.'
+        })
+      }
+    },
+    onError: (error) => {
+      toast.error('Inizializzazione AI fallita', {
+        description: (error as Error)?.message ?? 'Errore sconosciuto'
+      })
     }
   })
 
   return {
     isInitialized: initializeQuery.data ?? false,
     isCheckingInitialized: initializeQuery.isLoading,
-    initialize: initializeMutation.mutate,
+    initialize: () => {
+      initializeMutation.reset()
+      initializeMutation.mutate()
+    },
     initializeAsync: initializeMutation.mutateAsync,
     isInitializing: initializeMutation.isPending,
     initializeError: initializeMutation.error

@@ -22,7 +22,7 @@ import { VectorDBError } from './errors'
 import Database from 'better-sqlite3'
 import * as sqliteVec from 'sqlite-vec'
 import { mkdirSync } from 'fs'
-import { dirname } from 'path'
+import { dirname, sep } from 'path'
 import { createHash } from 'crypto'
 
 export interface VectorDBConfig {
@@ -198,7 +198,11 @@ export class VectorDBManager {
       this.db = new Database(this._config.dbPath)
 
       // Load sqlite-vec extension
-      sqliteVec.load(this.db)
+      // Fix: getLoadablePath() uses __dirname which resolves to inside app.asar in production.
+      // dlopen cannot load .dylib files from inside ASAR. Redirect to the unpacked location.
+      const rawVecPath = sqliteVec.getLoadablePath()
+      const vecPath = rawVecPath.replace(`${sep}app.asar${sep}`, `${sep}app.asar.unpacked${sep}`)
+      this.db.loadExtension(vecPath)
 
       // Verify sqlite-vec is loaded
       const versionResult = this.db.prepare('SELECT vec_version() as version').get() as {
