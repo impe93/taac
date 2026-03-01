@@ -247,6 +247,12 @@ const importAPI = {
 
   checkAppleNotesAccess: () => ipcRenderer.invoke('import:checkAppleNotesAccess'),
 
+  openSystemSettings: () =>
+    ipcRenderer.invoke(
+      'shell:openExternal',
+      'x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles'
+    ),
+
   start: (options: unknown) => ipcRenderer.invoke('import:start', options),
 
   onProgress: (callback: (event: unknown) => void) => {

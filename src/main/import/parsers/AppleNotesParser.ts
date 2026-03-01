@@ -38,7 +38,7 @@ interface AppleNoteRow {
 
 interface AppleNoteFolderRow {
   Z_PK: number
-  ZTITLE1: string | null
+  ZTITLE2: string | null
   ZPARENT: number | null
 }
 
@@ -68,6 +68,14 @@ interface FallbackFile {
   absolutePath: string
   relativePath: string
   isHtml: boolean
+}
+
+interface EntityKeys {
+  ICNote: number
+  ICFolder: number
+  ICAccount: number
+  ICAttachment: number
+  ICMedia: number
 }
 
 // ============================================================================
@@ -261,24 +269,31 @@ export class AppleNotesParser extends BaseParser {
     try {
       db = new Database(dbPath, { readonly: true })
 
+      const keys = this.buildEntityKeys(db)
+      const trashIds = this.buildTrashFolderIds(db, keys)
+      const trashPlaceholders = trashIds.length > 0 ? trashIds.join(',') : '-1'
+
       const folders = db
         .prepare(
-          `SELECT Z_PK, ZTITLE1 FROM ZICCLOUDSYNCINGOBJECT
-           WHERE ZTYPEUTI = 'com.apple.notes.folder'
-             AND ZTITLE1 IS NOT NULL`
+          `SELECT Z_PK, ZTITLE2 FROM ZICCLOUDSYNCINGOBJECT
+           WHERE Z_ENT = ${keys.ICFolder}
+             AND ZTITLE2 IS NOT NULL
+             AND ZFOLDERTYPE != 1`
         )
         .all() as AppleNoteFolderRow[]
 
       const folderNames = folders
-        .map((f) => f.ZTITLE1)
+        .map((f) => f.ZTITLE2)
         .filter((name): name is string => name != null)
         .sort()
 
       const notes = db
         .prepare(
           `SELECT Z_PK, ZTITLE1 FROM ZICCLOUDSYNCINGOBJECT
-           WHERE ZTYPEUTI = 'com.apple.note'
-             AND ZTITLE1 IS NOT NULL`
+           WHERE Z_ENT = ${keys.ICNote}
+             AND ZTITLE1 IS NOT NULL
+             AND ZFOLDER NOT IN (${trashPlaceholders})
+             AND (ZISPASSWORDPROTECTED IS NULL OR ZISPASSWORDPROTECTED = 0)`
         )
         .all() as AppleNoteRow[]
 
@@ -298,8 +313,7 @@ export class AppleNotesParser extends BaseParser {
       const attachmentRow = db
         .prepare(
           `SELECT COUNT(*) as cnt FROM ZICCLOUDSYNCINGOBJECT
-           WHERE ZTYPEUTI LIKE 'com.apple.notes.%attachment%'
-              OR ZMEDIAURL IS NOT NULL`
+           WHERE Z_ENT = ${keys.ICAttachment}`
         )
         .get() as { cnt: number } | undefined
 
@@ -345,22 +359,28 @@ export class AppleNotesParser extends BaseParser {
     try {
       db = new Database(dbPath, { readonly: true })
 
+      const keys = this.buildEntityKeys(db)
+      const trashIds = this.buildTrashFolderIds(db, keys)
+      const trashPlaceholders = trashIds.length > 0 ? trashIds.join(',') : '-1'
+
       // Build folder hierarchy
-      const folderMap = this.buildFolderMap(db)
+      const folderMap = this.buildFolderMap(db, keys)
 
       // Build account map for attachment paths
-      const accountMap = this.buildAccountMap(db)
+      const accountMap = this.buildAccountMap(db, keys)
 
       // Query all notes with their folder names
       const notes = db
         .prepare(
           `SELECT n.Z_PK, n.ZTITLE1, n.ZCREATIONDATE1, n.ZMODIFICATIONDATE1,
                   n.ZFOLDER, n.ZACCOUNT,
-                  f.ZTITLE1 as folderName
+                  f.ZTITLE2 as folderName
            FROM ZICCLOUDSYNCINGOBJECT n
            LEFT JOIN ZICCLOUDSYNCINGOBJECT f ON n.ZFOLDER = f.Z_PK
-           WHERE n.ZTYPEUTI = 'com.apple.note'
-             AND n.ZTITLE1 IS NOT NULL`
+           WHERE n.Z_ENT = ${keys.ICNote}
+             AND n.ZTITLE1 IS NOT NULL
+             AND n.ZFOLDER NOT IN (${trashPlaceholders})
+             AND (n.ZISPASSWORDPROTECTED IS NULL OR n.ZISPASSWORDPROTECTED = 0)`
         )
         .all() as AppleNoteRow[]
 
@@ -675,12 +695,49 @@ export class AppleNotesParser extends BaseParser {
   // Folder Hierarchy
   // --------------------------------------------------------------------------
 
-  private buildFolderMap(db: InstanceType<typeof Database>): Map<number, string> {
+  private buildEntityKeys(db: InstanceType<typeof Database>): EntityKeys {
+    const rows = db
+      .prepare('SELECT Z_ENT, Z_NAME FROM Z_PRIMARYKEY')
+      .all() as { Z_ENT: number; Z_NAME: string }[]
+
+    const map: Record<string, number> = {}
+    for (const row of rows) map[row.Z_NAME] = row.Z_ENT
+
+    return {
+      ICNote: map['ICNote'] ?? -1,
+      ICFolder: map['ICFolder'] ?? -1,
+      ICAccount: map['ICAccount'] ?? -1,
+      ICAttachment: map['ICAttachment'] ?? -1,
+      ICMedia: map['ICMedia'] ?? -1
+    }
+  }
+
+  private buildTrashFolderIds(
+    db: InstanceType<typeof Database>,
+    keys: EntityKeys
+  ): number[] {
+    try {
+      const rows = db
+        .prepare(
+          `SELECT Z_PK FROM ZICCLOUDSYNCINGOBJECT
+           WHERE Z_ENT = ${keys.ICFolder} AND ZFOLDERTYPE = 1`
+        )
+        .all() as { Z_PK: number }[]
+      return rows.map((r) => r.Z_PK)
+    } catch {
+      return []
+    }
+  }
+
+  private buildFolderMap(
+    db: InstanceType<typeof Database>,
+    keys: EntityKeys
+  ): Map<number, string> {
     const rows = db
       .prepare(
-        `SELECT Z_PK, ZTITLE1, ZPARENT
+        `SELECT Z_PK, ZTITLE2, ZPARENT
          FROM ZICCLOUDSYNCINGOBJECT
-         WHERE ZTYPEUTI = 'com.apple.notes.folder'`
+         WHERE Z_ENT = ${keys.ICFolder}`
       )
       .all() as AppleNoteFolderRow[]
 
@@ -698,27 +755,27 @@ export class AppleNotesParser extends BaseParser {
       if (cached !== undefined) return cached
 
       const row = rowMap.get(pk)
-      if (!row || !row.ZTITLE1) {
+      if (!row || !row.ZTITLE2) {
         folderMap.set(pk, '')
         return ''
       }
 
       // Guard against circular references
       if (visited.has(pk)) {
-        folderMap.set(pk, row.ZTITLE1)
-        return row.ZTITLE1
+        folderMap.set(pk, row.ZTITLE2)
+        return row.ZTITLE2
       }
       visited.add(pk)
 
       if (row.ZPARENT != null && rowMap.has(row.ZPARENT)) {
         const parentPath = resolvePath(row.ZPARENT, visited)
-        const fullPath = parentPath ? `${parentPath}/${row.ZTITLE1}` : row.ZTITLE1
+        const fullPath = parentPath ? `${parentPath}/${row.ZTITLE2}` : row.ZTITLE2
         folderMap.set(pk, fullPath)
         return fullPath
       }
 
-      folderMap.set(pk, row.ZTITLE1)
-      return row.ZTITLE1
+      folderMap.set(pk, row.ZTITLE2)
+      return row.ZTITLE2
     }
 
     for (const row of rows) {
@@ -728,7 +785,10 @@ export class AppleNotesParser extends BaseParser {
     return folderMap
   }
 
-  private buildAccountMap(db: InstanceType<typeof Database>): Map<number, string> {
+  private buildAccountMap(
+    db: InstanceType<typeof Database>,
+    keys: EntityKeys
+  ): Map<number, string> {
     const accountMap = new Map<number, string>()
 
     try {
@@ -736,7 +796,7 @@ export class AppleNotesParser extends BaseParser {
         .prepare(
           `SELECT Z_PK, ZIDENTIFIER
            FROM ZICCLOUDSYNCINGOBJECT
-           WHERE ZTYPEUTI = 'com.apple.notes.account'`
+           WHERE Z_ENT = ${keys.ICAccount}`
         )
         .all() as AppleNoteAccountRow[]
 

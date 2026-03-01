@@ -1,5 +1,5 @@
 import { type FC, type ReactNode, useState } from 'react'
-import { AlertCircle, ArrowLeft, FolderOpen, Loader2 } from 'lucide-react'
+import { AlertCircle, ArrowLeft, FolderOpen, Loader2, Settings } from 'lucide-react'
 import { toast } from 'sonner'
 import type { ImportOptions } from '@preload/types'
 import { Alert, AlertDescription, AlertTitle } from '@renderer/components/ui/alert'
@@ -221,6 +221,10 @@ export const ImportStep: FC<ImportStepProps> = ({ state, dispatch }) => {
                   <Button variant="ghost" onClick={handleBackToSource}>
                     <ArrowLeft className="size-4" />
                     Back
+                  </Button>
+                  <Button onClick={() => window.import.openSystemSettings()}>
+                    <Settings className="size-4" />
+                    Open System Settings
                   </Button>
                   <Button variant="outline" onClick={handleRetryAccessCheck}>
                     Retry

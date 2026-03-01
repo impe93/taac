@@ -251,6 +251,7 @@ export interface ImportAPI {
   selectFolder: () => Promise<string | null>
   scan: (sourcePath: string, source: ImportSource) => Promise<ImportScanResult>
   checkAppleNotesAccess: () => Promise<{ accessible: boolean; dbPath?: string; error?: string }>
+  openSystemSettings: () => Promise<void>
   start: (options: ImportOptions) => Promise<ImportResult>
   onProgress: (callback: (event: ImportProgressEvent) => void) => () => void
 }
