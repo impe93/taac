@@ -5,6 +5,8 @@ import { CheckCircle2 } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { Card, CardContent } from '@renderer/components/ui/card'
 import { Separator } from '@renderer/components/ui/separator'
+import { useAppDispatch } from '@renderer/store/hooks'
+import { switchActiveSpace, loadTree } from '@renderer/store/slices/notesTreeSlice'
 import type { OnboardingAction, OnboardingState } from './OnboardingWizard'
 
 interface OnboardingCompleteProps {
@@ -15,23 +17,30 @@ interface OnboardingCompleteProps {
 export const OnboardingComplete: FC<OnboardingCompleteProps> = ({ state }) => {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const dispatch = useAppDispatch()
 
   const handleComplete = async (): Promise<void> => {
     await window.config.set('onboardingCompleted', true)
     queryClient.setQueryData(['config', 'onboardingCompleted'], true)
 
-    const spaces = await window.space.list()
+    let spaces = await window.space.list()
     if (spaces.length === 0) {
       await window.space.create('Personal', 'Home')
+      spaces = await window.space.list()
     }
 
-    const activeSpaceId = await window.config.get('activeSpaceId')
-    if (!activeSpaceId) {
-      const currentSpaces = await window.space.list()
-      if (currentSpaces.length > 0) {
-        await window.config.set('activeSpaceId', currentSpaces[0].id)
-        queryClient.setQueryData(['config', 'activeSpaceId'], currentSpaces[0].id)
-      }
+    let activeSpaceId = await window.config.get('activeSpaceId')
+    if (!activeSpaceId && spaces.length > 0) {
+      activeSpaceId = spaces[0].id
+      await window.config.set('activeSpaceId', activeSpaceId)
+      queryClient.setQueryData(['config', 'activeSpaceId'], activeSpaceId)
+    }
+
+    // Sync Redux state so the sidebar tree is populated immediately after navigation,
+    // without requiring a full app restart (ReduxInitializer only runs once on mount).
+    if (activeSpaceId) {
+      dispatch(switchActiveSpace(activeSpaceId))
+      dispatch(loadTree({ spaceId: activeSpaceId }))
     }
 
     navigate({ to: '/' })

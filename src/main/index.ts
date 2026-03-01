@@ -67,7 +67,9 @@ function createWindow(): void {
   mainWindow.once('ready-to-show', () => {
     mainWindow.show()
     mainWindow.focus()
-    mainWindow.webContents.openDevTools()
+    if (is.dev) {
+      mainWindow.webContents.openDevTools()
+    }
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
