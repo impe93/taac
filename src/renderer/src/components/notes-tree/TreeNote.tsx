@@ -11,6 +11,7 @@ import { CSS } from '@dnd-kit/utilities'
 import { FileText } from 'lucide-react'
 import { cn } from '@renderer/lib/utils'
 import { NoteContextMenu } from './NoteContextMenu'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip'
 
 interface TreeNoteProps {
   noteId: string
@@ -69,12 +70,17 @@ export const TreeNote: FC<TreeNoteProps> = ({ noteId, folderId, level, onDelete 
         {...listeners}
         onClick={handleClick}
         className={cn(
-          'w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm transition-colors',
+          'w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm transition-colors min-w-0',
           isSelected ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
         )}
       >
         <FileText className="size-4 text-muted-foreground shrink-0" />
-        <span className="flex-1 text-left truncate">{note.title || '(Untitled)'}</span>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="flex-1 text-left truncate min-w-0">{note.title || '(Untitled)'}</span>
+          </TooltipTrigger>
+          <TooltipContent side="right">{note.title || '(Untitled)'}</TooltipContent>
+        </Tooltip>
       </button>
     </NoteContextMenu>
   )

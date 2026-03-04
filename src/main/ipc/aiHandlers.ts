@@ -172,7 +172,8 @@ export function notifyNoteSaved(
   spaceId: string,
   folderId: string,
   rawContent: unknown,
-  title: string
+  title: string,
+  folderName?: string
 ): void {
   if (!indexingQueue) return
 
@@ -180,7 +181,7 @@ export function notifyNoteSaved(
   const textContent = extractTextFromLexicalContent(rawContent)
   if (!textContent.trim()) return
 
-  indexingQueue.enqueue(noteId, spaceId, folderId, textContent, title)
+  indexingQueue.enqueue(noteId, spaceId, folderId, textContent, title, folderName)
 }
 
 /**
@@ -502,6 +503,48 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
     }
   )
 
+  /**
+   * Generate a short conversation title from the first user/assistant exchange.
+   * Does NOT stream — returns the title string directly.
+   */
+  ipcMain.handle(
+    'ai:generateTitle',
+    async (
+      _event: IpcMainInvokeEvent,
+      modelId: string,
+      userMessage: string,
+      assistantResponse: string
+    ): Promise<string> => {
+      try {
+        const manager = getAIManager()
+        const titleMessages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }> = [
+          {
+            role: 'system',
+            content:
+              'You are a title generator. Output ONLY a 2-4 word plain-text title. Rules: no markdown (no asterisks, no underscores, no backticks), no labels or prefixes (like "Title:", "Titolo:", "Conversation:"), no quotes, no trailing punctuation. Just the plain words of the title.'
+          },
+          {
+            role: 'user',
+            content: `Conversation:\nUser: ${userMessage.slice(0, 200)}\nAssistant: ${assistantResponse.slice(0, 200)}`
+          }
+        ]
+
+        let rawTitle = ''
+        const generator = manager.generateChatCompletion(modelId, titleMessages, {
+          maxTokens: 20,
+          temperature: 0.3
+        })
+        for await (const chunk of generator) {
+          rawTitle += chunk
+        }
+
+        return rawTitle
+      } catch (error) {
+        throw new Error(`Failed to generate title: ${(error as Error).message}`)
+      }
+    }
+  )
+
   // ============================================================================
   // VECTOR SEARCH / RAG
   // ============================================================================
@@ -555,10 +598,18 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
         // Convert Lexical content to markdown text
         const textContent = extractTextFromLexicalContent(note.content)
 
+        // Resolve folder name for semantic search
+        let folderName: string | undefined
+        try {
+          const folderMeta = await fsManager.readFolderMetadata(note.folderId)
+          folderName = folderMeta.name !== 'root' ? folderMeta.name : undefined
+        } catch { /* ignore */ }
+
         await service.indexNote(
           {
             id: note.id,
             folderId: note.folderId,
+            folderName,
             content: textContent,
             title: note.title,
             createdAt: note.createdAt,
@@ -669,6 +720,21 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
       let indexedNotes = 0
       let erroredNotes = 0
 
+      // Cache folder names to avoid redundant reads during batch indexing
+      const folderNameCache = new Map<string, string | undefined>()
+      const getFolderName = async (fid: string): Promise<string | undefined> => {
+        if (folderNameCache.has(fid)) return folderNameCache.get(fid)
+        try {
+          const meta = await fsManager.readFolderMetadata(fid)
+          const name = meta.name !== 'root' ? meta.name : undefined
+          folderNameCache.set(fid, name)
+          return name
+        } catch {
+          folderNameCache.set(fid, undefined)
+          return undefined
+        }
+      }
+
       for (let i = 0; i < staleNotes.length; i++) {
         if (signal.aborted) break
 
@@ -684,10 +750,12 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
         })
 
         try {
+          const folderName = await getFolderName(folderId)
           const wasIndexed = await service.indexNote(
             {
               id: note.id,
               folderId,
+              folderName,
               content: textContent,
               title: note.title,
               createdAt: note.createdAt,

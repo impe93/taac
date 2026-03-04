@@ -59,6 +59,7 @@ export interface TextChunk {
 export interface IndexableNote {
   id: string
   folderId: string
+  folderName?: string // Human-readable folder name for semantic search
   content: string // Markdown content
   title: string
   createdAt: string
@@ -212,8 +213,19 @@ export class EmbeddingService {
    * @param sectionHeader - Optional Markdown section header
    * @returns The enriched text to pass to embedDocument()
    */
-  buildEmbeddingText(chunkText: string, noteTitle: string, sectionHeader?: string): string {
-    const parts: string[] = [`Note: "${noteTitle}"`]
+  buildEmbeddingText(
+    chunkText: string,
+    noteTitle: string,
+    sectionHeader?: string,
+    folderName?: string
+  ): string {
+    const parts: string[] = []
+
+    if (folderName) {
+      parts.push(`Folder: "${folderName}"`)
+    }
+
+    parts.push(`Note: "${noteTitle}"`)
 
     if (sectionHeader) {
       parts.push(`Section: "${sectionHeader}"`)
@@ -278,7 +290,7 @@ export class EmbeddingService {
       for (let i = 0; i < chunks.length; i++) {
         const chunk = chunks[i]
         // Use contextual header for embedding, but store original text in DB
-        const textToEmbed = this.buildEmbeddingText(chunk.text, note.title, chunk.sectionHeader)
+        const textToEmbed = this.buildEmbeddingText(chunk.text, note.title, chunk.sectionHeader, note.folderName)
         const embedding = await this.embedDocument(textToEmbed)
 
         await vectorDB.upsertDocument({
@@ -351,7 +363,7 @@ export class EmbeddingService {
         for (let j = 0; j < chunks.length; j++) {
           const chunk = chunks[j]
           // Use contextual header for embedding, but store original text in DB
-          const textToEmbed = this.buildEmbeddingText(chunk.text, note.title, chunk.sectionHeader)
+          const textToEmbed = this.buildEmbeddingText(chunk.text, note.title, chunk.sectionHeader, note.folderName)
           const embedding = await this.embedDocument(textToEmbed)
 
           await vectorDB.upsertDocument({

@@ -4,6 +4,7 @@ import { Avatar, AvatarFallback } from '@renderer/components/ui/avatar'
 import { Badge } from '@renderer/components/ui/badge'
 import { cn } from '@renderer/lib/utils'
 import type { ChatMessage as ChatMessageType } from '@main/ai/types'
+import ReactMarkdown from 'react-markdown'
 
 interface ChatMessageProps {
   message: ChatMessageType
@@ -118,13 +119,30 @@ export const ChatMessage: FC<ChatMessageProps> = ({
               : 'bg-muted text-foreground rounded-tl-sm'
           )}
         >
-          {/* Content with basic markdown-like rendering */}
-          <div className="whitespace-pre-wrap break-words">
-            {content}
-            {isStreaming && (
-              <span className="inline-block w-2 h-4 ml-0.5 bg-current animate-pulse rounded-sm" />
-            )}
-          </div>
+          {/* Content rendering: plain text for user, markdown for assistant */}
+          {isUser ? (
+            <div className="whitespace-pre-wrap break-words">{content}</div>
+          ) : (
+            <div
+              className="break-words
+                [&_p]:my-1 [&_p:last-child]:mb-0
+                [&_h1]:text-base [&_h1]:font-bold [&_h1]:my-1.5
+                [&_h2]:text-sm [&_h2]:font-bold [&_h2]:my-1.5
+                [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:my-1
+                [&_ul]:list-disc [&_ul]:pl-4 [&_ul]:my-1
+                [&_ol]:list-decimal [&_ol]:pl-4 [&_ol]:my-1
+                [&_li]:my-0.5
+                [&_code]:bg-black/10 dark:[&_code]:bg-white/10 [&_code]:rounded [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-[0.85em]
+                [&_pre]:bg-black/10 dark:[&_pre]:bg-white/10 [&_pre]:rounded-md [&_pre]:p-2 [&_pre]:my-1 [&_pre_code]:bg-transparent [&_pre_code]:p-0
+                [&_blockquote]:border-l-2 [&_blockquote]:pl-3 [&_blockquote]:italic [&_blockquote]:opacity-75
+                [&_strong]:font-semibold [&_em]:italic"
+            >
+              <ReactMarkdown>{content}</ReactMarkdown>
+              {isStreaming && (
+                <span className="inline-block w-2 h-4 ml-0.5 bg-current animate-pulse rounded-sm" />
+              )}
+            </div>
+          )}
         </div>
 
         {/* Note References */}

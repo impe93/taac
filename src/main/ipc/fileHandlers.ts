@@ -13,7 +13,8 @@ export type OnNoteSaved = (
   spaceId: string,
   folderId: string,
   rawContent: unknown,
-  title: string
+  title: string,
+  folderName?: string
 ) => void
 
 export function registerFileHandlers(
@@ -34,8 +35,13 @@ export function registerFileHandlers(
         const fsManager = getOrCreateFsManager(spaceId)
         const note = await fsManager.createNote(folderId, content, title)
 
-        // Enqueue background indexing (non-blocking)
-        onNoteSaved?.(note.id, spaceId, folderId, note.content, note.title)
+        // Enqueue background indexing (non-blocking) — resolve folder name for semantic search
+        let folderName: string | undefined
+        try {
+          const folderMeta = await fsManager.readFolderMetadata(folderId)
+          folderName = folderMeta.name !== 'root' ? folderMeta.name : undefined
+        } catch { /* ignore */ }
+        onNoteSaved?.(note.id, spaceId, folderId, note.content, note.title, folderName)
 
         return note
       } catch (error) {
@@ -71,7 +77,12 @@ export function registerFileHandlers(
 
         // Enqueue background indexing when content or title changes (non-blocking)
         if (updates.content !== undefined || updates.title !== undefined) {
-          onNoteSaved?.(noteId, spaceId, folderId, updatedNote.content, updatedNote.title)
+          let folderName: string | undefined
+          try {
+            const folderMeta = await fsManager.readFolderMetadata(folderId)
+            folderName = folderMeta.name !== 'root' ? folderMeta.name : undefined
+          } catch { /* ignore */ }
+          onNoteSaved?.(noteId, spaceId, folderId, updatedNote.content, updatedNote.title, folderName)
         }
 
         return updatedNote

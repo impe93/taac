@@ -244,6 +244,11 @@ export interface AIAPI {
   addNoteToConversation: (conversationId: string, noteRef: NoteReference) => Promise<Conversation>
   removeNoteFromConversation: (conversationId: string, noteId: string) => Promise<Conversation>
   deleteConversation: (id: string) => Promise<void>
+  generateTitle: (
+    modelId: string,
+    userMessage: string,
+    assistantResponse: string
+  ) => Promise<string>
 }
 
 // Import API interface

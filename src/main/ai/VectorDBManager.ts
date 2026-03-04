@@ -158,6 +158,12 @@ export function deduplicateOverlaps(expanded: ExpandedResult[]): ExpandedResult[
   return deduplicated.sort((a, b) => b.rrfScore - a.rrfScore)
 }
 
+/**
+ * Increment when the embedding text format changes (e.g. adding folder context).
+ * Forces re-indexing of all notes on the next "Index All" run.
+ */
+export const EMBEDDING_SCHEMA_VERSION = 2
+
 export class VectorDBManager {
   private static instances: Map<string, VectorDBManager> = new Map()
 
@@ -240,6 +246,13 @@ export class VectorDBManager {
       // Migration: add embedding_model column if missing (existing databases)
       try {
         this.db.exec('ALTER TABLE embeddings ADD COLUMN embedding_model TEXT')
+      } catch {
+        // Column already exists, ignore
+      }
+
+      // Migration: add schema_version column for forced re-indexing on format changes
+      try {
+        this.db.exec('ALTER TABLE indexing_status ADD COLUMN schema_version INTEGER NOT NULL DEFAULT 1')
       } catch {
         // Column already exists, ignore
       }
@@ -972,10 +985,13 @@ export class VectorDBManager {
 
     try {
       const row = this.db
-        .prepare('SELECT content_hash FROM indexing_status WHERE note_id = ?')
-        .get(noteId) as { content_hash: string } | undefined
+        .prepare('SELECT content_hash, schema_version FROM indexing_status WHERE note_id = ?')
+        .get(noteId) as { content_hash: string; schema_version: number } | undefined
 
       if (!row) return true
+
+      // Force re-indexing if the embedding schema version has changed
+      if ((row.schema_version ?? 1) !== EMBEDDING_SCHEMA_VERSION) return true
 
       return row.content_hash !== this.computeHash(currentContent)
     } catch {
@@ -992,11 +1008,11 @@ export class VectorDBManager {
     this.db
       .prepare(
         `
-        INSERT OR REPLACE INTO indexing_status (note_id, content_hash, chunk_count)
-        VALUES (?, ?, ?)
+        INSERT OR REPLACE INTO indexing_status (note_id, content_hash, chunk_count, schema_version)
+        VALUES (?, ?, ?, ?)
       `
       )
-      .run(noteId, contentHash, chunkCount)
+      .run(noteId, contentHash, chunkCount, EMBEDDING_SCHEMA_VERSION)
   }
 
   /**

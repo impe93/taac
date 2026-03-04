@@ -235,7 +235,10 @@ const aiAPI = {
   removeNoteFromConversation: (conversationId: string, noteId: string) =>
     ipcRenderer.invoke('ai:removeNoteFromConversation', conversationId, noteId),
 
-  deleteConversation: (id: string) => ipcRenderer.invoke('ai:deleteConversation', id)
+  deleteConversation: (id: string) => ipcRenderer.invoke('ai:deleteConversation', id),
+
+  generateTitle: (modelId: string, userMessage: string, assistantResponse: string) =>
+    ipcRenderer.invoke('ai:generateTitle', modelId, userMessage, assistantResponse)
 }
 
 // Import API

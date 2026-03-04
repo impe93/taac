@@ -20,7 +20,7 @@ export const EmptySpaceContextMenu: FC<EmptySpaceContextMenuProps> = ({
 }) => {
   return (
     <ContextMenu>
-      <ContextMenuTrigger>{children}</ContextMenuTrigger>
+      <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
       <ContextMenuContent>
         <ContextMenuItem onClick={onCreateNote}>
           <FileText className="size-4 mr-2" />

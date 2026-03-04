@@ -13,6 +13,7 @@ import { ConversationHeader } from './ConversationHeader'
 import { useAIChat, useLoadedModels, useAIInitialize } from '@renderer/hooks/useAI'
 import { useVectorSearch, useEnsureEmbeddingModel } from '@renderer/hooks/useVectorSearch'
 import { useChatState } from '@renderer/hooks/useChatState'
+import { useUpdateConversationTitle } from '@renderer/hooks/useConversations'
 import type { ChatMessage as ChatMessageType, NoteReference } from '@main/ai/types'
 
 interface ChatInterfaceProps {
@@ -102,6 +103,9 @@ const EmptyState: FC = () => (
 
 const DEFAULT_RAG_SEARCH_LIMIT = 5
 
+const DEFAULT_SYSTEM_PROMPT =
+  'You are a helpful note-taking assistant. Answer questions accurately based on the provided note context. Do not comment on relevance scores, the prompt structure, or context quality. If the context is insufficient to answer, say so simply and directly.'
+
 /**
  * Builds a context prompt from relevant notes
  */
@@ -111,8 +115,8 @@ const buildContextPrompt = (notes: ContextNote[], userMessage: string): string =
   const notesContext = notes
     .map((note, i) => {
       const header = note.sectionHeader
-        ? `[Note ${i + 1}: "${note.title}" | Section: "${note.sectionHeader}" (${note.relevanceScore}% relevant)]`
-        : `[Note ${i + 1}: "${note.title}" (${note.relevanceScore}% relevant)]`
+        ? `[Note ${i + 1}: "${note.title}" | Section: "${note.sectionHeader}"]`
+        : `[Note ${i + 1}: "${note.title}"]`
       return `${header}\n${note.fullContent}`
     })
     .join('\n\n')
@@ -176,6 +180,7 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
   // AI hooks
   const { sendMessage, isGenerating, currentResponse } = useAIChat(effectiveModelId)
   const { loadedModels, isLoadingModels, loadModel, isLoadingModel } = useLoadedModels()
+  const updateTitle = useUpdateConversationTitle()
   const { isInitialized, isCheckingInitialized, initialize, isInitializing, initializeError } =
     useAIInitialize()
 
@@ -293,6 +298,9 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
   // }
 
   const handleSend = async (content: string): Promise<void> => {
+    // Capture before any state mutation to detect first message
+    const isFirstMessage = messages.length === 0
+
     // Always search for relevant notes if RAG is enabled
     let relevantNotes: ContextNote[] = []
     if (isRAGEnabled) {
@@ -325,10 +333,9 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
     setContextNotes([])
 
     // Build messages array for API
+    const resolvedSystemPrompt = effectiveSystemPrompt ?? DEFAULT_SYSTEM_PROMPT
     const apiMessages = [
-      ...(effectiveSystemPrompt
-        ? [{ role: 'system' as const, content: effectiveSystemPrompt }]
-        : []),
+      { role: 'system' as const, content: resolvedSystemPrompt },
       ...messages.map((m) => ({ role: m.role, content: m.content })),
       { role: 'user' as const, content: messageContentForAPI }
     ]
@@ -341,6 +348,24 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
 
       // Add assistant message using the unified addMessage function
       await addMessage('assistant', response, noteRefs)
+
+      // Auto-generate title after first exchange in a persistent conversation
+      if (isPersistent && conversationId && isFirstMessage && conversation?.title === 'New conversation') {
+        void (async (): Promise<void> => {
+          try {
+            const generatedTitle = await window.ai.generateTitle(
+              effectiveModelId,
+              content,
+              response
+            )
+            if (generatedTitle && generatedTitle !== 'New conversation') {
+              await updateTitle.mutateAsync({ conversationId, title: generatedTitle })
+            }
+          } catch {
+            // Title generation is optional — silently ignore errors
+          }
+        })()
+      }
     } catch (error) {
       // Add error message
       await addMessage(

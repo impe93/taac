@@ -25,7 +25,7 @@ export const FolderContextMenu: FC<FolderContextMenuProps> = ({
 }) => {
   return (
     <ContextMenu>
-      <ContextMenuTrigger>{children}</ContextMenuTrigger>
+      <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
       <ContextMenuContent>
         <ContextMenuItem onClick={onCreateNote}>
           <FileText className="size-4 mr-2" />

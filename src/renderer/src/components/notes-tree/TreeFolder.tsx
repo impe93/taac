@@ -27,6 +27,7 @@ import {
   DropdownMenuTrigger
 } from '@renderer/components/ui/dropdown-menu'
 import { FileText, FolderPlus, Trash2 } from 'lucide-react'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip'
 
 interface TreeFolderProps {
   folderId: string
@@ -137,7 +138,7 @@ export const TreeFolder: FC<TreeFolderProps> = ({
             <button
               {...dragAttributes}
               {...dragListeners}
-              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-accent text-sm transition-colors"
+              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-accent text-sm transition-colors min-w-0"
               style={{ paddingLeft: `${paddingLeft + 8}px` }}
             >
               <ChevronRight
@@ -151,7 +152,12 @@ export const TreeFolder: FC<TreeFolderProps> = ({
               ) : (
                 <Folder className="size-4 text-muted-foreground shrink-0" />
               )}
-              <span className="flex-1 text-left truncate">{folder.name}</span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="flex-1 text-left truncate min-w-0">{folder.name}</span>
+                </TooltipTrigger>
+                <TooltipContent side="right">{folder.name}</TooltipContent>
+              </Tooltip>
             </button>
           </CollapsibleTrigger>
         </FolderContextMenu>

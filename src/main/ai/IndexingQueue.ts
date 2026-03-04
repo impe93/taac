@@ -23,6 +23,7 @@ export interface IndexingJob {
   noteId: string
   spaceId: string
   folderId: string
+  folderName?: string // Human-readable folder name for semantic search
   content: string // Already extracted text (from Lexical → Markdown)
   noteTitle: string
 }
@@ -120,7 +121,8 @@ export class IndexingQueue extends EventEmitter {
     spaceId: string,
     folderId: string,
     content: string,
-    noteTitle: string
+    noteTitle: string,
+    folderName?: string
   ): void {
     if (this.disposed || !this.embeddingAvailable) return
     if (!content.trim()) return
@@ -134,7 +136,7 @@ export class IndexingQueue extends EventEmitter {
       noteId,
       setTimeout(() => {
         this.debounceTimers.delete(noteId)
-        this.queue.set(noteId, { noteId, spaceId, folderId, content, noteTitle })
+        this.queue.set(noteId, { noteId, spaceId, folderId, folderName, content, noteTitle })
         this.emitProgress({
           spaceId,
           noteId,
@@ -183,6 +185,7 @@ export class IndexingQueue extends EventEmitter {
       const indexableNote: IndexableNote = {
         id: job.noteId,
         folderId: job.folderId,
+        folderName: job.folderName,
         content: job.content,
         title: job.noteTitle,
         createdAt: '',

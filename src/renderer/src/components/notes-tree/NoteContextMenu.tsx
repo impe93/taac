@@ -18,7 +18,7 @@ interface NoteContextMenuProps {
 export const NoteContextMenu: FC<NoteContextMenuProps> = ({ onDelete, children }) => {
   return (
     <ContextMenu>
-      <ContextMenuTrigger>{children}</ContextMenuTrigger>
+      <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
       <ContextMenuContent>
         <ContextMenuItem variant="destructive" onClick={onDelete}>
           <Trash2 className="size-4 mr-2" />
