@@ -13,7 +13,6 @@ import { TreeNote } from './TreeNote'
 import { EmptyTreeArea } from './EmptyTreeArea'
 import { CreateItemDialog } from './CreateItemDialog'
 import { DeleteItemDialog } from './DeleteItemDialog'
-import { ScrollArea } from '@renderer/components/ui/scroll-area'
 import { Skeleton } from '@renderer/components/ui/skeleton'
 import { Button } from '@renderer/components/ui/button'
 
@@ -126,7 +125,7 @@ export const NotesTree: FC = () => {
   // Tree rendering
   return (
     <>
-      <ScrollArea className="flex-1">
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
         <EmptyTreeArea
           onCreateNote={() => handleCreateNote('root')}
           onCreateFolder={() => handleCreateFolder('root')}
@@ -157,7 +156,7 @@ export const NotesTree: FC = () => {
             ))}
           </div>
         </EmptyTreeArea>
-      </ScrollArea>
+      </div>
 
       {/* Dialogs */}
       <CreateItemDialog
