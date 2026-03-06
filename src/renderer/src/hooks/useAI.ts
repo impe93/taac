@@ -71,6 +71,11 @@ export const useLoadedModels = () => {
     mutationFn: (modelId: string) => window.ai.loadModel(modelId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ai', 'models', 'loaded'] })
+    },
+    onError: (error) => {
+      toast.error('Failed to load model', {
+        description: (error as Error)?.message ?? 'Unknown error'
+      })
     }
   })
 

@@ -18,7 +18,6 @@ import { Route as OnboardingIndexImport } from './routes/onboarding/index'
 import { Route as DashboardIndexImport } from './routes/dashboard/index'
 import { Route as SettingsAiImport } from './routes/settings/ai'
 import { Route as NoteNoteIdImport } from './routes/note/$noteId'
-import { Route as AiChatImport } from './routes/ai/chat'
 
 // Create/Update Routes
 
@@ -64,12 +63,6 @@ const NoteNoteIdRoute = NoteNoteIdImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
-const AiChatRoute = AiChatImport.update({
-  id: '/ai/chat',
-  path: '/ai/chat',
-  getParentRoute: () => rootRoute,
-} as any)
-
 // Populate the FileRoutesByPath interface
 
 declare module '@tanstack/react-router' {
@@ -86,13 +79,6 @@ declare module '@tanstack/react-router' {
       path: '/dashboard'
       fullPath: '/dashboard'
       preLoaderRoute: typeof DashboardLayoutImport
-      parentRoute: typeof rootRoute
-    }
-    '/ai/chat': {
-      id: '/ai/chat'
-      path: '/ai/chat'
-      fullPath: '/ai/chat'
-      preLoaderRoute: typeof AiChatImport
       parentRoute: typeof rootRoute
     }
     '/note/$noteId': {
@@ -150,7 +136,6 @@ const DashboardLayoutRouteWithChildren = DashboardLayoutRoute._addFileChildren(
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardLayoutRouteWithChildren
-  '/ai/chat': typeof AiChatRoute
   '/note/$noteId': typeof NoteNoteIdRoute
   '/settings/ai': typeof SettingsAiRoute
   '/dashboard/': typeof DashboardIndexRoute
@@ -160,7 +145,6 @@ export interface FileRoutesByFullPath {
 
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/ai/chat': typeof AiChatRoute
   '/note/$noteId': typeof NoteNoteIdRoute
   '/settings/ai': typeof SettingsAiRoute
   '/dashboard': typeof DashboardIndexRoute
@@ -172,7 +156,6 @@ export interface FileRoutesById {
   __root__: typeof rootRoute
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardLayoutRouteWithChildren
-  '/ai/chat': typeof AiChatRoute
   '/note/$noteId': typeof NoteNoteIdRoute
   '/settings/ai': typeof SettingsAiRoute
   '/dashboard/': typeof DashboardIndexRoute
@@ -185,7 +168,6 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/dashboard'
-    | '/ai/chat'
     | '/note/$noteId'
     | '/settings/ai'
     | '/dashboard/'
@@ -194,7 +176,6 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/ai/chat'
     | '/note/$noteId'
     | '/settings/ai'
     | '/dashboard'
@@ -204,7 +185,6 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/dashboard'
-    | '/ai/chat'
     | '/note/$noteId'
     | '/settings/ai'
     | '/dashboard/'
@@ -216,7 +196,6 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DashboardLayoutRoute: typeof DashboardLayoutRouteWithChildren
-  AiChatRoute: typeof AiChatRoute
   NoteNoteIdRoute: typeof NoteNoteIdRoute
   SettingsAiRoute: typeof SettingsAiRoute
   OnboardingIndexRoute: typeof OnboardingIndexRoute
@@ -226,7 +205,6 @@ export interface RootRouteChildren {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DashboardLayoutRoute: DashboardLayoutRouteWithChildren,
-  AiChatRoute: AiChatRoute,
   NoteNoteIdRoute: NoteNoteIdRoute,
   SettingsAiRoute: SettingsAiRoute,
   OnboardingIndexRoute: OnboardingIndexRoute,
@@ -245,7 +223,6 @@ export const routeTree = rootRoute
       "children": [
         "/",
         "/dashboard",
-        "/ai/chat",
         "/note/$noteId",
         "/settings/ai",
         "/onboarding/",
@@ -260,9 +237,6 @@ export const routeTree = rootRoute
       "children": [
         "/dashboard/"
       ]
-    },
-    "/ai/chat": {
-      "filePath": "ai/chat.tsx"
     },
     "/note/$noteId": {
       "filePath": "note/$noteId.tsx"

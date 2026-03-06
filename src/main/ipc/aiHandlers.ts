@@ -210,11 +210,7 @@ export function cancelBatchIndexing(): void {
  * Checks if the sender is destroyed before sending to avoid errors
  * when the window is closed during batch processing.
  */
-function safeSend(
-  sender: Electron.WebContents,
-  channel: string,
-  data: unknown
-): void {
+function safeSend(sender: Electron.WebContents, channel: string, data: unknown): void {
   if (!sender.isDestroyed()) {
     sender.send(channel, data)
   }
@@ -521,18 +517,19 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
           {
             role: 'system',
             content:
-              'You are a title generator. Output ONLY a 2-4 word plain-text title. Rules: no markdown (no asterisks, no underscores, no backticks), no labels or prefixes (like "Title:", "Titolo:", "Conversation:"), no quotes, no trailing punctuation. Just the plain words of the title.'
+              'Generate a concise 2-5 word title that captures the main topic of this conversation. Output ONLY the title, nothing else. No quotes, no punctuation, no prefixes.'
           },
           {
             role: 'user',
-            content: `Conversation:\nUser: ${userMessage.slice(0, 200)}\nAssistant: ${assistantResponse.slice(0, 200)}`
+            content: `User: ${userMessage.slice(0, 200)}\nAssistant: ${assistantResponse.slice(0, 200)}`
           }
         ]
 
         let rawTitle = ''
         const generator = manager.generateChatCompletion(modelId, titleMessages, {
           maxTokens: 20,
-          temperature: 0.3
+          temperature: 0.3,
+          isolated: true
         })
         for await (const chunk of generator) {
           rawTitle += chunk
@@ -603,7 +600,9 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
         try {
           const folderMeta = await fsManager.readFolderMetadata(note.folderId)
           folderName = folderMeta.name !== 'root' ? folderMeta.name : undefined
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
 
         await service.indexNote(
           {

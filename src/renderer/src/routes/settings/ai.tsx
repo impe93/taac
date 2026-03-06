@@ -1,7 +1,6 @@
 import { type ReactNode, useState } from 'react'
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { Cpu, MessageSquare, Package, Settings2 } from 'lucide-react'
-import { Button } from '@renderer/components/ui/button'
+import { createFileRoute } from '@tanstack/react-router'
+import { Cpu, Package, Settings2 } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@renderer/components/ui/tabs'
 import {
   Card,
@@ -20,7 +19,6 @@ export const Route = createFileRoute('/settings/ai')({
 type TabValue = 'models' | 'hardware' | 'configuration'
 
 function AISettingsPage(): ReactNode {
-  const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState<TabValue>('models')
 
   return (
@@ -32,16 +30,6 @@ function AISettingsPage(): ReactNode {
             Manage AI models, hardware configuration, and inference settings
           </p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => navigate({ to: '/ai/chat' })}
-          className="gap-2"
-          title="Test AI Chat"
-        >
-          <MessageSquare className="size-4" />
-          Test Chat
-        </Button>
       </div>
 
       <Tabs

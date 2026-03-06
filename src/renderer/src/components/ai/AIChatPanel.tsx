@@ -27,7 +27,7 @@ import {
 import { useAIQuickAction, type AIQuickActionType } from '@renderer/hooks/useAIQuickAction'
 import { useSpaces, useActiveSpace } from '@renderer/hooks/useSpaces'
 import { useDownloadedModels } from '@renderer/hooks/useModels'
-import { useLoadedModels } from '@renderer/hooks/useAI'
+import { useLoadedModels, useAIInitialize } from '@renderer/hooks/useAI'
 import { useIndexAllNotes, useEnsureEmbeddingModel } from '@renderer/hooks/useVectorSearch'
 import { useDefaultModelId } from '@renderer/hooks/useDefaultModel'
 import { toast } from 'sonner'
@@ -54,6 +54,16 @@ export const AIChatPanel: FC<AIChatPanelProps> = ({ className, defaultModelId })
   const [enableRAG, setEnableRAG] = useState(true)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [selectedModelId, setSelectedModelId] = useState<string | undefined>(undefined)
+
+  // AI initialization
+  const { isInitialized, isCheckingInitialized, initialize, isInitializing, initializeError } =
+    useAIInitialize()
+
+  useEffect(() => {
+    if (!isCheckingInitialized && !isInitialized && !isInitializing && !initializeError) {
+      initialize()
+    }
+  }, [isCheckingInitialized, isInitialized, isInitializing, initializeError, initialize])
 
   // Model hooks
   const hookDefaultModelId = useDefaultModelId()
@@ -273,7 +283,7 @@ export const AIChatPanel: FC<AIChatPanelProps> = ({ className, defaultModelId })
                     size="sm"
                     className="h-6 px-2 text-xs"
                     onClick={() => loadModel(effectiveModelId)}
-                    disabled={isLoadingModel || !effectiveModelId}
+                    disabled={isLoadingModel || !effectiveModelId || !isInitialized}
                   >
                     {isLoadingModel ? <Loader2 className="mr-1 size-3 animate-spin" /> : null}
                     Load

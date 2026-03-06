@@ -10,7 +10,6 @@ import {
   linkPlugin,
   linkDialogPlugin,
   imagePlugin,
-  tablePlugin,
   codeBlockPlugin,
   codeMirrorPlugin,
   toolbarPlugin,
@@ -21,7 +20,6 @@ import {
   BlockTypeSelect,
   CreateLink,
   InsertImage,
-  InsertTable,
   InsertThematicBreak,
   InsertCodeBlock,
   ChangeCodeMirrorLanguage,
@@ -140,7 +138,6 @@ export const MDXNoteEditor: FC<MDXNoteEditorProps> = ({
       ],
       onClickLinkCallback: handleLinkClick
     }),
-    tablePlugin(),
     imagePlugin({
       imageUploadHandler,
       disableImageResize: false
@@ -208,7 +205,6 @@ export const MDXNoteEditor: FC<MDXNoteEditorProps> = ({
                     <Separator />
                     <CreateLink />
                     <InsertImage />
-                    <InsertTable />
                     <InsertCodeBlock />
                     <InsertThematicBreak />
                   </>

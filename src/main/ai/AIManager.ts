@@ -42,6 +42,7 @@ export interface GenerationOptions {
   temperature?: number
   topP?: number
   stopSequences?: string[]
+  isolated?: boolean
 }
 
 /**
@@ -455,19 +456,41 @@ export class AIManager {
     // Update last used timestamp
     loaded.lastUsed = Date.now()
 
-    // Create or reuse chat session with the context sequence
-    if (!loaded.chatSession && loaded.contextSequence) {
-      loaded.chatSession = new this.nodeLlamaCpp.LlamaChatSession({
-        contextSequence: loaded.contextSequence
-      })
-    }
+    // Create or select the chat session
+    let session: InstanceType<typeof this.nodeLlamaCpp.LlamaChatSession>
+    let tempContext: Awaited<ReturnType<typeof loaded.model.createContext>> | null = null
 
-    if (!loaded.chatSession) {
-      throw new Error(`Failed to create chat session for model ${modelId}`)
+    if (options?.isolated) {
+      // Create a temporary, isolated context and session for one-off completions (e.g. title generation)
+      // This avoids polluting the main chat session's history
+      tempContext = await loaded.model.createContext({ contextSize: 512 })
+      const tempSequence = tempContext.getSequence()
+      // Extract system prompt from messages and pass it to the session constructor
+      const systemMessage = messages.find((m) => m.role === 'system')
+      session = new this.nodeLlamaCpp.LlamaChatSession({
+        contextSequence: tempSequence,
+        systemPrompt: systemMessage?.content
+      })
+    } else {
+      // Reuse or create the persistent chat session
+      if (!loaded.chatSession && loaded.contextSequence) {
+        loaded.chatSession = new this.nodeLlamaCpp.LlamaChatSession({
+          contextSequence: loaded.contextSequence
+        })
+      }
+
+      if (!loaded.chatSession) {
+        throw new Error(`Failed to create chat session for model ${modelId}`)
+      }
+      session = loaded.chatSession
     }
 
     // Convert messages to llama.cpp chat history format
-    const chatHistory = this.convertToChatHistory(messages)
+    // For isolated sessions, filter out system messages (handled via systemPrompt in constructor)
+    const filteredMessages = options?.isolated
+      ? messages.filter((m) => m.role !== 'system')
+      : messages
+    const chatHistory = this.convertToChatHistory(filteredMessages)
 
     // Set up real-time streaming with async queue pattern
     let fullResponse = ''
@@ -477,7 +500,7 @@ export class AIManager {
     let generationError: Error | null = null
 
     // Start generation without awaiting - this allows chunks to be yielded in real-time
-    const generationPromise = loaded.chatSession
+    const generationPromise = session
       .prompt(chatHistory.length > 0 ? chatHistory[chatHistory.length - 1].text : '', {
         maxTokens: options?.maxTokens ?? 2048,
         temperature: options?.temperature ?? 0.7,
@@ -531,6 +554,11 @@ export class AIManager {
 
     // Wait for generation to fully complete and handle any errors
     await generationPromise
+
+    // Dispose temporary context for isolated sessions
+    if (tempContext) {
+      await tempContext.dispose()
+    }
 
     if (generationError) {
       throw generationError

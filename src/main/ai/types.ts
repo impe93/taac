@@ -171,6 +171,7 @@ export interface GenerationOptions {
   temperature?: number
   topP?: number
   stopSequences?: string[]
+  isolated?: boolean
 }
 
 /**
