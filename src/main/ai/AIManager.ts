@@ -159,6 +159,14 @@ export class AIManager {
       this.llama = await this.nodeLlamaCpp.getLlama({ gpu: false })
     }
 
+    const ramGB = ((hardware.memory.totalBytes ?? 0) / (1024 * 1024 * 1024)).toFixed(1)
+    const vramGB = hardware.gpu.vramBytes
+      ? (hardware.gpu.vramBytes / (1024 * 1024 * 1024)).toFixed(1) + 'GB'
+      : 'null (unified)'
+    console.log(
+      `[AIManager] GPU backend: ${gpuFallback ? 'cpu (fallback)' : gpuBackend || 'cpu'} | GPU: ${hardware.gpu.name} | VRAM: ${vramGB} | RAM: ${ramGB}GB`
+    )
+
     this.initialized = true
 
     // Start idle model cleanup interval (check every minute)
@@ -208,8 +216,9 @@ export class AIManager {
 
     const modelPath = join(this.config.modelsDir, modelDef.filename)
 
-    // Calculate optimal GPU layers based on available VRAM
+    // Calculate optimal GPU layers based on available VRAM (or unified memory on Apple Silicon)
     const gpuLayers = this.calculateOptimalGpuLayers(modelDef)
+    console.log(`[AIManager] Loading ${modelId} with ${gpuLayers}/${modelDef.layers} GPU layers`)
 
     try {
       // Load the model with optimized settings
@@ -611,31 +620,52 @@ export class AIManager {
   }
 
   /**
-   * Calculate optimal GPU layers based on available VRAM
+   * Calculate optimal GPU layers based on available VRAM or unified memory (Apple Silicon)
    *
-   * Uses 80% of available VRAM as safety margin to prevent OOM errors.
+   * On Apple Silicon, systeminformation reports vramBytes = null because memory is unified
+   * (shared between CPU and GPU). In this case we use system RAM as a proxy for available
+   * GPU memory, with a 60% safety margin (vs 80% for dedicated VRAM) to leave room for the OS.
    *
    * @param modelDef - The model definition with size and layer info
    * @returns Number of layers to offload to GPU (0 for CPU only)
    */
   private calculateOptimalGpuLayers(modelDef: ModelDefinition): number {
-    // CPU only if no VRAM info available
-    if (!this.hardwareInfo?.gpu.vramBytes) {
+    const vram = this.hardwareInfo?.gpu.vramBytes
+
+    // Unified memory: macOS without dedicated VRAM = always Apple Silicon (M1/M2/M3/M4/M5/...)
+    // Do NOT rely on gpu.name which can be 'Unknown' when systeminformation fails to detect
+    // the chip model (e.g. on M5, system_profiler may return no display controller info).
+    // hasMetal is simply `process.platform === 'darwin'`, so the combination of
+    // hasMetal + no dedicated VRAM is unambiguous: it is Apple Silicon unified memory.
+    const isUnifiedMemory = !vram && this.hardwareInfo?.gpu.hasMetal === true
+
+    // For Apple Silicon, fall back to system RAM as the unified memory proxy
+    const effectiveVram =
+      vram ?? (isUnifiedMemory ? (this.hardwareInfo?.memory.totalBytes ?? null) : null) ?? null
+
+    if (!effectiveVram) {
       return 0
     }
 
-    const availableVram = this.hardwareInfo.gpu.vramBytes
     const modelSize = modelDef.sizeBytes
     const totalLayers = modelDef.layers
 
     // Estimate: each layer uses roughly modelSize / totalLayers
     const layerSize = modelSize / totalLayers
 
-    // Use 80% of VRAM as safety margin
-    const maxLayersInVram = Math.floor((availableVram * 0.8) / layerSize)
+    // Use 60% of unified memory (Apple Silicon) or 80% of dedicated VRAM as safety margin
+    const safetyMargin = isUnifiedMemory && !vram ? 0.6 : 0.8
+    const maxLayersInVram = Math.floor((effectiveVram * safetyMargin) / layerSize)
+
+    const result = Math.min(maxLayersInVram, totalLayers)
+    const effectiveVramGB = (effectiveVram / (1024 ** 3)).toFixed(1)
+    console.log(
+      `[AIManager] GPU layers calc: unified=${isUnifiedMemory} effectiveVram=${effectiveVramGB}GB` +
+        ` layers=${result}/${totalLayers}`
+    )
 
     // Return the minimum of calculated layers and total layers
-    return Math.min(maxLayersInVram, totalLayers)
+    return result
   }
 
   /**
