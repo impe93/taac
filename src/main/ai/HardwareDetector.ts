@@ -100,29 +100,13 @@ export class HardwareDetector {
     const chatModels = compatibleModels.filter((m) => m.capabilities.includes('chat'))
     const embeddingModels = compatibleModels.filter((m) => m.capabilities.includes('embedding'))
 
-    // Chat model recommendation based on tier
-    if (
-      (hardware.tier === 'high' || hardware.tier === 'ultra') &&
-      chatModels.find((m) => m.id === 'llama-3.1-8b-q8')
-    ) {
-      recommendations.push({
-        modelId: 'llama-3.1-8b-q8',
-        reason: 'Best quality 8B model with full GPU acceleration',
-        estimatedPerformance: hardware.tier === 'ultra' ? 'very-fast' : 'fast',
-        gpuLayersRecommended: -1
-      })
-    }
-
-    // Always recommend Qwen3 4B as lighter alternative (or primary for low/medium)
+    // Chat model recommendation
     if (chatModels.find((m) => m.id === 'qwen3-4b-instruct-2507-q8')) {
       const perf: EstimatedPerformance =
         hardware.tier === 'high' || hardware.tier === 'ultra' ? 'very-fast' : 'fast'
       recommendations.push({
         modelId: 'qwen3-4b-instruct-2507-q8',
-        reason:
-          hardware.tier === 'high' || hardware.tier === 'ultra'
-            ? 'Lighter alternative with strong reasoning capabilities'
-            : 'Best model for your hardware with strong reasoning and multilingual capabilities',
+        reason: 'Chat model with strong reasoning and multilingual capabilities',
         estimatedPerformance: perf,
         gpuLayersRecommended: hardware.tier === 'low' ? 0 : -1
       })

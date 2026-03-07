@@ -51,7 +51,7 @@ function HomeView(): ReactNode {
   }
 
   const handleGoToAISettings = (): void => {
-    navigate({ to: '/settings/ai' })
+    navigate({ to: '/settings' })
   }
 
   const handleOpenAIPanel = (): void => {

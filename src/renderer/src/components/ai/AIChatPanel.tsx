@@ -26,8 +26,7 @@ import {
 } from '@renderer/hooks/useConversations'
 import { useAIQuickAction, type AIQuickActionType } from '@renderer/hooks/useAIQuickAction'
 import { useSpaces, useActiveSpace } from '@renderer/hooks/useSpaces'
-import { useDownloadedModels } from '@renderer/hooks/useModels'
-import { useLoadedModels, useAIInitialize } from '@renderer/hooks/useAI'
+import { useAIInitialize } from '@renderer/hooks/useAI'
 import { useIndexAllNotes, useEnsureEmbeddingModel } from '@renderer/hooks/useVectorSearch'
 import { useDefaultModelId } from '@renderer/hooks/useDefaultModel'
 import { toast } from 'sonner'
@@ -38,7 +37,6 @@ import {
   Sparkles,
   FolderOpen,
   ChevronDown,
-  Cpu,
   Database,
   Loader2
 } from 'lucide-react'
@@ -53,7 +51,6 @@ export const AIChatPanel: FC<AIChatPanelProps> = ({ className, defaultModelId })
   const [selectedSpaceId, setSelectedSpaceId] = useState<string | undefined>(undefined)
   const [enableRAG, setEnableRAG] = useState(true)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
-  const [selectedModelId, setSelectedModelId] = useState<string | undefined>(undefined)
 
   // AI initialization
   const { isInitialized, isCheckingInitialized, initialize, isInitializing, initializeError } =
@@ -67,18 +64,9 @@ export const AIChatPanel: FC<AIChatPanelProps> = ({ className, defaultModelId })
 
   // Model hooks
   const hookDefaultModelId = useDefaultModelId()
-  const { data: downloadedModels } = useDownloadedModels()
-  const { loadedModels, loadModel, isLoadingModel, unloadModel, isUnloadingModel } =
-    useLoadedModels()
 
-  // Effective model ID: user selection > prop > hook default
-  const effectiveModelId = selectedModelId ?? defaultModelId ?? hookDefaultModelId
-
-  // Check if current model is loaded
-  const isCurrentModelLoaded = loadedModels.some((m) => m.id === effectiveModelId)
-
-  // Filter to only chat models (not embedding models)
-  const chatModels = downloadedModels?.filter((m) => m.capabilities.includes('chat')) ?? []
+  // Effective model ID: prop > hook default
+  const effectiveModelId = defaultModelId ?? hookDefaultModelId
 
   const createConversation = useCreateConversation()
   const addNoteToConversation = useAddNoteToConversation()
@@ -236,61 +224,6 @@ export const AIChatPanel: FC<AIChatPanelProps> = ({ className, defaultModelId })
 
           <CollapsibleContent>
             <div className="space-y-2 border-b bg-muted/30 px-3 py-2">
-              {/* Model selector */}
-              <div className="flex items-center gap-2">
-                <Cpu className="size-3.5 shrink-0 text-muted-foreground" />
-                <Select value={effectiveModelId} onValueChange={setSelectedModelId}>
-                  <SelectTrigger className="h-7 flex-1 text-xs">
-                    <SelectValue placeholder="Select model" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {chatModels.map((model) => (
-                      <SelectItem key={model.id} value={model.id} className="text-xs">
-                        <div className="flex items-center gap-2">
-                          <span>{model.name}</span>
-                          {loadedModels.some((m) => m.id === model.id) && (
-                            <Badge variant="default" className="h-4 px-1 text-[10px]">
-                              Loaded
-                            </Badge>
-                          )}
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Load/Unload model */}
-              <div className="flex items-center justify-between">
-                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Cpu className="size-3.5" />
-                  Model status
-                </span>
-                {isCurrentModelLoaded ? (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-6 px-2 text-xs"
-                    onClick={() => unloadModel(effectiveModelId)}
-                    disabled={isUnloadingModel}
-                  >
-                    {isUnloadingModel ? <Loader2 className="mr-1 size-3 animate-spin" /> : null}
-                    Unload
-                  </Button>
-                ) : (
-                  <Button
-                    variant="default"
-                    size="sm"
-                    className="h-6 px-2 text-xs"
-                    onClick={() => loadModel(effectiveModelId)}
-                    disabled={isLoadingModel || !effectiveModelId || !isInitialized}
-                  >
-                    {isLoadingModel ? <Loader2 className="mr-1 size-3 animate-spin" /> : null}
-                    Load
-                  </Button>
-                )}
-              </div>
-
               {/* Space selector */}
               <div className="flex items-center gap-2">
                 <FolderOpen className="size-3.5 shrink-0 text-muted-foreground" />

@@ -1,16 +1,9 @@
 import { type ReactElement } from 'react'
-import { useNavigate } from '@tanstack/react-router'
-import { Settings } from 'lucide-react'
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem
+  SidebarHeader
 } from '@renderer/components/ui/sidebar'
 import { SpaceHeader } from './spaces/space-header'
 import { SpaceSelector } from './spaces/space-selector'
@@ -18,29 +11,12 @@ import { NotesTree } from './notes-tree/NotesTree'
 import { DndProvider } from './dnd/DndProvider'
 
 export function AppSidebar(): ReactElement {
-  const navigate = useNavigate()
-
   return (
     <Sidebar>
       <DndProvider>
         <SidebarHeader>
           <SpaceHeader />
         </SidebarHeader>
-        <SidebarGroup className="py-0">
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  onClick={() => navigate({ to: '/settings/ai' })}
-                  tooltip="AI Settings"
-                >
-                  <Settings className="size-4" />
-                  <span>AI Settings</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
         <SidebarContent>
           <NotesTree />
         </SidebarContent>

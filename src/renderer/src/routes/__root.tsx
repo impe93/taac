@@ -1,6 +1,6 @@
 import '../assets/global.css'
 import { type FC } from 'react'
-import { createRootRoute, Outlet } from '@tanstack/react-router'
+import { createRootRoute, Outlet, useNavigate } from '@tanstack/react-router'
 import { Providers } from '@renderer/components/providers'
 import { SidebarTrigger } from '@renderer/components/ui/sidebar'
 import { SidebarInset } from '@renderer/components/ui/sidebar'
@@ -14,13 +14,14 @@ import {
   WINDOW_BORDER_WIDTH,
   WINDOW_TRAFFIC_LIGHTS_HEIGHT
 } from '@renderer/components/window'
-import { Bot } from 'lucide-react'
+import { Bot, Settings } from 'lucide-react'
 import { cn } from '@renderer/lib/utils'
 import { useConfig } from '@renderer/hooks/useConfig'
 
 const RootLayout: FC = () => {
   const isMacOS = window.platform === 'darwin'
   const { isOpen, toggle } = useAIChatPanel()
+  const navigate = useNavigate()
   const { data: onboardingDone, isLoading } = useConfig('onboardingCompleted')
 
   // Show minimal layout during onboarding or while loading config
@@ -61,6 +62,21 @@ const RootLayout: FC = () => {
             <header className="flex h-16 shrink-0 items-center justify-between gap-2 border-b transition-[width,height] ease-linear group-has-[[data-collapsible=icon]]/sidebar-wrapper:h-12">
               <div className="flex items-center gap-2 px-4">
                 <SidebarTrigger className="-ml-1" />
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-8"
+                      onClick={() => navigate({ to: '/settings' })}
+                    >
+                      <Settings className="size-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">
+                    <p>Settings</p>
+                  </TooltipContent>
+                </Tooltip>
               </div>
               {/* AI Panel toggle button */}
               <div className="hidden items-center gap-2 px-4 md:flex">

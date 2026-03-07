@@ -36,25 +36,6 @@ const CURATED_MODELS: ModelDefinition[] = [
   },
 
   // ============================================================================
-  // HIGH TIER - High-quality models (8-16GB)
-  // ============================================================================
-  {
-    id: 'llama-3.1-8b-q8',
-    name: 'Llama 3.1 8B (Q8_0)',
-    description: 'Meta Llama 3.1 8B with higher quantization for better quality output',
-    filename: 'Meta-Llama-3.1-8B-Instruct-Q8_0.gguf',
-    sizeBytes: 8.5 * 1024 * 1024 * 1024, // ~8.5GB
-    layers: 32,
-    quantization: 'Q8_0',
-    contextLength: 131072,
-    capabilities: ['chat', 'code', 'reasoning'],
-    hardwareTier: 'high',
-    downloadUrl:
-      'https://huggingface.co/lmstudio-community/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-8B-Instruct-Q8_0.gguf',
-    license: 'Llama 3.1 Community License'
-  },
-
-  // ============================================================================
   // EMBEDDING MODELS - For vector search and RAG
   // ============================================================================
   {
