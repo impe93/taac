@@ -123,6 +123,9 @@
     "overrides": {
       "chalk": "^4.1.2"
     },
-    "neverBuiltDependencies": []
+    "neverBuiltDependencies": [],
+    "patchedDependencies": {
+      "node-llama-cpp": "patches/node-llama-cpp.patch"
+    }
   }
 }

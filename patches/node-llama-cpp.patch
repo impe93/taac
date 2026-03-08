@@ -1,0 +1,13 @@
+diff --git a/dist/utils/resolveGithubRelease.js b/dist/utils/resolveGithubRelease.js
+index 94ed0a0517fa7cdf67353e15801a7725c21bee2c..b9c1fe713cc5233059eb16895c5d84f1c925cbd5 100644
+--- a/dist/utils/resolveGithubRelease.js
++++ b/dist/utils/resolveGithubRelease.js
+@@ -1,6 +1,7 @@
+-import { Octokit } from "octokit";
++// Octokit loaded dynamically to avoid breaking Electron asar packaging
+ import { getConsoleLogPrefix } from "./getConsoleLogPrefix.js";
+ export async function resolveGithubRelease(githubOwner, githubRepo, release) {
++    const { Octokit } = await import("octokit");
+     const octokit = new Octokit();
+     const repo = githubOwner + "/" + githubRepo;
+     let githubRelease = null;

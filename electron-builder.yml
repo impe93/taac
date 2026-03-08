@@ -1,5 +1,5 @@
-appId: com.electron.app
-productName: TaacNotes
+appId: com.taacnotes.app
+productName: Taac
 directories:
   buildResources: build
 files:
@@ -9,6 +9,10 @@ files:
   - '!{.eslintignore,.eslintrc.cjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  # octokit is used by node-llama-cpp only for GitHub release resolution (never
+  # called in our app). A pnpm patch converts the static import to dynamic,
+  # allowing safe exclusion. Including octokit doesn't work either because
+  # universal-github-app-jwt uses #crypto subpath imports incompatible with asar.
   - '!node_modules/octokit/**'
   - '!node_modules/@octokit/**'
   - '!node_modules/universal-github-app-jwt/**'
@@ -22,6 +26,7 @@ asarUnpack:
   - "**/*.node"
   - "**/*.dylib"
   - "**/*.so"
+  - "**/*.dll"
 win:
   executableName: electron-tanstack
 nsis:
