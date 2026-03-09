@@ -13,6 +13,7 @@ export interface AppConfig {
     x?: number
     y?: number
   }
+  isMaximized: boolean
   recentNotes: string[]
   activeSpaceId: string | null
   spacesInitialized: boolean
@@ -90,6 +91,10 @@ const schema = {
       y: { type: 'number' }
     },
     default: { width: 900, height: 670 }
+  },
+  isMaximized: {
+    type: 'boolean',
+    default: true
   },
   recentNotes: {
     type: 'array',

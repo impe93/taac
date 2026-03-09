@@ -50,10 +50,16 @@ export function getOrCreateFsManager(spaceId: string): FileSystemManager {
 }
 
 function createWindow(): void {
+  const savedBounds = configStore.get('windowBounds')
+  const savedIsMaximized = configStore.get('isMaximized')
+
   // Create the browser window.
   const mainWindow = new BrowserWindow({
-    width: 900,
-    height: 670,
+    width: savedBounds.width,
+    height: savedBounds.height,
+    ...(savedBounds.x !== undefined && savedBounds.y !== undefined
+      ? { x: savedBounds.x, y: savedBounds.y }
+      : {}),
     show: false,
     autoHideMenuBar: true,
     titleBarStyle: 'hiddenInset',
@@ -65,10 +71,22 @@ function createWindow(): void {
   })
 
   mainWindow.once('ready-to-show', () => {
+    if (savedIsMaximized) {
+      mainWindow.maximize()
+    }
     mainWindow.show()
     mainWindow.focus()
     if (is.dev) {
       mainWindow.webContents.openDevTools()
+    }
+  })
+
+  // Save window state on close
+  mainWindow.on('close', () => {
+    const isMaximized = mainWindow.isMaximized()
+    configStore.set('isMaximized', isMaximized)
+    if (!isMaximized) {
+      configStore.set('windowBounds', mainWindow.getBounds())
     }
   })
 
