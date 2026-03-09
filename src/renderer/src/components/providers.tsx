@@ -13,6 +13,7 @@ import {
   loadTree
 } from '@renderer/store/slices/notesTreeSlice'
 import type { FolderMetadata, Note } from '@preload/types'
+import { useNavigate } from '@tanstack/react-router'
 
 // Type alias per la struttura della cache multi-spazio
 type SpacesCacheStructure = Record<
@@ -115,12 +116,17 @@ async function migrateFromLegacy(activeSpaceId: string): Promise<SpacesCacheStru
 // Componente per inizializzare Redux all'avvio con hydration multi-stage
 function ReduxInitializer({ children }: { children: React.ReactNode }): React.ReactElement {
   const dispatch = useAppDispatch()
+  const navigate = useNavigate()
 
   useEffect(() => {
     const initializeRedux = async (): Promise<void> => {
       try {
-        // Get active space ID
-        const activeSpaceId = await window.config.get('activeSpaceId')
+        // Get active space ID and onboarding status in parallel
+        const [activeSpaceId, onboardingCompleted] = await Promise.all([
+          window.config.get('activeSpaceId'),
+          window.config.get('onboardingCompleted')
+        ])
+
         if (!activeSpaceId) {
           console.warn('No active space ID found')
           return
@@ -134,6 +140,8 @@ function ReduxInitializer({ children }: { children: React.ReactNode }): React.Re
           spacesCache = await migrateFromLegacy(activeSpaceId)
         }
 
+        let lastNoteId: string | null = null
+
         if (spacesCache && typeof spacesCache === 'object') {
           // Dispatch hydration di TUTTI gli spazi
           dispatch(
@@ -142,9 +150,23 @@ function ReduxInitializer({ children }: { children: React.ReactNode }): React.Re
               activeSpaceId
             })
           )
+
+          // Recupera l'ultima nota aperta dall'active space cache
+          const activeSpaceCache = (spacesCache as SpacesCacheStructure)[activeSpaceId]
+          lastNoteId = activeSpaceCache?.ui?.selectedNoteId ?? null
         } else {
           // Nessuna cache trovata, imposta solo activeSpaceId
           dispatch(switchActiveSpace(activeSpaceId))
+        }
+
+        // Naviga all'ultima nota aperta se l'onboarding è completato e la nota esiste in cache
+        if (onboardingCompleted && lastNoteId) {
+          const activeSpaceCache = (spacesCache as SpacesCacheStructure)?.[activeSpaceId]
+          const noteExistsInCache = !!activeSpaceCache?.tree?.notes?.[lastNoteId]
+
+          if (noteExistsInCache) {
+            navigate({ to: '/note/$noteId', params: { noteId: lastNoteId } })
+          }
         }
 
         // Stage 2: Riconcilia solo spazio attivo con filesystem
@@ -165,7 +187,7 @@ function ReduxInitializer({ children }: { children: React.ReactNode }): React.Re
     }
 
     initializeRedux()
-  }, [dispatch])
+  }, [dispatch, navigate])
 
   return <>{children}</>
 }
