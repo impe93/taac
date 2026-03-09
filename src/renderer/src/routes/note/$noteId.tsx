@@ -7,10 +7,16 @@ import {
   selectActiveSpaceId
 } from '@renderer/store/slices/notesTreeSlice'
 import { MDXNoteEditor } from '@renderer/components/editor/MDXNoteEditor'
+import { RawMarkdownEditor } from '@renderer/components/editor/RawMarkdownEditor'
 import { NoteTitle } from '@renderer/components/editor/NoteTitle'
 // import { NoteAIActions } from '@renderer/components/editor/NoteAIActions'
 import { useAutoSave } from '@renderer/hooks/useAutoSave'
 import { useAutoIndexNote } from '@renderer/hooks/useAutoIndexNote'
+import { useEditorMode } from '@renderer/hooks/useEditorMode'
+import { Button } from '@renderer/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip'
+import { Code, Eye } from 'lucide-react'
+import { cn } from '@renderer/lib/utils'
 import { toast } from 'sonner'
 
 export const Route = createFileRoute('/note/$noteId')({
@@ -103,6 +109,9 @@ function NoteView(): ReactElement {
     [triggerSave]
   )
 
+  // Editor mode toggle
+  const { isSourceMode, toggle: toggleEditorMode } = useEditorMode()
+
   // Loading/not found state
   if (!note) {
     return (
@@ -118,14 +127,31 @@ function NoteView(): ReactElement {
       <div className="px-6 py-4 border-b border-border">
         <div className="flex items-start justify-between gap-4">
           <NoteTitle title={title} onChange={handleTitleChange} placeholder="Untitled" />
-          {/* {activeSpaceId && (
-            <NoteAIActions
-              noteId={note.id}
-              spaceId={activeSpaceId}
-              title={title}
-              content={content}
-            />
-          )} */}
+          <div className="flex items-center gap-2 shrink-0">
+            {/* {activeSpaceId && (
+              <NoteAIActions
+                noteId={note.id}
+                spaceId={activeSpaceId}
+                title={title}
+                content={content}
+              />
+            )} */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={isSourceMode ? 'default' : 'ghost'}
+                  size="icon"
+                  className={cn('size-8', isSourceMode && 'bg-primary text-primary-foreground')}
+                  onClick={toggleEditorMode}
+                >
+                  {isSourceMode ? <Eye className="size-4" /> : <Code className="size-4" />}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                <p>{isSourceMode ? 'Editor WYSIWYG' : 'Editor Markdown'}</p>
+              </TooltipContent>
+            </Tooltip>
+          </div>
         </div>
         <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
           <span>Last updated: {new Date(note.updatedAt).toLocaleString()}</span>
@@ -136,7 +162,15 @@ function NoteView(): ReactElement {
 
       {/* Editor */}
       <div className="flex-1 overflow-auto p-6">
-        <MDXNoteEditor markdown={content} onChange={handleContentChange} spaceId={activeSpaceId} />
+        {isSourceMode ? (
+          <RawMarkdownEditor markdown={content} onChange={handleContentChange} />
+        ) : (
+          <MDXNoteEditor
+            markdown={content}
+            onChange={handleContentChange}
+            spaceId={activeSpaceId}
+          />
+        )}
       </div>
     </div>
   )

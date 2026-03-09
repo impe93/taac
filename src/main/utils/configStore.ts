@@ -21,6 +21,8 @@ export interface AppConfig {
   // AI Chat Panel state
   aiChatPanelOpen: boolean
   aiChatPanelSize: number
+  // Editor mode preference
+  editorMode: 'wysiwyg' | 'source'
   // Redux persistence (new multi-space structure)
   reduxSpacesCaches?: Record<
     string,
@@ -122,6 +124,11 @@ const schema = {
     minimum: 20,
     maximum: 50,
     default: 35
+  },
+  editorMode: {
+    type: 'string',
+    enum: ['wysiwyg', 'source'],
+    default: 'wysiwyg'
   },
   reduxSpacesCaches: {
     type: 'object',

@@ -436,3 +436,12 @@
 .mdx-note-editor [data-placeholder]::before {
   color: var(--muted-foreground);
 }
+
+/* Raw Markdown Editor */
+.raw-markdown-editor .cm-editor {
+  height: 100%;
+}
+
+.raw-markdown-editor .cm-editor.cm-focused {
+  outline: none;
+}

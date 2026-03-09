@@ -74,6 +74,8 @@ export interface AppConfig {
   // AI Chat Panel state
   aiChatPanelOpen: boolean
   aiChatPanelSize: number
+  // Editor mode preference
+  editorMode: 'wysiwyg' | 'source'
   // Redux persistence (new multi-space structure)
   reduxSpacesCaches?: Record<
     string,
