@@ -38,11 +38,13 @@ pnpm ui-add             # Add new Shadcn/UI components (shadcn "new-york" style)
 ### Electron Three-Process Model
 
 1. **Main Process** (`src/main/`) — Entry: `src/main/index.ts`
+
    - Managers: `FileSystemManager`, `SpaceManager`, `configStore`
    - AI subsystem: `src/main/ai/` (AIManager, ModelRegistry, EmbeddingService, VectorDBManager, HardwareDetector)
    - IPC handlers: `src/main/ipc/` (fileHandlers, configHandlers, spaceHandlers, aiHandlers)
 
 2. **Preload Scripts** (`src/preload/`)
+
    - Exposes `window.fileSystem`, `window.config`, `window.space`, `window.platform`
    - Types in `src/preload/types.ts` and `src/preload/index.d.ts`
 
@@ -96,10 +98,12 @@ See `docs/AI_ARCHITECTURE.md` for full design. Key components in `src/main/ai/`:
 - **ConversationManager** — Chat persistence
 
 **Current Models:**
+
 - Chat: Qwen3-4B-Instruct-2507 Q8 (medium tier), Llama 3.1 8B Q8 (high tier)
 - Embedding: nomic-embed-text-v2-moe Q8 (768 dim, multilingual)
 
 **Critical RAG Details:**
+
 - nomic-embed-text-v2-moe **requires task prefixes**: `search_document: ` for docs, `search_query: ` for queries — handled by `embedDocument()` and `embedQuery()` methods; `embedText()` is raw
 - Distance-to-relevance conversion: sqlite-vec returns L2 distance; cosine similarity = `1 - dist²/2` (quadratic, NOT linear) because vectors are L2-normalized
 - Relevance threshold: 20% cosine similarity in ChatInterface.tsx
@@ -108,6 +112,7 @@ See `docs/AI_ARCHITECTURE.md` for full design. Key components in `src/main/ai/`:
 ### TypeScript Configuration
 
 Three tsconfig files:
+
 - `tsconfig.node.json` — Main process/Node.js
 - `tsconfig.web.json` — Renderer/React
 - `tsconfig.app.json` — Application-specific

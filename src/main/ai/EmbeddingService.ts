@@ -290,7 +290,12 @@ export class EmbeddingService {
       for (let i = 0; i < chunks.length; i++) {
         const chunk = chunks[i]
         // Use contextual header for embedding, but store original text in DB
-        const textToEmbed = this.buildEmbeddingText(chunk.text, note.title, chunk.sectionHeader, note.folderName)
+        const textToEmbed = this.buildEmbeddingText(
+          chunk.text,
+          note.title,
+          chunk.sectionHeader,
+          note.folderName
+        )
         const embedding = await this.embedDocument(textToEmbed)
 
         await vectorDB.upsertDocument({
@@ -363,7 +368,12 @@ export class EmbeddingService {
         for (let j = 0; j < chunks.length; j++) {
           const chunk = chunks[j]
           // Use contextual header for embedding, but store original text in DB
-          const textToEmbed = this.buildEmbeddingText(chunk.text, note.title, chunk.sectionHeader, note.folderName)
+          const textToEmbed = this.buildEmbeddingText(
+            chunk.text,
+            note.title,
+            chunk.sectionHeader,
+            note.folderName
+          )
           const embedding = await this.embedDocument(textToEmbed)
 
           await vectorDB.upsertDocument({

@@ -1,15 +1,6 @@
 import { type FC, type ReactNode, useMemo } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import {
-  Bot,
-  Search,
-  Download,
-  Trash2,
-  CheckCircle2,
-  Pause,
-  Play,
-  X,
-} from 'lucide-react'
+import { Bot, Search, Download, Trash2, CheckCircle2, Pause, Play, X } from 'lucide-react'
 import { Card, CardContent } from '@renderer/components/ui/card'
 import { Badge } from '@renderer/components/ui/badge'
 import { Button } from '@renderer/components/ui/button'
@@ -151,9 +142,7 @@ const ModelRow: FC<ModelRowProps> = ({
         )}
 
         {hasError && downloadProgress && (
-          <p className="text-xs text-destructive">
-            {downloadProgress.error || 'Download failed'}
-          </p>
+          <p className="text-xs text-destructive">{downloadProgress.error || 'Download failed'}</p>
         )}
 
         {/* Actions row */}
@@ -192,7 +181,12 @@ const ModelRow: FC<ModelRowProps> = ({
               </Button>
             </>
           ) : hasError ? (
-            <Button variant="outline" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={() => onDownload(model.id)}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 gap-1 px-2 text-xs"
+              onClick={() => onDownload(model.id)}
+            >
               <Download className="size-3" />
               Retry
             </Button>
@@ -217,7 +211,11 @@ const ModelRow: FC<ModelRowProps> = ({
               </Button>
             </>
           ) : (
-            <Button size="sm" className="h-7 gap-1 px-2 text-xs" onClick={() => onDownload(model.id)}>
+            <Button
+              size="sm"
+              className="h-7 gap-1 px-2 text-xs"
+              onClick={() => onDownload(model.id)}
+            >
               <Download className="size-3" />
               Download
             </Button>

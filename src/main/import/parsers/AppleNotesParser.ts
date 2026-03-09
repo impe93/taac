@@ -696,9 +696,10 @@ export class AppleNotesParser extends BaseParser {
   // --------------------------------------------------------------------------
 
   private buildEntityKeys(db: InstanceType<typeof Database>): EntityKeys {
-    const rows = db
-      .prepare('SELECT Z_ENT, Z_NAME FROM Z_PRIMARYKEY')
-      .all() as { Z_ENT: number; Z_NAME: string }[]
+    const rows = db.prepare('SELECT Z_ENT, Z_NAME FROM Z_PRIMARYKEY').all() as {
+      Z_ENT: number
+      Z_NAME: string
+    }[]
 
     const map: Record<string, number> = {}
     for (const row of rows) map[row.Z_NAME] = row.Z_ENT
@@ -712,10 +713,7 @@ export class AppleNotesParser extends BaseParser {
     }
   }
 
-  private buildTrashFolderIds(
-    db: InstanceType<typeof Database>,
-    keys: EntityKeys
-  ): number[] {
+  private buildTrashFolderIds(db: InstanceType<typeof Database>, keys: EntityKeys): number[] {
     try {
       const rows = db
         .prepare(
@@ -729,10 +727,7 @@ export class AppleNotesParser extends BaseParser {
     }
   }
 
-  private buildFolderMap(
-    db: InstanceType<typeof Database>,
-    keys: EntityKeys
-  ): Map<number, string> {
+  private buildFolderMap(db: InstanceType<typeof Database>, keys: EntityKeys): Map<number, string> {
     const rows = db
       .prepare(
         `SELECT Z_PK, ZTITLE2, ZPARENT

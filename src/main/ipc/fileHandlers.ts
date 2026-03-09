@@ -40,7 +40,9 @@ export function registerFileHandlers(
         try {
           const folderMeta = await fsManager.readFolderMetadata(folderId)
           folderName = folderMeta.name !== 'root' ? folderMeta.name : undefined
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
         onNoteSaved?.(note.id, spaceId, folderId, note.content, note.title, folderName)
 
         return note
@@ -81,8 +83,17 @@ export function registerFileHandlers(
           try {
             const folderMeta = await fsManager.readFolderMetadata(folderId)
             folderName = folderMeta.name !== 'root' ? folderMeta.name : undefined
-          } catch { /* ignore */ }
-          onNoteSaved?.(noteId, spaceId, folderId, updatedNote.content, updatedNote.title, folderName)
+          } catch {
+            /* ignore */
+          }
+          onNoteSaved?.(
+            noteId,
+            spaceId,
+            folderId,
+            updatedNote.content,
+            updatedNote.title,
+            folderName
+          )
         }
 
         return updatedNote

@@ -350,7 +350,12 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
       await addMessage('assistant', response, noteRefs)
 
       // Auto-generate title after first exchange in a persistent conversation
-      if (isPersistent && conversationId && isFirstMessage && conversation?.title === 'New conversation') {
+      if (
+        isPersistent &&
+        conversationId &&
+        isFirstMessage &&
+        conversation?.title === 'New conversation'
+      ) {
         void (async (): Promise<void> => {
           try {
             const generatedTitle = await window.ai.generateTitle(

@@ -23,37 +23,37 @@ import { Route as NoteNoteIdImport } from './routes/note/$noteId'
 const DashboardLayoutRoute = DashboardLayoutImport.update({
   id: '/dashboard',
   path: '/dashboard',
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => rootRoute
 } as any)
 
 const IndexRoute = IndexImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => rootRoute
 } as any)
 
 const SettingsIndexRoute = SettingsIndexImport.update({
   id: '/settings/',
   path: '/settings/',
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => rootRoute
 } as any)
 
 const OnboardingIndexRoute = OnboardingIndexImport.update({
   id: '/onboarding/',
   path: '/onboarding/',
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => rootRoute
 } as any)
 
 const DashboardIndexRoute = DashboardIndexImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => DashboardLayoutRoute,
+  getParentRoute: () => DashboardLayoutRoute
 } as any)
 
 const NoteNoteIdRoute = NoteNoteIdImport.update({
   id: '/note/$noteId',
   path: '/note/$noteId',
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => rootRoute
 } as any)
 
 // Populate the FileRoutesByPath interface
@@ -112,11 +112,11 @@ interface DashboardLayoutRouteChildren {
 }
 
 const DashboardLayoutRouteChildren: DashboardLayoutRouteChildren = {
-  DashboardIndexRoute: DashboardIndexRoute,
+  DashboardIndexRoute: DashboardIndexRoute
 }
 
 const DashboardLayoutRouteWithChildren = DashboardLayoutRoute._addFileChildren(
-  DashboardLayoutRouteChildren,
+  DashboardLayoutRouteChildren
 )
 
 export interface FileRoutesByFullPath {
@@ -148,13 +148,7 @@ export interface FileRoutesById {
 
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths:
-    | '/'
-    | '/dashboard'
-    | '/note/$noteId'
-    | '/dashboard/'
-    | '/onboarding'
-    | '/settings'
+  fullPaths: '/' | '/dashboard' | '/note/$noteId' | '/dashboard/' | '/onboarding' | '/settings'
   fileRoutesByTo: FileRoutesByTo
   to: '/' | '/note/$noteId' | '/dashboard' | '/onboarding' | '/settings'
   id:
@@ -181,7 +175,7 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardLayoutRoute: DashboardLayoutRouteWithChildren,
   NoteNoteIdRoute: NoteNoteIdRoute,
   OnboardingIndexRoute: OnboardingIndexRoute,
-  SettingsIndexRoute: SettingsIndexRoute,
+  SettingsIndexRoute: SettingsIndexRoute
 }
 
 export const routeTree = rootRoute

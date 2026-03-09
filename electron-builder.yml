@@ -23,10 +23,10 @@ asarUnpack:
   - node_modules/better-sqlite3/**
   - node_modules/node-llama-cpp/**
   - node_modules/@node-llama-cpp/**
-  - "**/*.node"
-  - "**/*.dylib"
-  - "**/*.so"
-  - "**/*.dll"
+  - '**/*.node'
+  - '**/*.dylib'
+  - '**/*.so'
+  - '**/*.dll'
 win:
   executableName: electron-tanstack
 nsis:

@@ -252,7 +252,9 @@ export class VectorDBManager {
 
       // Migration: add schema_version column for forced re-indexing on format changes
       try {
-        this.db.exec('ALTER TABLE indexing_status ADD COLUMN schema_version INTEGER NOT NULL DEFAULT 1')
+        this.db.exec(
+          'ALTER TABLE indexing_status ADD COLUMN schema_version INTEGER NOT NULL DEFAULT 1'
+        )
       } catch {
         // Column already exists, ignore
       }
@@ -1127,9 +1129,7 @@ export class VectorDBManager {
    * Used by expandToSection to fetch the complete section content.
    * Reference: docs/RAG_ARCHITECTURE.md §10.2 — Livello 2: Section-Based Retrieval
    */
-  getChunksBySection(
-    sectionId: string
-  ): {
+  getChunksBySection(sectionId: string): {
     id: string
     chunkIndex: number
     content: string

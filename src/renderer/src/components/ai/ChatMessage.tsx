@@ -71,10 +71,7 @@ export const ChatMessage: FC<ChatMessageProps> = ({
           (acc, ref) => {
             const existing = acc[ref.noteId]
             // Keep the reference with higher relevance score, or the first one if scores are equal
-            if (
-              !existing ||
-              (ref.relevanceScore ?? 0) > (existing.relevanceScore ?? 0)
-            ) {
+            if (!existing || (ref.relevanceScore ?? 0) > (existing.relevanceScore ?? 0)) {
               acc[ref.noteId] = ref
             }
             return acc
@@ -164,9 +161,7 @@ export const ChatMessage: FC<ChatMessageProps> = ({
                 <FileText className="size-3" />
                 <span className="max-w-[150px] truncate">{ref.title}</span>
                 {ref.relevanceScore !== undefined && (
-                  <span className="text-muted-foreground">
-                    {Math.round(ref.relevanceScore)}%
-                  </span>
+                  <span className="text-muted-foreground">{Math.round(ref.relevanceScore)}%</span>
                 )}
               </Badge>
             ))}

@@ -4,15 +4,15 @@
 
 TaacNotes is an AI-native note-taking desktop application.
 
-| Layer | Technology |
-|-------|-----------|
-| Shell | Electron 35 |
-| UI | React 19, TanStack Router, TanStack Query |
-| State | Redux Toolkit (notes tree), TanStack Query (server state) |
-| Editor | MDXEditor |
-| Styling | TailwindCSS v4, Shadcn/UI (New York style), Lucide icons |
-| AI | node-llama-cpp (local LLMs), sqlite-vec (vector search), better-sqlite3 |
-| Build | electron-vite, pnpm |
+| Layer   | Technology                                                              |
+| ------- | ----------------------------------------------------------------------- |
+| Shell   | Electron 35                                                             |
+| UI      | React 19, TanStack Router, TanStack Query                               |
+| State   | Redux Toolkit (notes tree), TanStack Query (server state)               |
+| Editor  | MDXEditor                                                               |
+| Styling | TailwindCSS v4, Shadcn/UI (New York style), Lucide icons                |
+| AI      | node-llama-cpp (local LLMs), sqlite-vec (vector search), better-sqlite3 |
+| Build   | electron-vite, pnpm                                                     |
 
 ---
 
@@ -156,15 +156,16 @@ All main-process logs use a `[ClassName]` prefix:
 
 The preload script (`src/preload/index.ts`) exposes five namespaced APIs via `contextBridge.exposeInMainWorld`:
 
-| Namespace | Purpose |
-|-----------|---------|
-| `window.fileSystem` | Note/folder/asset CRUD, move operations, database path |
-| `window.space` | Space list/create/update/delete (max 5) |
-| `window.config` | Typed electron-store get/set + `onChange` listener |
-| `window.ai` | Model management, streaming chat, vector search, conversations |
-| `window.platform` | `process.platform` for OS-specific UI |
+| Namespace           | Purpose                                                        |
+| ------------------- | -------------------------------------------------------------- |
+| `window.fileSystem` | Note/folder/asset CRUD, move operations, database path         |
+| `window.space`      | Space list/create/update/delete (max 5)                        |
+| `window.config`     | Typed electron-store get/set + `onChange` listener             |
+| `window.ai`         | Model management, streaming chat, vector search, conversations |
+| `window.platform`   | `process.platform` for OS-specific UI                          |
 
 **Patterns:**
+
 - All operations use `ipcRenderer.invoke()` (request-response).
 - Real-time events (streaming, progress) use `ipcRenderer.on()` with a cleanup function returned to the caller.
 - Types are declared in `src/preload/types.ts` (entities) and `src/preload/index.d.ts` (API surface).
@@ -188,6 +189,7 @@ export function registerXHandlers(deps: Dependencies): void {
 ```
 
 Rules:
+
 - Namespace with colon: `fs:createNote`, `ai:generateResponse`, `config:get`.
 - Always wrap in try/catch and re-throw with a contextual message.
 - Lazy-access singletons via getter functions inside the handler module.
@@ -203,7 +205,7 @@ event.sender.send('ai:response-chunk', { chunk, fullResponse })
 Broadcast to all windows for global events:
 
 ```typescript
-BrowserWindow.getAllWindows().forEach(win => {
+BrowserWindow.getAllWindows().forEach((win) => {
   if (!win.webContents.isDestroyed()) win.webContents.send('ai:indexing-progress', data)
 })
 ```
@@ -243,6 +245,7 @@ export const Component: FC<ComponentProps> = ({ id, className }) => {
 ```
 
 Rules:
+
 - Always use `FC<Props>` with an explicit `interface` for props.
 - Event handlers are prefixed with `handle`: `handleClick`, `handleKeyDown`, `handleSubmit`.
 - Use `type` keyword for type-only imports: `import { type FC } from 'react'`.
@@ -269,14 +272,14 @@ ReduxProvider
 
 All hooks are in `src/renderer/src/hooks/` and follow consistent patterns:
 
-| Category | Examples | Pattern |
-|----------|---------|---------|
-| State | `useAppDispatch`, `useAppSelector` | Typed Redux wrappers |
-| Data | `useSpaces`, `useConfig`, `useConversations` | TanStack Query with query keys |
-| Mutations | `useCreateNote`, `useSwitchSpace` | `useMutation` + cache invalidation |
-| AI | `useAIChat`, `useIndexAllNotes` | Streaming/progress via IPC events |
-| Behavior | `useAutoSave`, `useAutoIndexNote` | Debounced side effects |
-| UI | `useAIChatPanel` | Keyboard shortcuts + local state |
+| Category  | Examples                                     | Pattern                            |
+| --------- | -------------------------------------------- | ---------------------------------- |
+| State     | `useAppDispatch`, `useAppSelector`           | Typed Redux wrappers               |
+| Data      | `useSpaces`, `useConfig`, `useConversations` | TanStack Query with query keys     |
+| Mutations | `useCreateNote`, `useSwitchSpace`            | `useMutation` + cache invalidation |
+| AI        | `useAIChat`, `useIndexAllNotes`              | Streaming/progress via IPC events  |
+| Behavior  | `useAutoSave`, `useAutoIndexNote`            | Debounced side effects             |
+| UI        | `useAIChatPanel`                             | Keyboard shortcuts + local state   |
 
 **Query keys** follow a hierarchical convention:
 
@@ -345,7 +348,7 @@ SpaceTreeState {
 ### Hydration Strategy (Two-Stage)
 
 1. **Cache hydration** — Restore all spaces from `electron-store` (`reduxSpacesCaches` key). Instant, no I/O.
-2. **Filesystem reconciliation** — Load the *active* space from disk via `loadTree` thunk, validate against cache, clean stale entries.
+2. **Filesystem reconciliation** — Load the _active_ space from disk via `loadTree` thunk, validate against cache, clean stale entries.
 
 Legacy single-space caches are automatically migrated on first load.
 
@@ -353,10 +356,10 @@ Legacy single-space caches are automatically migrated on first load.
 
 Two trigger types:
 
-| Trigger | Actions | Debounce |
-|---------|---------|----------|
-| UI state | `toggleFolder`, `selectNote`, ... | Immediate |
-| Tree mutations | `createNote/fulfilled`, `loadTree/fulfilled`, ... | 1 second |
+| Trigger        | Actions                                           | Debounce  |
+| -------------- | ------------------------------------------------- | --------- |
+| UI state       | `toggleFolder`, `selectNote`, ...                 | Immediate |
+| Tree mutations | `createNote/fulfilled`, `loadTree/fulfilled`, ... | 1 second  |
 
 Persisted structure per space:
 
@@ -374,26 +377,26 @@ Move operations (note/folder) apply changes immediately in the reducer (`pending
 
 ### Component Responsibilities
 
-| Component | Role |
-|-----------|------|
-| `AIManager` | Singleton. LLM init, model load/unload, GPU optimization, streaming chat |
-| `ModelRegistry` | Static `CURATED_MODELS` array with model definitions |
-| `EmbeddingService` | Token-based chunking (256 tok/chunk, 32 overlap), note indexing |
-| `VectorDBManager` | Per-space sqlite-vec (768-dim, cosine distance), hybrid search |
-| `IndexingQueue` | Debounced (3s) background queue with EventEmitter progress |
-| `ModelDownloader` | Resumable downloads with progress events |
-| `ConversationManager` | Chat history persistence |
-| `HardwareDetector` | CPU/RAM/GPU/VRAM detection |
+| Component             | Role                                                                     |
+| --------------------- | ------------------------------------------------------------------------ |
+| `AIManager`           | Singleton. LLM init, model load/unload, GPU optimization, streaming chat |
+| `ModelRegistry`       | Static `CURATED_MODELS` array with model definitions                     |
+| `EmbeddingService`    | Token-based chunking (256 tok/chunk, 32 overlap), note indexing          |
+| `VectorDBManager`     | Per-space sqlite-vec (768-dim, cosine distance), hybrid search           |
+| `IndexingQueue`       | Debounced (3s) background queue with EventEmitter progress               |
+| `ModelDownloader`     | Resumable downloads with progress events                                 |
+| `ConversationManager` | Chat history persistence                                                 |
+| `HardwareDetector`    | CPU/RAM/GPU/VRAM detection                                               |
 
 ### Embedding Model Rules
 
 The embedding model (`nomic-embed-text-v2-moe`) **requires task prefixes**:
 
-| Method | Prefix | Use |
-|--------|--------|-----|
+| Method                | Prefix              | Use            |
+| --------------------- | ------------------- | -------------- |
 | `embedDocument(text)` | `search_document: ` | Indexing notes |
-| `embedQuery(text)` | `search_query: ` | Searching |
-| `embedText(text)` | *(none)* | Raw embedding |
+| `embedQuery(text)`    | `search_query: `    | Searching      |
+| `embedText(text)`     | _(none)_            | Raw embedding  |
 
 ### Hybrid Search Pipeline
 
@@ -444,11 +447,11 @@ import type { Note, FolderMetadata } from '@preload/types'
 
 ### Path Aliases
 
-| Alias | Resolves To |
-|-------|-------------|
-| `@renderer/*` | `src/renderer/src/*` |
-| `@preload/*` | `src/preload/*` |
-| `@main/ai/*` | `src/main/ai/*` (renderer access to AI types) |
+| Alias         | Resolves To                                   |
+| ------------- | --------------------------------------------- |
+| `@renderer/*` | `src/renderer/src/*`                          |
+| `@preload/*`  | `src/preload/*`                               |
+| `@main/ai/*`  | `src/main/ai/*` (renderer access to AI types) |
 
 ### Avoid `any`
 
@@ -546,21 +549,21 @@ async bm25Search(query: string): Promise<BM25SearchResult[]> {
 
 ### Debouncing
 
-| Operation | Delay | Implementation |
-|-----------|-------|---------------|
-| Auto-save | 1.5s | `useAutoSave` hook |
-| Auto-indexing | 5s | `useAutoIndexNote` hook |
-| Redux persistence | 1s | `persistenceMiddleware` |
-| Indexing queue | 3s | `IndexingQueue` (deduplicates by noteId) |
+| Operation         | Delay | Implementation                           |
+| ----------------- | ----- | ---------------------------------------- |
+| Auto-save         | 1.5s  | `useAutoSave` hook                       |
+| Auto-indexing     | 5s    | `useAutoIndexNote` hook                  |
+| Redux persistence | 1s    | `persistenceMiddleware`                  |
+| Indexing queue    | 3s    | `IndexingQueue` (deduplicates by noteId) |
 
 ### Query Caching
 
-| Data | staleTime |
-|------|-----------|
-| Config, spaces, DB path | `Infinity` |
-| Embedding model status | 30s |
-| Notes | 5 min |
-| Loaded models | Polling every 5s |
+| Data                    | staleTime        |
+| ----------------------- | ---------------- |
+| Config, spaces, DB path | `Infinity`       |
+| Embedding model status  | 30s              |
+| Notes                   | 5 min            |
+| Loaded models           | Polling every 5s |
 
 ### Memoization
 
@@ -602,19 +605,19 @@ Three separate configurations for main, preload, and renderer:
 
 Three tsconfig files:
 
-| File | Scope |
-|------|-------|
-| `tsconfig.node.json` | Main process + preload |
-| `tsconfig.web.json` | Renderer (JSX: react-jsx) |
-| `tsconfig.app.json` | Application-specific |
+| File                 | Scope                     |
+| -------------------- | ------------------------- |
+| `tsconfig.node.json` | Main process + preload    |
+| `tsconfig.web.json`  | Renderer (JSX: react-jsx) |
+| `tsconfig.app.json`  | Application-specific      |
 
 ### Code Quality
 
-| Tool | Config |
-|------|--------|
-| ESLint 9 | Flat config (`eslint.config.mjs`), `@typescript-eslint`, React hooks/refresh rules |
-| Prettier | Single quotes, no semicolons, 100 char width, no trailing commas |
-| EditorConfig | UTF-8, 2-space indent, LF line endings |
+| Tool         | Config                                                                             |
+| ------------ | ---------------------------------------------------------------------------------- |
+| ESLint 9     | Flat config (`eslint.config.mjs`), `@typescript-eslint`, React hooks/refresh rules |
+| Prettier     | Single quotes, no semicolons, 100 char width, no trailing commas                   |
+| EditorConfig | UTF-8, 2-space indent, LF line endings                                             |
 
 ### Electron Builder
 

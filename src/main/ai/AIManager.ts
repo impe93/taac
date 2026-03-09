@@ -686,7 +686,7 @@ export class AIManager {
     const maxLayersInVram = Math.floor((effectiveVram * safetyMargin) / layerSize)
 
     const result = Math.min(maxLayersInVram, totalLayers)
-    const effectiveVramGB = (effectiveVram / (1024 ** 3)).toFixed(1)
+    const effectiveVramGB = (effectiveVram / 1024 ** 3).toFixed(1)
     console.log(
       `[AIManager] GPU layers calc: unified=${isUnifiedMemory} effectiveVram=${effectiveVramGB}GB` +
         ` layers=${result}/${totalLayers}`
