@@ -12,6 +12,7 @@ import { registerSpaceHandlers } from './ipc/spaceHandlers'
 import {
   registerAIHandlers,
   notifyNoteSaved,
+  notifyFolderMoved,
   disposeIndexingQueue,
   cancelBatchIndexing
 } from './ipc/aiHandlers'
@@ -171,7 +172,11 @@ app.whenReady().then(async () => {
 
   // Register IPC handlers
   registerSpaceHandlers(spaceManager)
-  registerFileHandlers(getOrCreateFsManager, notifyNoteSaved)
+  registerFileHandlers(
+    getOrCreateFsManager,
+    notifyNoteSaved,
+    (spaceId, folderId) => notifyFolderMoved(getOrCreateFsManager, spaceId, folderId)
+  )
   registerConfigHandlers()
   registerAIHandlers(getOrCreateFsManager)
   registerImportHandlers(spaceManager, getOrCreateFsManager)

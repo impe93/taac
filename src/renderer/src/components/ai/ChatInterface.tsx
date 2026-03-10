@@ -167,7 +167,8 @@ const buildContextPrompt = (
   const notesContext = notes
     .map((note) => {
       const sectionTag = note.sectionHeader ? `\n    <section>${note.sectionHeader}</section>` : ''
-      const folderPath = getFolderPath(note.folderId, folders)
+      // Prefer pre-computed path from metadata; fall back to Redux-computed path for legacy notes
+      const folderPath = note.folderPath ?? getFolderPath(note.folderId, folders)
       const folderPathTag = folderPath ? `\n    <folder_path>${folderPath}</folder_path>` : ''
       return `  <note>
     <title>${note.title}</title>${sectionTag}${folderPathTag}

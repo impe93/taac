@@ -173,7 +173,7 @@ export function notifyNoteSaved(
   folderId: string,
   rawContent: unknown,
   title: string,
-  folderName?: string
+  folderPath?: string
 ): void {
   if (!indexingQueue) return
 
@@ -181,7 +181,43 @@ export function notifyNoteSaved(
   const textContent = extractTextFromLexicalContent(rawContent)
   if (!textContent.trim()) return
 
-  indexingQueue.enqueue(noteId, spaceId, folderId, textContent, title, folderName)
+  indexingQueue.enqueue(noteId, spaceId, folderId, textContent, title, folderPath)
+}
+
+/**
+ * Re-index all notes in a moved folder subtree with their updated folder paths.
+ * Called from fileHandlers after fs:moveFolder succeeds.
+ */
+export async function notifyFolderMoved(
+  getOrCreateFsManager: GetFsManager,
+  spaceId: string,
+  movedFolderId: string
+): Promise<void> {
+  if (!indexingQueue) return
+
+  const fsManager = getOrCreateFsManager(spaceId)
+  const allNotes: Array<{ note: Note; folderId: string }> = []
+
+  try {
+    await collectNotesRecursively(fsManager, movedFolderId, allNotes)
+  } catch (error) {
+    console.error(`[notifyFolderMoved] Failed to collect notes for folder ${movedFolderId}:`, error)
+    return
+  }
+
+  for (const { note, folderId } of allNotes) {
+    const textContent = extractTextFromLexicalContent(note.content)
+    if (!textContent.trim()) continue
+
+    let folderPath: string | undefined
+    try {
+      folderPath = await fsManager.getFullFolderPath(folderId)
+    } catch {
+      /* ignore */
+    }
+
+    indexingQueue.enqueue(note.id, spaceId, folderId, textContent, note.title, folderPath)
+  }
 }
 
 /**
@@ -595,11 +631,10 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
         // Convert Lexical content to markdown text
         const textContent = extractTextFromLexicalContent(note.content)
 
-        // Resolve folder name for semantic search
-        let folderName: string | undefined
+        // Resolve full folder path for semantic search
+        let folderPath: string | undefined
         try {
-          const folderMeta = await fsManager.readFolderMetadata(note.folderId)
-          folderName = folderMeta.name !== 'root' ? folderMeta.name : undefined
+          folderPath = await fsManager.getFullFolderPath(note.folderId)
         } catch {
           /* ignore */
         }
@@ -608,7 +643,7 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
           {
             id: note.id,
             folderId: note.folderId,
-            folderName,
+            folderPath,
             content: textContent,
             title: note.title,
             createdAt: note.createdAt,
@@ -691,8 +726,13 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
 
         try {
           const textContent = extractTextFromLexicalContent(note.content)
-          if (textContent.trim() && vectorDB.isNoteStale(note.id, textContent)) {
-            staleNotes.push({ note, folderId, textContent })
+          if (textContent.trim()) {
+            // Include folder path in hash to detect moves (path changes require re-embedding)
+            const folderPath = await fsManager.getFullFolderPath(folderId).catch(() => undefined)
+            const hashInput = textContent + '||' + (folderPath ?? '')
+            if (vectorDB.isNoteStale(note.id, hashInput)) {
+              staleNotes.push({ note, folderId, textContent })
+            }
           }
         } catch (error) {
           console.error(`[ai:indexAllNotes] Failed to check note ${note.id}:`, error)
@@ -719,17 +759,16 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
       let indexedNotes = 0
       let erroredNotes = 0
 
-      // Cache folder names to avoid redundant reads during batch indexing
-      const folderNameCache = new Map<string, string | undefined>()
-      const getFolderName = async (fid: string): Promise<string | undefined> => {
-        if (folderNameCache.has(fid)) return folderNameCache.get(fid)
+      // Cache full folder paths to avoid redundant reads during batch indexing
+      const folderPathCache = new Map<string, string | undefined>()
+      const getFullFolderPathCached = async (fid: string): Promise<string | undefined> => {
+        if (folderPathCache.has(fid)) return folderPathCache.get(fid)
         try {
-          const meta = await fsManager.readFolderMetadata(fid)
-          const name = meta.name !== 'root' ? meta.name : undefined
-          folderNameCache.set(fid, name)
-          return name
+          const path = await fsManager.getFullFolderPath(fid)
+          folderPathCache.set(fid, path)
+          return path
         } catch {
-          folderNameCache.set(fid, undefined)
+          folderPathCache.set(fid, undefined)
           return undefined
         }
       }
@@ -749,12 +788,12 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
         })
 
         try {
-          const folderName = await getFolderName(folderId)
+          const folderPath = await getFullFolderPathCached(folderId)
           const wasIndexed = await service.indexNote(
             {
               id: note.id,
               folderId,
-              folderName,
+              folderPath,
               content: textContent,
               title: note.title,
               createdAt: note.createdAt,

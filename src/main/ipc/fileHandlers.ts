@@ -14,12 +14,15 @@ export type OnNoteSaved = (
   folderId: string,
   rawContent: unknown,
   title: string,
-  folderName?: string
+  folderPath?: string
 ) => void
+
+export type OnFolderMoved = (spaceId: string, folderId: string) => Promise<void>
 
 export function registerFileHandlers(
   getOrCreateFsManager: GetFsManager,
-  onNoteSaved?: OnNoteSaved
+  onNoteSaved?: OnNoteSaved,
+  onFolderMoved?: OnFolderMoved
 ): void {
   // Note operations
   ipcMain.handle(
@@ -35,15 +38,14 @@ export function registerFileHandlers(
         const fsManager = getOrCreateFsManager(spaceId)
         const note = await fsManager.createNote(folderId, content, title)
 
-        // Enqueue background indexing (non-blocking) — resolve folder name for semantic search
-        let folderName: string | undefined
+        // Enqueue background indexing (non-blocking) — resolve full folder path for semantic search
+        let folderPath: string | undefined
         try {
-          const folderMeta = await fsManager.readFolderMetadata(folderId)
-          folderName = folderMeta.name !== 'root' ? folderMeta.name : undefined
+          folderPath = await fsManager.getFullFolderPath(folderId)
         } catch {
           /* ignore */
         }
-        onNoteSaved?.(note.id, spaceId, folderId, note.content, note.title, folderName)
+        onNoteSaved?.(note.id, spaceId, folderId, note.content, note.title, folderPath)
 
         return note
       } catch (error) {
@@ -79,10 +81,9 @@ export function registerFileHandlers(
 
         // Enqueue background indexing when content or title changes (non-blocking)
         if (updates.content !== undefined || updates.title !== undefined) {
-          let folderName: string | undefined
+          let folderPath: string | undefined
           try {
-            const folderMeta = await fsManager.readFolderMetadata(folderId)
-            folderName = folderMeta.name !== 'root' ? folderMeta.name : undefined
+            folderPath = await fsManager.getFullFolderPath(folderId)
           } catch {
             /* ignore */
           }
@@ -92,7 +93,7 @@ export function registerFileHandlers(
             folderId,
             updatedNote.content,
             updatedNote.title,
-            folderName
+            folderPath
           )
         }
 
@@ -202,7 +203,18 @@ export function registerFileHandlers(
     ) => {
       try {
         const fsManager = getOrCreateFsManager(spaceId)
-        return await fsManager.moveNote(noteId, sourceFolderId, targetFolderId)
+        const movedNote = await fsManager.moveNote(noteId, sourceFolderId, targetFolderId)
+
+        // Re-index with the updated folder path (non-blocking)
+        let folderPath: string | undefined
+        try {
+          folderPath = await fsManager.getFullFolderPath(targetFolderId)
+        } catch {
+          /* ignore */
+        }
+        onNoteSaved?.(noteId, spaceId, targetFolderId, movedNote.content, movedNote.title, folderPath)
+
+        return movedNote
       } catch (error) {
         throw new Error(`Failed to move note: ${(error as Error).message}`)
       }
@@ -219,7 +231,12 @@ export function registerFileHandlers(
     ) => {
       try {
         const fsManager = getOrCreateFsManager(spaceId)
-        return await fsManager.moveFolder(folderId, targetParentId)
+        const result = await fsManager.moveFolder(folderId, targetParentId)
+
+        // Re-index all notes in the moved subtree with updated folder paths (non-blocking)
+        onFolderMoved?.(spaceId, folderId).catch(console.error)
+
+        return result
       } catch (error) {
         throw new Error(`Failed to move folder: ${(error as Error).message}`)
       }

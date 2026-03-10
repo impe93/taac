@@ -59,7 +59,7 @@ export interface TextChunk {
 export interface IndexableNote {
   id: string
   folderId: string
-  folderName?: string // Human-readable folder name for semantic search
+  folderPath?: string // Full hierarchical folder path for semantic search (e.g. "Projects / Client A / Meetings")
   content: string // Markdown content
   title: string
   createdAt: string
@@ -217,12 +217,12 @@ export class EmbeddingService {
     chunkText: string,
     noteTitle: string,
     sectionHeader?: string,
-    folderName?: string
+    folderPath?: string
   ): string {
     const parts: string[] = []
 
-    if (folderName) {
-      parts.push(`Folder: "${folderName}"`)
+    if (folderPath) {
+      parts.push(`Path: "${folderPath}"`)
     }
 
     parts.push(`Note: "${noteTitle}"`)
@@ -257,13 +257,14 @@ export class EmbeddingService {
     _options: ExtendedChunkingOptions = DEFAULT_EXTENDED_OPTIONS
   ): Promise<boolean> {
     try {
-      // Check if note content has changed since last indexing
-      if (!vectorDB.isNoteStale(note.id, note.content)) {
+      // Check if note content or folder path has changed since last indexing
+      const hashInput = note.content + '||' + (note.folderPath ?? '')
+      if (!vectorDB.isNoteStale(note.id, hashInput)) {
         console.log(`[EmbeddingService] Note ${note.id} is unchanged, skipping`)
         return false
       }
 
-      const contentHash = createHash('sha256').update(note.content).digest('hex')
+      const contentHash = createHash('sha256').update(hashInput).digest('hex')
 
       // Delete existing chunks for this note
       await vectorDB.deleteDocumentsForNote(note.id)
@@ -294,7 +295,7 @@ export class EmbeddingService {
           chunk.text,
           note.title,
           chunk.sectionHeader,
-          note.folderName
+          note.folderPath
         )
         const embedding = await this.embedDocument(textToEmbed)
 
@@ -310,6 +311,7 @@ export class EmbeddingService {
           metadata: {
             noteTitle: note.title,
             folderId: note.folderId,
+            folderPath: note.folderPath,
             totalChunks: chunks.length,
             startOffset: chunk.startOffset,
             endOffset: chunk.endOffset
@@ -372,7 +374,7 @@ export class EmbeddingService {
             chunk.text,
             note.title,
             chunk.sectionHeader,
-            note.folderName
+            note.folderPath
           )
           const embedding = await this.embedDocument(textToEmbed)
 
@@ -388,6 +390,7 @@ export class EmbeddingService {
             metadata: {
               noteTitle: note.title,
               folderId: note.folderId,
+              folderPath: note.folderPath,
               totalChunks: chunks.length
             }
           })

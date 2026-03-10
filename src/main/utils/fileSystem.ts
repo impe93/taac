@@ -256,6 +256,23 @@ export class FileSystemManager {
     return folderMeta
   }
 
+  /**
+   * Reconstruct the full folder path by walking up the parentId chain.
+   * Returns "Parent / Child / Grandchild" or undefined for root-level notes.
+   */
+  async getFullFolderPath(folderId: string): Promise<string | undefined> {
+    if (folderId === 'root') return undefined
+    const parts: string[] = []
+    let currentId: string | null = folderId
+    while (currentId && currentId !== 'root') {
+      const meta = await this.readFolderMetadata(currentId)
+      if (!meta || meta.id === 'root') break
+      parts.unshift(meta.name)
+      currentId = meta.parentId
+    }
+    return parts.length > 0 ? parts.join(' / ') : undefined
+  }
+
   async readFolderMetadata(folderId: string): Promise<FolderMetadata> {
     const metaPath = this.validatePath(
       join(this.getBasePath('notes'), folderId, 'metadata.json'),

@@ -162,7 +162,7 @@ export function deduplicateOverlaps(expanded: ExpandedResult[]): ExpandedResult[
  * Increment when the embedding text format changes (e.g. adding folder context).
  * Forces re-indexing of all notes on the next "Index All" run.
  */
-export const EMBEDDING_SCHEMA_VERSION = 2
+export const EMBEDDING_SCHEMA_VERSION = 3
 
 export class VectorDBManager {
   private static instances: Map<string, VectorDBManager> = new Map()
