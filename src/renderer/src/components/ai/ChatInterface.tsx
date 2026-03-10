@@ -15,6 +15,9 @@ import { useVectorSearch, useEnsureEmbeddingModel } from '@renderer/hooks/useVec
 import { useChatState } from '@renderer/hooks/useChatState'
 import { useUpdateConversationTitle } from '@renderer/hooks/useConversations'
 import type { ChatMessage as ChatMessageType, NoteReference } from '@main/ai/types'
+import { useAppSelector } from '@renderer/store/hooks'
+import { selectSpaceState } from '@renderer/store/slices/notesTreeSlice'
+import type { FolderMetadata } from '@preload/types'
 
 interface ChatInterfaceProps {
   /** Model ID to use for chat */
@@ -103,29 +106,82 @@ const EmptyState: FC = () => (
 
 const DEFAULT_RAG_SEARCH_LIMIT = 5
 
-const DEFAULT_SYSTEM_PROMPT =
-  'You are a helpful note-taking assistant. Answer questions accurately based on the provided note context. Do not comment on relevance scores, the prompt structure, or context quality. If the context is insufficient to answer, say so simply and directly.'
+const DEFAULT_SYSTEM_PROMPT = `<assistant_config>
+  <role>You are a personal knowledge assistant integrated into a note-taking app.</role>
+
+  <objective>
+    Answer the user's questions concisely and directly.
+    Focus on giving a useful, accurate response — not on explaining your reasoning process.
+    If the user asks for a list, provide a list. If they ask a question, answer it directly.
+    Do not mention that you searched notes, retrieved context, or used any system.
+  </objective>
+
+  <knowledge_handling>
+    You may receive relevant notes from the user's personal knowledge base as background context.
+    Treat these notes as your own memory — use the information naturally without referencing the notes explicitly.
+    Never say "Note 1 says...", "According to the retrieved context...", or similar.
+    Never mention note IDs, note titles, relevance scores, or any system metadata.
+    If the information isn't available in your context, simply say you don't know.
+  </knowledge_handling>
+
+  <formatting>
+    Always respond in Markdown.
+    Never use tables — use prose paragraphs or bullet lists instead.
+    Keep responses concise. Avoid unnecessary preamble or filler phrases.
+    Do not start with "Of course!", "Great question!", or similar openers.
+  </formatting>
+</assistant_config>`
 
 /**
- * Builds a context prompt from relevant notes
+ * Resolves the full folder path for a note by walking up the folder hierarchy.
+ * Returns a slash-separated path like "Work / Projects / AI Research", or null if unresolvable.
  */
-const buildContextPrompt = (notes: ContextNote[], userMessage: string): string => {
+const getFolderPath = (
+  folderId: string | null,
+  folders: Record<string, FolderMetadata>
+): string | null => {
+  if (!folderId || !folders[folderId]) return null
+
+  const parts: string[] = []
+  let current: FolderMetadata | undefined = folders[folderId]
+
+  while (current && current.id !== 'root') {
+    parts.unshift(current.name)
+    current = current.parentId ? folders[current.parentId] : undefined
+  }
+
+  return parts.length > 0 ? parts.join(' / ') : null
+}
+
+/**
+ * Builds a context prompt from relevant notes using XML structure.
+ * Notes are passed as background knowledge — the model is instructed not to reference them explicitly.
+ */
+const buildContextPrompt = (
+  notes: ContextNote[],
+  userMessage: string,
+  folders: Record<string, FolderMetadata>
+): string => {
   if (notes.length === 0) return userMessage
 
   const notesContext = notes
-    .map((note, i) => {
-      const header = note.sectionHeader
-        ? `[Note ${i + 1}: "${note.title}" | Section: "${note.sectionHeader}"]`
-        : `[Note ${i + 1}: "${note.title}"]`
-      return `${header}\n${note.fullContent}`
+    .map((note) => {
+      const sectionTag = note.sectionHeader ? `\n    <section>${note.sectionHeader}</section>` : ''
+      const folderPath = getFolderPath(note.folderId, folders)
+      const folderPathTag = folderPath ? `\n    <folder_path>${folderPath}</folder_path>` : ''
+      return `  <note>
+    <title>${note.title}</title>${sectionTag}${folderPathTag}
+    <relevance>${note.relevanceScore.toFixed(0)}%</relevance>
+    <content>${note.fullContent}</content>
+  </note>`
     })
-    .join('\n\n')
+    .join('\n')
 
-  return `Given the following notes as context:
-
+  return `<knowledge_base>
 ${notesContext}
+</knowledge_base>
 
-User question: ${userMessage}`
+<question>${userMessage}</question>`
 }
 
 /**
@@ -191,6 +247,10 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
     }
   }, [isCheckingInitialized, isInitialized, isInitializing, initializeError, initialize])
 
+  // Folder tree from Redux for resolving folder paths in context
+  const spaceState = useAppSelector(selectSpaceState(spaceId || ''))
+  const folders = spaceState?.folders ?? {}
+
   // Vector search hook - only used when RAG is enabled
   const vectorSearch = useVectorSearch(spaceId || '')
   const isRAGEnabled = enableRAG && !!spaceId
@@ -212,6 +272,7 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
     }
     return conversation.noteContext.map((ref) => ({
       noteId: ref.noteId,
+      folderId: null, // NoteReference doesn't carry folderId
       title: ref.title,
       excerpt: ref.excerpt,
       fullContent: ref.excerpt, // Pinned notes only have excerpt stored
@@ -316,7 +377,7 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
     // Build content with context if RAG is enabled and we have context
     const messageContentForAPI =
       isRAGEnabled && relevantNotes.length > 0
-        ? buildContextPrompt(relevantNotes, content)
+        ? buildContextPrompt(relevantNotes, content, folders)
         : content
 
     // Prepare note references for storage

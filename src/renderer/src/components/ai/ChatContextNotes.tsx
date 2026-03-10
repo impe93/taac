@@ -8,6 +8,7 @@ import type { ExpandedResult } from '@preload/index.d'
 
 export interface ContextNote {
   noteId: string
+  folderId: string | null
   title: string
   excerpt: string
   fullContent: string
@@ -38,6 +39,7 @@ const getRelevanceBadgeVariant = (score: number): 'default' | 'secondary' | 'out
  */
 const searchResultToContextNote = (result: ExpandedResult): ContextNote => ({
   noteId: result.noteId,
+  folderId: (result.metadata?.folderId as string) || null,
   title: (result.metadata?.noteTitle as string) || (result.metadata?.title as string) || 'Untitled',
   excerpt: result.content.slice(0, 200) + (result.content.length > 200 ? '...' : ''),
   fullContent: result.expandedContent,
