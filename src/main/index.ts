@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, protocol, net } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, protocol, net, session, desktopCapturer } from 'electron'
 import { join } from 'path'
 import { pathToFileURL } from 'url'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -197,6 +197,18 @@ app.whenReady().then(async () => {
   })
 
   createWindow()
+
+  // Register display media request handler for system audio loopback capture (§3.2)
+  // Must be set up after app is ready so session is available
+  session.defaultSession.setDisplayMediaRequestHandler(async (_request, callback) => {
+    console.log('[AudioSetup] Display media requested — granting system audio loopback access')
+    const sources = await desktopCapturer.getSources({ types: ['screen'] })
+    callback({
+      video: sources[0], // Screen source required by API even when only audio is needed
+      audio: 'loopback' // System audio loopback — requires Electron 39+ / Chromium 142+
+    })
+  })
+  console.log('[AudioSetup] setDisplayMediaRequestHandler registered on default session')
 
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the
