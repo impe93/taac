@@ -10,6 +10,7 @@ import {
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import { Label } from '@renderer/components/ui/label'
+import { ToggleGroup, ToggleGroupItem } from '@renderer/components/ui/toggle-group'
 import { useAppDispatch, useAppSelector } from '@renderer/store/hooks'
 import {
   createNote,
@@ -17,6 +18,7 @@ import {
   selectActiveSpaceId
 } from '@renderer/store/slices/notesTreeSlice'
 import { EMPTY_EDITOR_STATE } from './constants'
+import { FileText, Mic } from 'lucide-react'
 
 interface CreateItemDialogProps {
   type: 'note' | 'folder'
@@ -35,6 +37,7 @@ export const CreateItemDialog: FC<CreateItemDialogProps> = ({
   const activeSpaceId = useAppSelector(selectActiveSpaceId)
   const loadingOperations = useAppSelector((state) => state.notesTree.loadingOperations)
   const [name, setName] = useState('')
+  const [noteType, setNoteType] = useState<'note' | 'meeting'>('note')
 
   const isPending =
     type === 'note'
@@ -45,6 +48,7 @@ export const CreateItemDialog: FC<CreateItemDialogProps> = ({
   useEffect(() => {
     if (!open) {
       setName('')
+      setNoteType('note')
     }
   }, [open])
 
@@ -57,7 +61,8 @@ export const CreateItemDialog: FC<CreateItemDialogProps> = ({
           spaceId: activeSpaceId,
           folderId: parentFolderId,
           title: name.trim(),
-          content: EMPTY_EDITOR_STATE
+          content: EMPTY_EDITOR_STATE,
+          type: noteType
         })
       )
     } else {
@@ -94,6 +99,29 @@ export const CreateItemDialog: FC<CreateItemDialogProps> = ({
         </DialogHeader>
 
         <div className="grid gap-4 py-4">
+          {type === 'note' && (
+            <div className="grid gap-2">
+              <Label>Note Type</Label>
+              <ToggleGroup
+                type="single"
+                value={noteType}
+                onValueChange={(value) => {
+                  if (value) setNoteType(value as 'note' | 'meeting')
+                }}
+                variant="outline"
+                className="w-full"
+              >
+                <ToggleGroupItem value="note" className="flex-1 gap-2">
+                  <FileText className="size-4" />
+                  Note
+                </ToggleGroupItem>
+                <ToggleGroupItem value="meeting" className="flex-1 gap-2">
+                  <Mic className="size-4" />
+                  Meeting Note
+                </ToggleGroupItem>
+              </ToggleGroup>
+            </div>
+          )}
           <div className="grid gap-2">
             <Label htmlFor="name">{label}</Label>
             <Input
