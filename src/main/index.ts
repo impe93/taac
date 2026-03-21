@@ -1,4 +1,13 @@
-import { app, shell, BrowserWindow, ipcMain, protocol, net, session, desktopCapturer } from 'electron'
+import {
+  app,
+  shell,
+  BrowserWindow,
+  ipcMain,
+  protocol,
+  net,
+  session,
+  desktopCapturer
+} from 'electron'
 import { join } from 'path'
 import { pathToFileURL } from 'url'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -172,10 +181,8 @@ app.whenReady().then(async () => {
 
   // Register IPC handlers
   registerSpaceHandlers(spaceManager)
-  registerFileHandlers(
-    getOrCreateFsManager,
-    notifyNoteSaved,
-    (spaceId, folderId) => notifyFolderMoved(getOrCreateFsManager, spaceId, folderId)
+  registerFileHandlers(getOrCreateFsManager, notifyNoteSaved, (spaceId, folderId) =>
+    notifyFolderMoved(getOrCreateFsManager, spaceId, folderId)
   )
   registerConfigHandlers()
   registerAIHandlers(getOrCreateFsManager)
