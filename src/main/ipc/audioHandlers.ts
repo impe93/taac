@@ -10,10 +10,12 @@
  * Reference: docs/NOTE_TAKER.md section §8
  */
 
-import { ipcMain, app } from 'electron'
+import { ipcMain, app, BrowserWindow } from 'electron'
 import { join, normalize } from 'path'
 import fs from 'node:fs/promises'
 import { convertToWav } from '../audio/audioConverter'
+import { AudioManager } from '../audio/AudioManager'
+import type { ProcessingProgress } from '../audio/types'
 
 // AbortController for the active processing job
 let activeProcessingAbort: AbortController | null = null
@@ -87,16 +89,48 @@ export function registerAudioHandlers(): void {
     }
   )
 
-  // Launch the post-processing pipeline (stub — full impl in a later task)
+  // Launch the post-processing pipeline via AudioManager
   ipcMain.handle(
     'audio:processRecording',
-    async (_event, noteId: string, _spaceId: string): Promise<unknown> => {
+    async (
+      _event,
+      noteId: string,
+      spaceId: string,
+      micWavPath: string,
+      systemWavPath: string | undefined,
+      mode: 'remote' | 'in-person',
+      recordingDate: string,
+      durationSecs: number
+    ): Promise<unknown> => {
       try {
         activeProcessingAbort = new AbortController()
-        console.log(`[AudioHandlers] processRecording called for note ${noteId} (stub)`)
-        // TODO: implement full pipeline (conversion → transcription → diarization → summarization)
-        return null
+
+        console.log(`[AudioHandlers] processRecording called for note ${noteId}`)
+
+        const onProgress = (progress: ProcessingProgress): void => {
+          // §5.2 / §8.3 — broadcast progress to all renderer windows
+          BrowserWindow.getAllWindows().forEach((win) => {
+            if (!win.webContents.isDestroyed()) {
+              win.webContents.send('audio:processing-progress', { noteId, ...progress })
+            }
+          })
+        }
+
+        const metadata = await AudioManager.getInstance().processRecording(
+          noteId,
+          spaceId,
+          micWavPath,
+          systemWavPath,
+          mode,
+          recordingDate,
+          durationSecs,
+          onProgress
+        )
+
+        activeProcessingAbort = null
+        return metadata
       } catch (error) {
+        activeProcessingAbort = null
         const message = error instanceof Error ? error.message : String(error)
         throw new Error(
           `[AudioHandlers] Failed to process recording for note ${noteId}: ${message}`
