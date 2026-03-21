@@ -1,0 +1,283 @@
+/**
+ * TranscriptionService — sherpa-onnx Whisper integration
+ *
+ * Wraps the sherpa-onnx offline recognizer to provide local speech-to-text
+ * transcription using Whisper ONNX models. Follows the project's native-module
+ * patterns identical to node-llama-cpp:
+ *
+ * §3.3  initialize() is idempotent — safe to call multiple times
+ * §3.4  dispose() tears down the recognizer and resets state
+ * §3.5  type-only imports at top level; runtime dynamic import() inside initialize()
+ * §3.7  all log lines are prefixed with [TranscriptionService]
+ *
+ * Reference: docs/NOTE_TAKER.md §5.1–§5.4, §11.3
+ */
+
+import { join } from 'node:path'
+import fs from 'node:fs/promises'
+import os from 'node:os'
+import type { TranscriptionResult, TranscriptionSegment } from './types'
+
+// §3.5 — type-only import at top level; the actual module is loaded at runtime
+// via dynamic import() inside initialize(), exactly like node-llama-cpp.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type SherpaOnnxModule = any
+
+export class TranscriptionService {
+  /** Underlying sherpa-onnx offline recognizer instance */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private recognizer: any | null = null
+
+  /** Cached sherpa-onnx module reference (set after dynamic import) */
+  private sherpaOnnx: SherpaOnnxModule | null = null
+
+  /** Guard flag for idempotent initialization (§3.3) */
+  private initialized = false
+
+  /**
+   * Load the sherpa-onnx Whisper recognizer from the given model directory.
+   *
+   * The directory must contain at minimum:
+   *   - encoder.int8.onnx  (or encoder.onnx)
+   *   - decoder.int8.onnx  (or decoder.onnx)
+   *   - tokens.txt
+   *
+   * If the directory is missing or any required file is absent, the service
+   * starts in a degraded mode — transcribe() returns empty results instead of
+   * throwing, so the pipeline can continue without crashing.
+   *
+   * @param modelDir  Absolute path to the whisper ONNX model directory
+   */
+  async initialize(modelDir: string): Promise<void> {
+    // §3.3 — idempotent
+    if (this.initialized) return
+
+    console.log(`[TranscriptionService] Initializing — modelDir: ${modelDir}`)
+
+    // ------------------------------------------------------------------
+    // 1. Verify the model directory exists
+    // ------------------------------------------------------------------
+    const dirExists = await this.pathExists(modelDir)
+    if (!dirExists) {
+      console.warn(
+        `[TranscriptionService] Model directory not found: "${modelDir}". ` +
+          'Transcription will be unavailable until the model is downloaded.'
+      )
+      // Do NOT set this.initialized = true — allow re-initialization after download
+      return
+    }
+
+    // ------------------------------------------------------------------
+    // 2. Discover model files (support both int8 and fp32 variants)
+    // ------------------------------------------------------------------
+    const encoderPath = await this.findFile(modelDir, ['encoder.int8.onnx', 'encoder.onnx'])
+    const decoderPath = await this.findFile(modelDir, ['decoder.int8.onnx', 'decoder.onnx'])
+    const tokensPath = await this.findFile(modelDir, ['tokens.txt'])
+
+    if (!encoderPath || !decoderPath || !tokensPath) {
+      const missing: string[] = []
+      if (!encoderPath) missing.push('encoder.onnx')
+      if (!decoderPath) missing.push('decoder.onnx')
+      if (!tokensPath) missing.push('tokens.txt')
+      console.warn(
+        `[TranscriptionService] Missing model file(s) in "${modelDir}": ${missing.join(', ')}. ` +
+          'Transcription will be unavailable.'
+      )
+      return
+    }
+
+    console.log(`[TranscriptionService] Found model files:`)
+    console.log(`  encoder: ${encoderPath}`)
+    console.log(`  decoder: ${decoderPath}`)
+    console.log(`  tokens:  ${tokensPath}`)
+
+    // ------------------------------------------------------------------
+    // 3. Dynamic import — §3.5 ESM pattern (same as node-llama-cpp)
+    // ------------------------------------------------------------------
+    const sherpaOnnx: SherpaOnnxModule = await import('sherpa-onnx')
+    this.sherpaOnnx = sherpaOnnx
+
+    // ------------------------------------------------------------------
+    // 4. Determine thread count — half the logical CPUs, clamped [2, 4]
+    // ------------------------------------------------------------------
+    const numThreads = Math.max(2, Math.min(4, Math.floor(os.cpus().length / 2)))
+    console.log(`[TranscriptionService] Using ${numThreads} threads`)
+
+    // ------------------------------------------------------------------
+    // 5. Create the offline recognizer (§5.4 config layout)
+    // ------------------------------------------------------------------
+    this.recognizer = sherpaOnnx.createOfflineRecognizer({
+      whisper: {
+        encoder: encoderPath,
+        decoder: decoderPath,
+        language: '', // empty string → auto-detect language
+        task: 'transcribe'
+      },
+      modelConfig: {
+        tokens: tokensPath,
+        numThreads,
+        debug: 0
+      }
+    })
+
+    this.initialized = true
+    console.log('[TranscriptionService] Initialized successfully')
+  }
+
+  /**
+   * Transcribe a 16 kHz mono WAV file.
+   *
+   * Returns empty results (rather than throwing) when the service is in
+   * degraded mode (model not loaded), so the pipeline can continue.
+   *
+   * @param wavPath  Absolute path to the 16 kHz mono WAV file
+   * @returns        TranscriptionResult with text, segments, and detected language
+   */
+  async transcribe(wavPath: string): Promise<TranscriptionResult> {
+    // Degraded-mode guard
+    if (!this.recognizer || !this.sherpaOnnx) {
+      console.warn(
+        `[TranscriptionService] Recognizer not available — returning empty result for "${wavPath}"`
+      )
+      return { text: '', segments: [], detectedLanguage: 'en' }
+    }
+
+    // Verify the WAV file exists before processing
+    const fileExists = await this.pathExists(wavPath)
+    if (!fileExists) {
+      throw new Error(`[TranscriptionService] WAV file not found: "${wavPath}"`)
+    }
+
+    console.log(`[TranscriptionService] Transcribing: ${wavPath}`)
+
+    // ------------------------------------------------------------------
+    // Read wave → create stream → accept waveform → decode → get result
+    // (§5.4 pipeline)
+    // ------------------------------------------------------------------
+    const wave = this.sherpaOnnx.readWave(wavPath) as {
+      sampleRate: number
+      samples: Float32Array
+    }
+
+    const stream = this.recognizer.createStream()
+
+    // acceptWaveform signature in sherpa-onnx Node.js binding: (sampleRate, samples)
+    stream.acceptWaveform(wave.sampleRate, wave.samples)
+
+    this.recognizer.decode(stream)
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = this.recognizer.getResult(stream) as Record<string, any>
+
+    const text: string = typeof raw.text === 'string' ? raw.text : ''
+    // sherpa-onnx may expose language in different fields depending on version
+    const detectedLanguage: string =
+      typeof raw.lang === 'string' && raw.lang
+        ? raw.lang
+        : typeof raw.language === 'string' && raw.language
+          ? raw.language
+          : 'en'
+
+    const segments = this.buildSegments(raw, text)
+
+    console.log(
+      `[TranscriptionService] Done — ${text.length} chars, ` +
+        `${segments.length} segment(s), lang="${detectedLanguage}"`
+    )
+
+    return { text, segments, detectedLanguage }
+  }
+
+  /**
+   * Release the recognizer and reset internal state.
+   * Safe to call even if initialize() was never called or failed. (§3.4)
+   */
+  dispose(): void {
+    this.recognizer = null
+    this.sherpaOnnx = null
+    this.initialized = false
+    console.log('[TranscriptionService] Disposed')
+  }
+
+  // ---------------------------------------------------------------------------
+  // Private helpers
+  // ---------------------------------------------------------------------------
+
+  /** Returns true if the path exists (file or directory). */
+  private async pathExists(p: string): Promise<boolean> {
+    try {
+      await fs.access(p)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * Look for the first existing file from a list of candidates relative to dir.
+   * Returns the absolute path of the first match, or null if none found.
+   */
+  private async findFile(dir: string, candidates: string[]): Promise<string | null> {
+    for (const name of candidates) {
+      const candidate = join(dir, name)
+      if (await this.pathExists(candidate)) return candidate
+    }
+    return null
+  }
+
+  /**
+   * Convert the raw recognizer result into typed TranscriptionSegment array.
+   *
+   * sherpa-onnx may expose word/token-level timestamps via `result.timestamps`
+   * (array of seconds, one per token) and `result.tokens` (array of strings).
+   * When timestamps are unavailable, the whole text is returned as a single
+   * segment with startTime=0, endTime=0.
+   */
+  private buildSegments(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    raw: Record<string, any>,
+    fullText: string
+  ): TranscriptionSegment[] {
+    if (!fullText.trim()) return []
+
+    const timestamps: number[] | undefined = Array.isArray(raw.timestamps)
+      ? (raw.timestamps as number[])
+      : undefined
+    const tokens: string[] | undefined = Array.isArray(raw.tokens)
+      ? (raw.tokens as string[])
+      : undefined
+
+    // No timestamp data → single segment covering the whole transcription
+    if (!timestamps || !tokens || timestamps.length === 0 || timestamps.length !== tokens.length) {
+      return [{ startTime: 0, endTime: 0, text: fullText.trim() }]
+    }
+
+    // Build sentence-level segments by grouping tokens at sentence boundaries
+    const segments: TranscriptionSegment[] = []
+    let segStart = timestamps[0]
+    let currentText = ''
+
+    for (let i = 0; i < tokens.length; i++) {
+      currentText += tokens[i]
+      const isLast = i === tokens.length - 1
+      const isSentenceBoundary =
+        isLast ||
+        /[.!?]$/.test(tokens[i].trimEnd()) ||
+        // also break on long pauses (gap > 1.5s between consecutive tokens)
+        (i + 1 < timestamps.length && timestamps[i + 1] - timestamps[i] > 1.5)
+
+      if (isSentenceBoundary) {
+        const trimmed = currentText.trim()
+        if (trimmed) {
+          segments.push({ startTime: segStart, endTime: timestamps[i], text: trimmed })
+        }
+        if (i + 1 < timestamps.length) {
+          segStart = timestamps[i + 1]
+        }
+        currentText = ''
+      }
+    }
+
+    return segments
+  }
+}

@@ -17,6 +17,8 @@
  * Reference: docs/NOTE_TAKER.md section §11
  */
 
+import { join } from 'node:path'
+import { app } from 'electron'
 import fs from 'node:fs/promises'
 import type {
   MeetingMetadata,
@@ -30,41 +32,7 @@ import type {
   DiarizationResult,
   DiarizationSegment
 } from './types'
-
-// ---------------------------------------------------------------------------
-// Stub service classes — real implementations will replace these in later tasks
-// ---------------------------------------------------------------------------
-
-/**
- * TranscriptionService stub.
- * Returns empty mock results until sherpa-onnx whisper integration is added.
- * §11.3 in NOTE_TAKER.md
- */
-class TranscriptionService {
-  private initialized = false
-
-  async initialize(): Promise<void> {
-    if (this.initialized) return
-    console.log('[TranscriptionService] Initialized (stub)')
-    this.initialized = true
-  }
-
-  async transcribe(wavPath: string): Promise<TranscriptionResult> {
-    console.log(
-      `[TranscriptionService] transcribe() called for "${wavPath}" (stub — returning mock)`
-    )
-    return {
-      text: '',
-      segments: [],
-      detectedLanguage: 'en'
-    }
-  }
-
-  dispose(): void {
-    this.initialized = false
-    console.log('[TranscriptionService] Disposed (stub)')
-  }
-}
+import { TranscriptionService } from './TranscriptionService'
 
 /**
  * DiarizationService stub.
@@ -121,8 +89,12 @@ export class AudioManager {
 
     console.log('[AudioManager] Initializing...')
 
+    // Default whisper model directory: {userData}/models/whisper-small-onnx
+    // Users download the model via the model management UI before recording.
+    const defaultWhisperModelDir = join(app.getPath('userData'), 'models', 'whisper-small-onnx')
+
     this.transcriptionService = new TranscriptionService()
-    await this.transcriptionService.initialize()
+    await this.transcriptionService.initialize(defaultWhisperModelDir)
 
     this.diarizationService = new DiarizationService()
     await this.diarizationService.initialize()
