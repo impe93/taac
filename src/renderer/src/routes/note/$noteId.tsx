@@ -18,10 +18,15 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui
 import { Code, Eye } from 'lucide-react'
 import { cn } from '@renderer/lib/utils'
 import { toast } from 'sonner'
+import { MeetingRecorder } from '@renderer/components/meeting/MeetingRecorder'
+import { MeetingProgress } from '@renderer/components/meeting/MeetingProgress'
+import { MeetingMetadataBar } from '@renderer/components/meeting/MeetingMetadataBar'
 
 export const Route = createFileRoute('/note/$noteId')({
   component: NoteView
 })
+
+type MeetingViewState = 'pre-recording' | 'processing' | 'completed'
 
 function NoteView(): ReactElement {
   const { noteId } = Route.useParams()
@@ -34,6 +39,13 @@ function NoteView(): ReactElement {
   const [content, setContent] = useState(note?.content ?? '')
   const [isSaving, setIsSaving] = useState(false)
 
+  // Meeting-specific view state
+  const [meetingViewState, setMeetingViewState] = useState<MeetingViewState>(() => {
+    if (!note || note.type !== 'meeting') return 'completed'
+    if (note.meetingMetadata) return 'completed'
+    return 'pre-recording'
+  })
+
   // Auto-indexing for AI search (5s debounce after save)
   const { triggerIndex, isIndexing } = useAutoIndexNote({
     enabled: !!note && !!activeSpaceId
@@ -45,6 +57,13 @@ function NoteView(): ReactElement {
       setTitle(note.title)
       // Ensure content is a string (for backward compatibility with old Lexical format)
       setContent(typeof note.content === 'string' ? note.content : '')
+
+      // Sync meeting view state
+      if (note.type === 'meeting') {
+        if (note.meetingMetadata && meetingViewState !== 'completed') {
+          setMeetingViewState('completed')
+        }
+      }
     }
   }, [note?.id]) // Only re-sync when noteId changes, not on every note update
 
@@ -121,6 +140,39 @@ function NoteView(): ReactElement {
     )
   }
 
+  // --- Meeting note: pre-recording ---
+  if (note.type === 'meeting' && meetingViewState === 'pre-recording') {
+    return (
+      <div className="flex flex-col h-full w-full max-w-4xl mx-auto">
+        <div className="px-6 py-4 border-b border-border">
+          <NoteTitle title={title} onChange={handleTitleChange} placeholder="Meeting Title" />
+        </div>
+        <MeetingRecorder
+          noteId={note.id}
+          spaceId={activeSpaceId ?? ''}
+          onRecordingComplete={() => setMeetingViewState('processing')}
+        />
+      </div>
+    )
+  }
+
+  // --- Meeting note: processing ---
+  if (note.type === 'meeting' && meetingViewState === 'processing') {
+    return (
+      <div className="flex flex-col h-full w-full max-w-4xl mx-auto">
+        <div className="px-6 py-4 border-b border-border">
+          <NoteTitle title={title} onChange={handleTitleChange} placeholder="Meeting Title" />
+        </div>
+        <MeetingProgress
+          noteId={note.id}
+          spaceId={activeSpaceId ?? ''}
+          onComplete={() => setMeetingViewState('completed')}
+        />
+      </div>
+    )
+  }
+
+  // --- Regular note or completed meeting note ---
   return (
     <div className="flex flex-col h-full w-full max-w-4xl mx-auto">
       {/* Header with title */}
@@ -153,11 +205,21 @@ function NoteView(): ReactElement {
             </Tooltip>
           </div>
         </div>
-        <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
-          <span>Last updated: {new Date(note.updatedAt).toLocaleString()}</span>
-          {isSaving && <span className="text-primary animate-pulse">Saving...</span>}
-          {isIndexing && <span className="text-muted-foreground animate-pulse">Indexing...</span>}
-        </div>
+
+        {/* Meeting metadata bar for completed meeting notes */}
+        {note.type === 'meeting' && note.meetingMetadata && (
+          <div className="mt-2">
+            <MeetingMetadataBar metadata={note.meetingMetadata} />
+          </div>
+        )}
+
+        {note.type !== 'meeting' && (
+          <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
+            <span>Last updated: {new Date(note.updatedAt).toLocaleString()}</span>
+            {isSaving && <span className="text-primary animate-pulse">Saving...</span>}
+            {isIndexing && <span className="text-muted-foreground animate-pulse">Indexing...</span>}
+          </div>
+        )}
       </div>
 
       {/* Editor */}
