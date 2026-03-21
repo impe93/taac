@@ -9,13 +9,29 @@ export default defineConfig({
       externalizeDepsPlugin({
         exclude: ['electron-store'],
         // Native AI modules must be externalized
-        include: ['node-llama-cpp', 'better-sqlite3', 'sqlite-vec', 'protobufjs']
+        include: [
+          'node-llama-cpp',
+          'better-sqlite3',
+          'sqlite-vec',
+          'protobufjs',
+          'ffmpeg-static',
+          'fluent-ffmpeg',
+          'sherpa-onnx'
+        ]
       })
     ],
     build: {
       rollupOptions: {
         // Explicitly mark native modules as external
-        external: ['node-llama-cpp', 'better-sqlite3', 'sqlite-vec', 'protobufjs']
+        external: [
+          'node-llama-cpp',
+          'better-sqlite3',
+          'sqlite-vec',
+          'protobufjs',
+          'ffmpeg-static',
+          'fluent-ffmpeg',
+          'sherpa-onnx'
+        ]
       }
     }
   },
