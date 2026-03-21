@@ -33,35 +33,7 @@ import type {
   DiarizationSegment
 } from './types'
 import { TranscriptionService } from './TranscriptionService'
-
-/**
- * DiarizationService stub.
- * Returns a single speaker segment covering the full recording until
- * sherpa-onnx speaker diarization is integrated.
- * §11.4 in NOTE_TAKER.md
- */
-class DiarizationService {
-  private initialized = false
-
-  async initialize(): Promise<void> {
-    if (this.initialized) return
-    console.log('[DiarizationService] Initialized (stub)')
-    this.initialized = true
-  }
-
-  async diarize(_wavPath: string): Promise<DiarizationResult> {
-    console.log(`[DiarizationService] diarize() called for "${_wavPath}" (stub — returning mock)`)
-    return {
-      segments: [{ speaker: 0, startTime: 0, endTime: 0 }],
-      numSpeakers: 1
-    }
-  }
-
-  dispose(): void {
-    this.initialized = false
-    console.log('[DiarizationService] Disposed (stub)')
-  }
-}
+import { DiarizationService } from './DiarizationService'
 
 // ---------------------------------------------------------------------------
 // AudioManager
@@ -96,8 +68,14 @@ export class AudioManager {
     this.transcriptionService = new TranscriptionService()
     await this.transcriptionService.initialize(defaultWhisperModelDir)
 
+    // Default diarization model paths: {userData}/models/diarization/
+    // Models are bundled with the app or auto-downloaded during onboarding (§7.3).
+    const diarizationModelDir = join(app.getPath('userData'), 'models', 'diarization')
+    const segmentationModelPath = join(diarizationModelDir, 'segmentation.onnx')
+    const embeddingModelPath = join(diarizationModelDir, 'embedding.onnx')
+
     this.diarizationService = new DiarizationService()
-    await this.diarizationService.initialize()
+    await this.diarizationService.initialize(segmentationModelPath, embeddingModelPath)
 
     this.initialized = true
     console.log('[AudioManager] Initialized')
