@@ -108,10 +108,16 @@ export const loadTree = createAsyncThunk(
 // Crea nota
 export const createNote = createAsyncThunk(
   'notesTree/createNote',
-  async (payload: { spaceId: string; folderId: string; title: string; content: string }) => {
-    const { spaceId, folderId, title, content } = payload
+  async (payload: {
+    spaceId: string
+    folderId: string
+    title: string
+    content: string
+    type?: 'note' | 'meeting'
+  }) => {
+    const { spaceId, folderId, title, content, type } = payload
 
-    const note = await window.fileSystem.createNote(spaceId, folderId, content, title)
+    const note = await window.fileSystem.createNote(spaceId, folderId, content, title, type)
     return { spaceId, note, folderId }
   }
 )

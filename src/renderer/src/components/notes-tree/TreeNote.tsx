@@ -8,7 +8,7 @@ import {
 } from '@renderer/store/slices/notesTreeSlice'
 import { useDraggable } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
-import { FileText } from 'lucide-react'
+import { FileText, Mic } from 'lucide-react'
 import { cn } from '@renderer/lib/utils'
 import { NoteContextMenu } from './NoteContextMenu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip'
@@ -74,7 +74,11 @@ export const TreeNote: FC<TreeNoteProps> = ({ noteId, folderId, level, onDelete 
           isSelected ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
         )}
       >
-        <FileText className="size-4 text-muted-foreground shrink-0" />
+        {note.type === 'meeting' ? (
+          <Mic className="size-4 text-muted-foreground shrink-0" />
+        ) : (
+          <FileText className="size-4 text-muted-foreground shrink-0" />
+        )}
         <Tooltip>
           <TooltipTrigger asChild>
             <span className="flex-1 text-left truncate min-w-0">{note.title || '(Untitled)'}</span>

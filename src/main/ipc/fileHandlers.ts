@@ -32,11 +32,12 @@ export function registerFileHandlers(
       spaceId: string,
       folderId: string,
       content: SerializedEditorState,
-      title: string
+      title: string,
+      type?: 'note' | 'meeting'
     ) => {
       try {
         const fsManager = getOrCreateFsManager(spaceId)
-        const note = await fsManager.createNote(folderId, content, title)
+        const note = await fsManager.createNote(folderId, content, title, type)
 
         // Enqueue background indexing (non-blocking) — resolve full folder path for semantic search
         let folderPath: string | undefined
@@ -212,7 +213,14 @@ export function registerFileHandlers(
         } catch {
           /* ignore */
         }
-        onNoteSaved?.(noteId, spaceId, targetFolderId, movedNote.content, movedNote.title, folderPath)
+        onNoteSaved?.(
+          noteId,
+          spaceId,
+          targetFolderId,
+          movedNote.content,
+          movedNote.title,
+          folderPath
+        )
 
         return movedNote
       } catch (error) {

@@ -78,7 +78,13 @@ export interface EmbeddingModelStatus {
 // File System API interface
 export interface FileSystemAPI {
   // Note operations
-  createNote: (spaceId: string, folderId: string, content: string, title: string) => Promise<Note>
+  createNote: (
+    spaceId: string,
+    folderId: string,
+    content: string,
+    title: string,
+    type?: 'note' | 'meeting'
+  ) => Promise<Note>
   readNote: (spaceId: string, folderId: string, noteId: string) => Promise<Note>
   updateNote: (
     spaceId: string,

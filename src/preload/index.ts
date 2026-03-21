@@ -4,8 +4,13 @@ import { electronAPI } from '@electron-toolkit/preload'
 // File System API
 const fileSystemAPI = {
   // Note operations
-  createNote: (spaceId: string, folderId: string, content: unknown, title: string) =>
-    ipcRenderer.invoke('fs:createNote', spaceId, folderId, content, title),
+  createNote: (
+    spaceId: string,
+    folderId: string,
+    content: unknown,
+    title: string,
+    type?: 'note' | 'meeting'
+  ) => ipcRenderer.invoke('fs:createNote', spaceId, folderId, content, title, type),
 
   readNote: (spaceId: string, folderId: string, noteId: string) =>
     ipcRenderer.invoke('fs:readNote', spaceId, folderId, noteId),
