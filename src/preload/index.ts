@@ -272,6 +272,30 @@ const importAPI = {
   }
 }
 
+// Audio API
+const audioAPI = {
+  saveRecording: (
+    noteId: string,
+    spaceId: string,
+    data: { micAudio: Uint8Array; systemAudio?: Uint8Array; mode: 'remote' | 'in-person' }
+  ) => ipcRenderer.invoke('audio:saveRecording', noteId, spaceId, data),
+
+  processRecording: (noteId: string, spaceId: string) =>
+    ipcRenderer.invoke('audio:processRecording', noteId, spaceId),
+
+  cancelProcessing: (noteId: string) => ipcRenderer.invoke('audio:cancelProcessing', noteId),
+
+  onProcessingProgress: (callback: (progress: unknown) => void) => {
+    const handler = (_: unknown, progress: unknown): void => callback(progress)
+    ipcRenderer.on('audio:processing-progress', handler)
+    return (): void => {
+      ipcRenderer.removeListener('audio:processing-progress', handler)
+    }
+  },
+
+  isTranscriptionModelDownloaded: () => ipcRenderer.invoke('audio:isTranscriptionModelDownloaded')
+}
+
 // Use `contextBridge` APIs to expose Electron APIs to
 // renderer only if context isolation is enabled, otherwise
 // just add to the DOM global.
@@ -284,6 +308,7 @@ if (process.contextIsolated) {
     contextBridge.exposeInMainWorld('platform', process.platform)
     contextBridge.exposeInMainWorld('ai', aiAPI)
     contextBridge.exposeInMainWorld('import', importAPI)
+    contextBridge.exposeInMainWorld('audio', audioAPI)
   } catch (error) {
     console.error(error)
   }
@@ -302,4 +327,6 @@ if (process.contextIsolated) {
   window.ai = aiAPI
   // @ts-ignore (define in dts)
   window.import = importAPI
+  // @ts-ignore (define in dts)
+  window.audio = audioAPI
 }

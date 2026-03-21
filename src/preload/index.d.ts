@@ -267,6 +267,28 @@ export interface ImportAPI {
   onProgress: (callback: (event: ImportProgressEvent) => void) => () => void
 }
 
+// Processing progress data for meeting note pipeline
+export interface ProcessingProgress {
+  noteId: string
+  stage: 'converting' | 'transcribing' | 'diarizing' | 'summarizing'
+  percentage: number
+  currentStage: number
+  totalStages: number
+}
+
+// Audio API interface
+export interface AudioAPI {
+  saveRecording: (
+    noteId: string,
+    spaceId: string,
+    data: { micAudio: Uint8Array; systemAudio?: Uint8Array; mode: 'remote' | 'in-person' }
+  ) => Promise<{ micPath: string; systemPath?: string }>
+  processRecording: (noteId: string, spaceId: string) => Promise<unknown>
+  cancelProcessing: (noteId: string) => Promise<void>
+  onProcessingProgress: (callback: (progress: ProcessingProgress) => void) => () => void
+  isTranscriptionModelDownloaded: () => Promise<boolean>
+}
+
 // Global window interface
 declare global {
   interface Window {
@@ -277,5 +299,6 @@ declare global {
     platform: NodeJS.Platform
     ai: AIAPI
     import: ImportAPI
+    audio: AudioAPI
   }
 }

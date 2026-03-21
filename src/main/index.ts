@@ -26,6 +26,7 @@ import {
   cancelBatchIndexing
 } from './ipc/aiHandlers'
 import { registerImportHandlers } from './ipc/importHandlers'
+import { registerAudioHandlers } from './ipc/audioHandlers'
 
 // Register custom protocol for serving local assets
 // Must be called before app is ready
@@ -187,6 +188,7 @@ app.whenReady().then(async () => {
   registerConfigHandlers()
   registerAIHandlers(getOrCreateFsManager)
   registerImportHandlers(spaceManager, getOrCreateFsManager)
+  registerAudioHandlers()
 
   // Default open or close DevTools by F12 in development
   // and ignore CommandOrControl + R in production.
