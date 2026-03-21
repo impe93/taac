@@ -12,6 +12,39 @@ export interface Note {
   createdAt: string
   updatedAt: string
   title: string
+  type: 'note' | 'meeting'
+  meetingMetadata?: MeetingMetadata
+}
+
+export interface MeetingMetadata {
+  recordingMode: 'remote' | 'in-person'
+  duration: number
+  language: string
+  recordingDate: string
+  speakers: Speaker[]
+  transcription: TranscriptionSegment[]
+  actionItems: ActionItem[]
+  audioFileId?: string
+}
+
+export interface Speaker {
+  id: string
+  label: string
+  totalSpeakingTime: number
+}
+
+export interface TranscriptionSegment {
+  speakerId: string
+  startTime: number
+  endTime: number
+  text: string
+}
+
+export interface ActionItem {
+  id: string
+  text: string
+  assignee?: string
+  completed: boolean
 }
 
 export interface FolderMetadata {
@@ -144,7 +177,12 @@ export class FileSystemManager {
   }
 
   // Note operations
-  async createNote(folderId: string, content: SerializedEditorState, title: string): Promise<Note> {
+  async createNote(
+    folderId: string,
+    content: SerializedEditorState,
+    title: string,
+    type: 'note' | 'meeting' = 'note'
+  ): Promise<Note> {
     const noteId = uuidv4()
     const note: Note = {
       id: noteId,
@@ -152,7 +190,8 @@ export class FileSystemManager {
       content,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      title
+      title,
+      type
     }
 
     const folderPath = join(this.getBasePath('notes'), folderId)
@@ -178,7 +217,14 @@ export class FileSystemManager {
     )
 
     const data = await fs.readFile(notePath, 'utf-8')
-    return JSON.parse(data) as Note
+    const note = JSON.parse(data) as Note
+
+    // Backward compatibility: assign default type for notes without the field
+    if (!note.type) {
+      note.type = 'note'
+    }
+
+    return note
   }
 
   async updateNote(folderId: string, noteId: string, updates: Partial<Note>): Promise<Note> {
@@ -674,9 +720,17 @@ export class FileSystemManager {
     }
 
     // 4. Create note in target space (root folder)
-    const targetNote = await targetFsManager.createNote('root', newContent, note.title)
+    const targetNote = await targetFsManager.createNote('root', newContent, note.title, note.type)
 
-    // 5. Delete note from source space
+    // 5. Preserve meeting metadata if present
+    if (note.meetingMetadata) {
+      await targetFsManager.updateNote('root', targetNote.id, {
+        meetingMetadata: note.meetingMetadata
+      })
+      targetNote.meetingMetadata = note.meetingMetadata
+    }
+
+    // 6. Delete note from source space
     await this.deleteNote(sourceFolderId, noteId)
 
     return targetNote
@@ -778,7 +832,21 @@ export class FileSystemManager {
 
       // Create note in corresponding target folder
       const targetFolderId = folderIdMap.get(srcNoteFolder)!
-      const newNote = await targetFsManager.createNote(targetFolderId, newContent, note.title)
+      const newNote = await targetFsManager.createNote(
+        targetFolderId,
+        newContent,
+        note.title,
+        note.type
+      )
+
+      // Preserve meeting metadata if present
+      if (note.meetingMetadata) {
+        await targetFsManager.updateNote(targetFolderId, newNote.id, {
+          meetingMetadata: note.meetingMetadata
+        })
+        newNote.meetingMetadata = note.meetingMetadata
+      }
+
       createdNotes[newNote.id] = newNote
     }
 

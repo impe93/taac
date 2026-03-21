@@ -6,6 +6,39 @@ export interface Note {
   createdAt: string
   updatedAt: string
   title: string
+  type: 'note' | 'meeting'
+  meetingMetadata?: MeetingMetadata
+}
+
+export interface MeetingMetadata {
+  recordingMode: 'remote' | 'in-person'
+  duration: number // Recording duration in seconds
+  language: string // ISO 639-1 code (auto-detected)
+  recordingDate: string // ISO 8601 timestamp
+  speakers: Speaker[]
+  transcription: TranscriptionSegment[]
+  actionItems: ActionItem[]
+  audioFileId?: string // Present if user chose to keep audio
+}
+
+export interface Speaker {
+  id: string // e.g. 'speaker-0', 'speaker-1'
+  label: string // e.g. 'You', 'Speaker 1', or user-assigned name
+  totalSpeakingTime: number // Seconds
+}
+
+export interface TranscriptionSegment {
+  speakerId: string
+  startTime: number // Seconds from recording start
+  endTime: number
+  text: string
+}
+
+export interface ActionItem {
+  id: string
+  text: string
+  assignee?: string // Speaker label, if identifiable from context
+  completed: boolean
 }
 
 export interface FolderMetadata {
