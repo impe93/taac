@@ -20,6 +20,7 @@
 import { join } from 'node:path'
 import { app } from 'electron'
 import fs from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import type {
   MeetingMetadata,
   Speaker,
@@ -34,6 +35,10 @@ import type {
 } from './types'
 import { TranscriptionService } from './TranscriptionService'
 import { DiarizationService } from './DiarizationService'
+import { AIManager } from '../ai/AIManager'
+import type { ChatMessage } from '../ai/AIManager'
+
+const DEFAULT_CHAT_MODEL_ID = 'qwen3-4b-instruct-2507-q8'
 
 // ---------------------------------------------------------------------------
 // AudioManager
@@ -116,7 +121,7 @@ export class AudioManager {
     recordingDate: string,
     durationSecs: number,
     onProgress: (progress: ProcessingProgress) => void
-  ): Promise<MeetingMetadata> {
+  ): Promise<{ metadata: MeetingMetadata; content: string }> {
     await this.initialize()
 
     console.log(`[AudioManager] processRecording — note=${noteId} space=${spaceId} mode=${mode}`)
@@ -165,14 +170,16 @@ export class AudioManager {
     )
 
     // ------------------------------------------------------------------
-    // Stage 4: Summarization (stub)
+    // Stage 4: Summarization
     // ------------------------------------------------------------------
     onProgress({ stage: 'summarizing', progress: 0, message: 'Generating summary...' })
-    console.log('[AudioManager] Stage: summarizing (stub)')
+    console.log('[AudioManager] Stage: summarizing')
 
-    // Stub: real implementation will call AIManager.generateChatCompletion()
-    // with the formatted transcript and return structured markdown + action items.
-    const actionItems: ActionItem[] = []
+    const { content, actionItems } = await this.summarizeTranscript(
+      speakers,
+      transcriptionSegments,
+      onProgress
+    )
 
     onProgress({ stage: 'summarizing', progress: 100, message: 'Summary complete' })
 
@@ -182,7 +189,7 @@ export class AudioManager {
     await this.cleanupWavFiles(micWavPath, systemWavPath)
 
     // ------------------------------------------------------------------
-    // Build and return MeetingMetadata
+    // Build and return MeetingMetadata + content
     // ------------------------------------------------------------------
     const detectedLanguage =
       micTranscription.detectedLanguage || systemTranscription?.detectedLanguage || 'en'
@@ -200,7 +207,7 @@ export class AudioManager {
     console.log('[AudioManager] processRecording complete')
     onProgress({ stage: 'done', progress: 100, message: 'Processing complete' })
 
-    return metadata
+    return { metadata, content }
   }
 
   // ---------------------------------------------------------------------------
@@ -337,6 +344,165 @@ export class AudioManager {
     timestamp: number
   ): DiarizationSegment | null {
     return segments.find((s) => s.startTime <= timestamp && timestamp < s.endTime) ?? null
+  }
+
+  // ---------------------------------------------------------------------------
+  // Summarization helpers (§6)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Returns the ID of the first loaded chat model, or the default model ID.
+   * This ensures we reuse a model already in memory without forcing a load.
+   */
+  private getActiveChatModelId(): string {
+    const loaded = AIManager.getInstance().getLoadedModels()
+    const chatModel = loaded.find((m) => m.id !== 'nomic-embed-text-v2-moe')
+    return chatModel?.id ?? DEFAULT_CHAT_MODEL_ID
+  }
+
+  /**
+   * Format [MM:SS - MM:SS] timestamp from seconds.
+   */
+  private formatTimestamp(secs: number): string {
+    const m = Math.floor(secs / 60)
+    const s = Math.floor(secs % 60)
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  }
+
+  /**
+   * Convert transcript segments + speaker map into the prompt string:
+   * [MM:SS - MM:SS] SpeakerLabel: text
+   */
+  private formatTranscriptForPrompt(segments: TranscriptionSegment[], speakers: Speaker[]): string {
+    const speakerMap = new Map<string, string>(speakers.map((s) => [s.id, s.label]))
+    return segments
+      .map((seg) => {
+        const label = speakerMap.get(seg.speakerId) ?? seg.speakerId
+        const start = this.formatTimestamp(seg.startTime)
+        const end = this.formatTimestamp(seg.endTime)
+        return `[${start} - ${end}] ${label}: ${seg.text.trim()}`
+      })
+      .join('\n')
+  }
+
+  /**
+   * Build a fallback content string (raw transcript) used when summarization fails.
+   */
+  private buildFallbackContent(segments: TranscriptionSegment[], speakers: Speaker[]): string {
+    const transcriptText = this.formatTranscriptForPrompt(segments, speakers)
+    return `## Full Transcript\n\n<details>\n<summary>Click to expand full transcript</summary>\n\n${transcriptText}\n</details>\n`
+  }
+
+  /**
+   * Parse action items from the LLM-generated markdown.
+   * Matches lines like: - [ ] Description — Assigned to: Name — Due: Date
+   */
+  private parseActionItems(markdown: string): ActionItem[] {
+    const actionItems: ActionItem[] = []
+    // Match checklist lines under ## Action Items section
+    const lines = markdown.split('\n')
+    for (const line of lines) {
+      const match = line.match(/^- \[ \] (.+)$/)
+      if (!match) continue
+      const raw = match[1]
+      // Extract optional "— Assigned to: X" and "— Due: Y" parts
+      const assigneeMatch = raw.match(/[—-]{1,2}\s*Assigned to:\s*([^—-]+)/i)
+      const textMatch = raw.match(/^(.+?)(?:\s*[—-]|$)/)
+      const text = textMatch ? textMatch[1].trim() : raw.trim()
+      const assignee = assigneeMatch ? assigneeMatch[1].trim() : undefined
+      actionItems.push({
+        id: randomUUID(),
+        text,
+        assignee,
+        completed: false
+      })
+    }
+    return actionItems
+  }
+
+  /**
+   * Call AIManager to generate a structured meeting summary from the transcript.
+   * Emits progress events during generation.
+   * On failure, returns the raw transcript as content (graceful degradation).
+   */
+  private async summarizeTranscript(
+    speakers: Speaker[],
+    transcriptionSegments: TranscriptionSegment[],
+    onProgress: (progress: ProcessingProgress) => void
+  ): Promise<{ content: string; actionItems: ActionItem[] }> {
+    const transcriptText = this.formatTranscriptForPrompt(transcriptionSegments, speakers)
+
+    const systemPrompt = `You are a meeting summarizer. Given a timestamped transcript with speaker labels, produce a structured summary in markdown format with the following sections:
+
+## Meeting Summary
+A concise overview of the meeting (3-5 sentences).
+
+## Key Topics Discussed
+Organized by topic, with relevant details and who contributed.
+
+## Key Decisions
+Numbered list of decisions made during the meeting.
+
+## Action Items
+Checklist format with assignee and deadline if mentioned:
+- [ ] [Action description] — Assigned to: [Speaker] — Due: [Date if mentioned]
+
+## Full Transcript
+<details>
+<summary>Click to expand full transcript</summary>
+
+[Timestamped transcript with speaker labels]
+</details>
+
+Do not include any text outside of these sections. Use the exact section headings above.`
+
+    const userMessage = `Here is the meeting transcript:\n\n${transcriptText}`
+
+    const messages: ChatMessage[] = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userMessage }
+    ]
+
+    const modelId = this.getActiveChatModelId()
+    console.log(`[AudioManager] Summarizing with model: ${modelId}`)
+
+    try {
+      const aiManager = AIManager.getInstance()
+      const generator = aiManager.generateChatCompletion(modelId, messages, {
+        isolated: true,
+        maxTokens: 4096
+      })
+
+      let fullContent = ''
+      let chunkCount = 0
+      // We don't know total tokens; emit progress up to 90% based on chunk cadence
+      const PROGRESS_INTERVAL = 20
+
+      for await (const chunk of generator) {
+        fullContent += chunk
+        chunkCount++
+        if (chunkCount % PROGRESS_INTERVAL === 0) {
+          // Estimate progress: cap at 90% until we're done
+          const estimated = Math.min(10 + chunkCount / 2, 90)
+          onProgress({
+            stage: 'summarizing',
+            progress: Math.round(estimated),
+            message: 'Generating summary...'
+          })
+        }
+      }
+
+      console.log(`[AudioManager] Summarization complete (${fullContent.length} chars)`)
+      const actionItems = this.parseActionItems(fullContent)
+      return { content: fullContent, actionItems }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error(`[AudioManager] Summarization failed, falling back to raw transcript: ${msg}`)
+      return {
+        content: this.buildFallbackContent(transcriptionSegments, speakers),
+        actionItems: []
+      }
+    }
   }
 
   /**
