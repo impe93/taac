@@ -63,12 +63,21 @@ export interface HardwareInfo {
 /**
  * Model capability types
  */
-export type ModelCapability = 'chat' | 'embedding' | 'code' | 'reasoning'
+export type ModelCapability = 'chat' | 'embedding' | 'code' | 'reasoning' | 'transcription' | 'diarization'
 
 /**
  * Performance estimation levels
  */
 export type EstimatedPerformance = 'slow' | 'moderate' | 'fast' | 'very-fast'
+
+/**
+ * Additional file entry for multi-file models (e.g. Whisper ONNX encoder/decoder/tokens)
+ */
+export interface ModelFile {
+  role: string
+  filename: string
+  downloadUrl: string
+}
 
 /**
  * Definition of an AI model available for download
@@ -86,6 +95,8 @@ export interface ModelDefinition {
   capabilities: ModelCapability[]
   hardwareTier: HardwareTier
   license: string
+  /** Additional files required by multi-file models (e.g. Whisper ONNX encoder/decoder/tokens) */
+  files?: ModelFile[]
 }
 
 /**

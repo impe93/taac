@@ -53,6 +53,155 @@ const CURATED_MODELS: ModelDefinition[] = [
     downloadUrl:
       'https://huggingface.co/ggml-org/Nomic-Embed-Text-V2-GGUF/resolve/main/nomic-embed-text-v2-moe-q8_0.gguf',
     license: 'Apache 2.0'
+  },
+
+  // ============================================================================
+  // TRANSCRIPTION MODELS - Whisper ONNX via sherpa-onnx (§5.2)
+  // ============================================================================
+  {
+    id: 'whisper-base-onnx',
+    name: 'Whisper Base (ONNX)',
+    description:
+      'OpenAI Whisper base model in ONNX format — good accuracy for clear audio with fast inference (~142MB)',
+    filename: 'whisper-base-encoder.onnx',
+    sizeBytes: 142 * 1024 * 1024, // ~142MB
+    layers: 0,
+    quantization: 'fp32',
+    contextLength: 0,
+    capabilities: ['transcription'],
+    hardwareTier: 'low',
+    downloadUrl:
+      'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-base/resolve/main/whisper-base-encoder.int8.onnx',
+    files: [
+      {
+        role: 'encoder',
+        filename: 'whisper-base-encoder.int8.onnx',
+        downloadUrl:
+          'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-base/resolve/main/whisper-base-encoder.int8.onnx'
+      },
+      {
+        role: 'decoder',
+        filename: 'whisper-base-decoder.int8.onnx',
+        downloadUrl:
+          'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-base/resolve/main/whisper-base-decoder.int8.onnx'
+      },
+      {
+        role: 'tokens',
+        filename: 'whisper-base-tokens.txt',
+        downloadUrl:
+          'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-base/resolve/main/whisper-base-tokens.txt'
+      }
+    ],
+    license: 'MIT'
+  },
+  {
+    id: 'whisper-small-onnx',
+    name: 'Whisper Small (ONNX)',
+    description:
+      'OpenAI Whisper small model in ONNX format — good accuracy/speed balance for multilingual transcription (~466MB)',
+    filename: 'whisper-small-encoder.int8.onnx',
+    sizeBytes: 466 * 1024 * 1024, // ~466MB
+    layers: 0,
+    quantization: 'int8',
+    contextLength: 0,
+    capabilities: ['transcription'],
+    hardwareTier: 'medium',
+    downloadUrl:
+      'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-small/resolve/main/whisper-small-encoder.int8.onnx',
+    files: [
+      {
+        role: 'encoder',
+        filename: 'whisper-small-encoder.int8.onnx',
+        downloadUrl:
+          'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-small/resolve/main/whisper-small-encoder.int8.onnx'
+      },
+      {
+        role: 'decoder',
+        filename: 'whisper-small-decoder.int8.onnx',
+        downloadUrl:
+          'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-small/resolve/main/whisper-small-decoder.int8.onnx'
+      },
+      {
+        role: 'tokens',
+        filename: 'whisper-small-tokens.txt',
+        downloadUrl:
+          'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-small/resolve/main/whisper-small-tokens.txt'
+      }
+    ],
+    license: 'MIT'
+  },
+  {
+    id: 'whisper-large-v3-turbo-onnx',
+    name: 'Whisper Large v3 Turbo (ONNX)',
+    description:
+      'OpenAI Whisper large-v3-turbo model in ONNX format — near-best accuracy at 8x the speed of large-v3 (~1.6GB)',
+    filename: 'whisper-large-v3-turbo-encoder.int8.onnx',
+    sizeBytes: 1.6 * 1024 * 1024 * 1024, // ~1.6GB
+    layers: 0,
+    quantization: 'int8',
+    contextLength: 0,
+    capabilities: ['transcription'],
+    hardwareTier: 'high',
+    downloadUrl:
+      'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-large-v3-turbo/resolve/main/whisper-large-v3-turbo-encoder.int8.onnx',
+    files: [
+      {
+        role: 'encoder',
+        filename: 'whisper-large-v3-turbo-encoder.int8.onnx',
+        downloadUrl:
+          'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-large-v3-turbo/resolve/main/whisper-large-v3-turbo-encoder.int8.onnx'
+      },
+      {
+        role: 'decoder',
+        filename: 'whisper-large-v3-turbo-decoder.int8.onnx',
+        downloadUrl:
+          'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-large-v3-turbo/resolve/main/whisper-large-v3-turbo-decoder.int8.onnx'
+      },
+      {
+        role: 'tokens',
+        filename: 'whisper-large-v3-turbo-tokens.txt',
+        downloadUrl:
+          'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-large-v3-turbo/resolve/main/whisper-large-v3-turbo-tokens.txt'
+      }
+    ],
+    license: 'MIT'
+  },
+
+  // ============================================================================
+  // DIARIZATION MODELS - Speaker segmentation & embedding via sherpa-onnx (§5.3)
+  // Small enough to bundle with the app or auto-download silently during onboarding.
+  // ============================================================================
+  {
+    id: 'sherpa-onnx-pyannote-segmentation',
+    name: 'Speaker Segmentation (pyannote)',
+    description:
+      'Pyannote speaker segmentation model — identifies when different speakers talk (~5MB). Intended to be bundled with the app.',
+    filename: 'model.onnx',
+    sizeBytes: 5 * 1024 * 1024, // ~5MB
+    layers: 0,
+    quantization: 'fp32',
+    contextLength: 0,
+    capabilities: ['diarization'],
+    hardwareTier: 'low',
+    downloadUrl:
+      'https://huggingface.co/csukuangfj/sherpa-onnx-pyannote-segmentation-3-0/resolve/main/model.onnx',
+    license: 'MIT'
+  },
+  {
+    id: 'sherpa-onnx-3dspeaker-embedding',
+    name: 'Speaker Embedding (3D-Speaker)',
+    description:
+      'ERes2Net speaker embedding model — creates voice fingerprints to cluster speakers (~10MB). Intended to be bundled with the app.',
+    filename: '3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx',
+    sizeBytes: 10 * 1024 * 1024, // ~10MB
+    layers: 0,
+    quantization: 'fp32',
+    contextLength: 0,
+    capabilities: ['diarization'],
+    hardwareTier: 'low',
+    downloadUrl:
+      'https://huggingface.co/csukuangfj/3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx/resolve/main/3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx',
+    license: 'Apache 2.0'
   }
 ]
 
@@ -116,11 +265,26 @@ export class ModelRegistry {
   }
 
   /**
+   * Get transcription (Whisper ONNX) models
+   */
+  static getTranscriptionModels(): ModelDefinition[] {
+    return Array.from(this.models.values()).filter((m) => m.capabilities.includes('transcription'))
+  }
+
+  /**
+   * Get diarization models (speaker segmentation and embedding)
+   */
+  static getDiarizationModels(): ModelDefinition[] {
+    return Array.from(this.models.values()).filter((m) => m.capabilities.includes('diarization'))
+  }
+
+  /**
    * Get recommended models for a hardware tier
    */
   static getRecommendedModels(tier: HardwareTier): {
     chat: ModelDefinition | undefined
     embedding: ModelDefinition | undefined
+    transcription: ModelDefinition | undefined
   } {
     const compatible = this.getModelsForTier(tier)
 
@@ -137,9 +301,18 @@ export class ModelRegistry {
       .filter((m) => m.capabilities.includes('embedding'))
       .sort((a, b) => a.sizeBytes - b.sizeBytes)
 
+    // Get the most capable compatible transcription model (highest tier that fits) (§7.4)
+    const transcriptionModels = compatible
+      .filter((m) => m.capabilities.includes('transcription'))
+      .sort((a, b) => {
+        const tierOrder: HardwareTier[] = ['low', 'medium', 'high', 'ultra']
+        return tierOrder.indexOf(b.hardwareTier) - tierOrder.indexOf(a.hardwareTier)
+      })
+
     return {
       chat: chatModels[0],
-      embedding: embeddingModels[0]
+      embedding: embeddingModels[0],
+      transcription: transcriptionModels[0]
     }
   }
 
