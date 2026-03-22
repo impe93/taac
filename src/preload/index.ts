@@ -277,7 +277,12 @@ const audioAPI = {
   saveRecording: (
     noteId: string,
     spaceId: string,
-    data: { micAudio: Uint8Array; systemAudio?: Uint8Array; mode: 'remote' | 'in-person' }
+    data: {
+      micAudio: Uint8Array
+      systemAudio?: Uint8Array
+      mode: 'remote' | 'in-person'
+      durationSecs?: number
+    }
   ) => ipcRenderer.invoke('audio:saveRecording', noteId, spaceId, data),
 
   processRecording: (noteId: string, spaceId: string) =>

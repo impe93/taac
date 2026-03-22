@@ -21,6 +21,8 @@ import { toast } from 'sonner'
 import { MeetingRecorder } from '@renderer/components/meeting/MeetingRecorder'
 import { MeetingProgress } from '@renderer/components/meeting/MeetingProgress'
 import { MeetingMetadataBar } from '@renderer/components/meeting/MeetingMetadataBar'
+import { ActionItemsList } from '@renderer/components/meeting/ActionItemsList'
+import type { ProcessingResult } from '@renderer/hooks/useMeetingProcessing'
 
 export const Route = createFileRoute('/note/$noteId')({
   component: NoteView
@@ -60,12 +62,15 @@ function NoteView(): ReactElement {
 
       // Sync meeting view state
       if (note.type === 'meeting') {
-        if (note.meetingMetadata && meetingViewState !== 'completed') {
+        if (note.meetingMetadata && meetingViewState !== 'processing') {
           setMeetingViewState('completed')
+        } else if (!note.meetingMetadata && meetingViewState === 'completed') {
+          setMeetingViewState('pre-recording')
         }
       }
     }
-  }, [note?.id]) // Only re-sync when noteId changes, not on every note update
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: only re-sync on note ID change
+  }, [note?.id])
 
   // Auto-save handler
   const handleSave = useCallback(async (): Promise<void> => {
@@ -128,6 +133,45 @@ function NoteView(): ReactElement {
     [triggerSave]
   )
 
+  // Handle processing complete — persist metadata + content to note
+  const handleProcessingComplete = useCallback(
+    async (result: ProcessingResult): Promise<void> => {
+      if (!note || !activeSpaceId) return
+
+      try {
+        await dispatch(
+          updateNote({
+            spaceId: activeSpaceId,
+            folderId: note.folderId,
+            noteId: note.id,
+            updates: {
+              content: result.content,
+              meetingMetadata: result.metadata
+            }
+          })
+        ).unwrap()
+
+        // Update local state with the generated content
+        setContent(result.content)
+        setMeetingViewState('completed')
+
+        // Trigger indexing for RAG
+        triggerIndex({
+          spaceId: activeSpaceId,
+          noteId: note.id,
+          folderId: note.folderId
+        })
+      } catch (error) {
+        console.error('Failed to save meeting processing result:', error)
+        toast.error('Failed to save meeting result')
+        // Still transition to completed so the user can see whatever content was generated
+        setContent(result.content)
+        setMeetingViewState('completed')
+      }
+    },
+    [dispatch, note, activeSpaceId, triggerIndex]
+  )
+
   // Editor mode toggle
   const { isSourceMode, toggle: toggleEditorMode } = useEditorMode()
 
@@ -166,7 +210,7 @@ function NoteView(): ReactElement {
         <MeetingProgress
           noteId={note.id}
           spaceId={activeSpaceId ?? ''}
-          onComplete={() => setMeetingViewState('completed')}
+          onComplete={handleProcessingComplete}
         />
       </div>
     )
@@ -212,6 +256,20 @@ function NoteView(): ReactElement {
             <MeetingMetadataBar metadata={note.meetingMetadata} />
           </div>
         )}
+
+        {/* Action items for completed meeting notes */}
+        {note.type === 'meeting' &&
+          note.meetingMetadata &&
+          note.meetingMetadata.actionItems.length > 0 && (
+            <div className="mt-3">
+              <ActionItemsList
+                noteId={note.id}
+                folderId={note.folderId}
+                actionItems={note.meetingMetadata.actionItems}
+                metadata={note.meetingMetadata}
+              />
+            </div>
+          )}
 
         {note.type !== 'meeting' && (
           <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">

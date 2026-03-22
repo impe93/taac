@@ -40,8 +40,8 @@ mac:
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
     - NSCameraUsageDescription: Application requests access to the device's camera.
-    - NSMicrophoneUsageDescription: "TaacNotes needs microphone access to record meeting audio."
-    - NSAudioCaptureUsageDescription: "TaacNotes needs audio capture access to record system audio during meetings."
+    - NSMicrophoneUsageDescription: 'TaacNotes needs microphone access to record meeting audio.'
+    - NSAudioCaptureUsageDescription: 'TaacNotes needs audio capture access to record system audio during meetings.'
     - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
     - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
   notarize: false

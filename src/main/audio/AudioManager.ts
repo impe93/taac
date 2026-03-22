@@ -19,7 +19,6 @@
 
 import { join } from 'node:path'
 import { app } from 'electron'
-import fs from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import type {
   MeetingMetadata,
@@ -184,12 +183,8 @@ export class AudioManager {
     onProgress({ stage: 'summarizing', progress: 100, message: 'Summary complete' })
 
     // ------------------------------------------------------------------
-    // Stage 5: Cleanup temporary WAV files
-    // ------------------------------------------------------------------
-    await this.cleanupWavFiles(micWavPath, systemWavPath)
-
-    // ------------------------------------------------------------------
     // Build and return MeetingMetadata + content
+    // (Cleanup is handled by audioHandlers based on config §4.2)
     // ------------------------------------------------------------------
     const detectedLanguage =
       micTranscription.detectedLanguage || systemTranscription?.detectedLanguage || 'en'
@@ -501,27 +496,6 @@ Do not include any text outside of these sections. Use the exact section heading
       return {
         content: this.buildFallbackContent(transcriptionSegments, speakers),
         actionItems: []
-      }
-    }
-  }
-
-  /**
-   * Delete temporary WAV files produced by the audio conversion step.
-   * WebM originals are retained (config-controlled cleanup is a later task, §4.2).
-   */
-  private async cleanupWavFiles(
-    micWavPath: string,
-    systemWavPath: string | undefined
-  ): Promise<void> {
-    const paths = [micWavPath, systemWavPath].filter(Boolean) as string[]
-    for (const p of paths) {
-      try {
-        await fs.unlink(p)
-        console.log(`[AudioManager] Deleted temp WAV: ${p}`)
-      } catch (err) {
-        // Non-fatal: log and continue
-        const msg = err instanceof Error ? err.message : String(err)
-        console.warn(`[AudioManager] Could not delete temp WAV "${p}": ${msg}`)
       }
     }
   }

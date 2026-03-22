@@ -3,7 +3,7 @@ import { Check, Loader2, Circle } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@renderer/components/ui/card'
 import { Progress } from '@renderer/components/ui/progress'
 import { cn } from '@renderer/lib/utils'
-import { useMeetingProcessing } from '@renderer/hooks/useMeetingProcessing'
+import { useMeetingProcessing, type ProcessingResult } from '@renderer/hooks/useMeetingProcessing'
 
 type StageKey = 'converting' | 'transcribing' | 'diarizing' | 'summarizing'
 
@@ -23,7 +23,7 @@ const STAGES: Stage[] = [
 interface MeetingProgressProps {
   noteId: string
   spaceId: string
-  onComplete: () => void
+  onComplete: (result: ProcessingResult) => void
 }
 
 export const MeetingProgress: FC<MeetingProgressProps> = ({ noteId, spaceId, onComplete }) => {
@@ -36,8 +36,10 @@ export const MeetingProgress: FC<MeetingProgressProps> = ({ noteId, spaceId, onC
     if (startedRef.current) return
     startedRef.current = true
 
-    startProcessing(spaceId).then(() => {
-      onCompleteRef.current()
+    startProcessing(spaceId).then((result) => {
+      if (result) {
+        onCompleteRef.current(result)
+      }
     })
   }, [spaceId, startProcessing])
 

@@ -171,7 +171,12 @@ export function useMeetingRecorder(noteId: string): UseMeetingRecorderReturn {
           systemAudio = new Uint8Array(systemBuffer)
         }
 
-        await window.audio.saveRecording(noteId, spaceId, { micAudio, systemAudio, mode })
+        await window.audio.saveRecording(noteId, spaceId, {
+          micAudio,
+          systemAudio,
+          mode,
+          durationSecs: durationRef.current
+        })
 
         micChunksRef.current = []
         systemChunksRef.current = []

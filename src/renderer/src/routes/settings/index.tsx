@@ -1,6 +1,17 @@
 import { type FC, type ReactNode, useMemo } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { Bot, Search, Download, Trash2, CheckCircle2, Pause, Play, X, Mic } from 'lucide-react'
+import {
+  Bot,
+  Search,
+  Download,
+  Trash2,
+  CheckCircle2,
+  Pause,
+  Play,
+  X,
+  Mic,
+  Users
+} from 'lucide-react'
 import { Card, CardContent } from '@renderer/components/ui/card'
 import { Badge } from '@renderer/components/ui/badge'
 import { Button } from '@renderer/components/ui/button'
@@ -32,6 +43,17 @@ interface ModelRowConfig {
 const MODEL_ROWS: ModelRowConfig[] = [
   { id: 'qwen3-4b-instruct-2507-q8', label: 'AI Chat', icon: Bot },
   { id: 'nomic-embed-text-v2-moe', label: 'Search', icon: Search }
+]
+
+const TRANSCRIPTION_MODEL_ROWS: ModelRowConfig[] = [
+  { id: 'whisper-base-onnx', label: 'Transcription', icon: Mic },
+  { id: 'whisper-small-onnx', label: 'Transcription', icon: Mic },
+  { id: 'whisper-large-v3-turbo-onnx', label: 'Transcription', icon: Mic }
+]
+
+const DIARIZATION_MODEL_ROWS: ModelRowConfig[] = [
+  { id: 'sherpa-onnx-pyannote-segmentation', label: 'Diarization', icon: Users },
+  { id: 'sherpa-onnx-3dspeaker-embedding', label: 'Diarization', icon: Users }
 ]
 
 function SettingsPage(): ReactNode {
@@ -82,7 +104,89 @@ function SettingsPage(): ReactNode {
         })}
       </div>
 
+      <MeetingModelsSection
+        modelsMap={modelsMap}
+        downloadedModelIds={downloadedModelIds}
+        progress={progress}
+        onDownload={download}
+        onDelete={(id) => deleteModel.mutate(id)}
+        onPause={pause}
+        onResume={resume}
+        onCancel={cancel}
+      />
+
       <MeetingNotesSettings downloadedModels={downloadedModels ?? []} />
+    </div>
+  )
+}
+
+interface MeetingModelsSectionProps {
+  modelsMap: Map<string, ModelDefinition>
+  downloadedModelIds: Set<string>
+  progress: Map<string, DownloadProgress>
+  onDownload: (id: string) => void
+  onDelete: (id: string) => void
+  onPause: (id: string) => void
+  onResume: (id: string) => void
+  onCancel: (id: string) => void
+}
+
+const MeetingModelsSection: FC<MeetingModelsSectionProps> = ({
+  modelsMap,
+  downloadedModelIds,
+  progress,
+  onDownload,
+  onDelete,
+  onPause,
+  onResume,
+  onCancel
+}) => {
+  const renderModelRows = (rows: ModelRowConfig[]): ReactNode =>
+    rows.map((row) => {
+      const model = modelsMap.get(row.id)
+      if (!model) return null
+      return (
+        <ModelRow
+          key={row.id}
+          model={model}
+          label={row.label}
+          icon={row.icon}
+          isDownloaded={downloadedModelIds.has(row.id)}
+          downloadProgress={progress.get(row.id)}
+          onDownload={onDownload}
+          onDelete={onDelete}
+          onPause={onPause}
+          onResume={onResume}
+          onCancel={onCancel}
+        />
+      )
+    })
+
+  return (
+    <div className="mt-8">
+      <div className="mb-4 flex items-center gap-2">
+        <Mic className="size-5 text-muted-foreground" />
+        <div>
+          <h2 className="text-lg font-semibold">Meeting Note Models</h2>
+          <p className="text-xs text-muted-foreground">
+            Models required for meeting transcription and speaker identification.
+          </p>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <div>
+          <p className="mb-2 text-sm font-medium text-muted-foreground">
+            Transcription (choose one)
+          </p>
+          <div className="space-y-3">{renderModelRows(TRANSCRIPTION_MODEL_ROWS)}</div>
+        </div>
+
+        <div>
+          <p className="mb-2 text-sm font-medium text-muted-foreground">Speaker Identification</p>
+          <div className="space-y-3">{renderModelRows(DIARIZATION_MODEL_ROWS)}</div>
+        </div>
+      </div>
     </div>
   )
 }

@@ -18,6 +18,8 @@ import {
   selectActiveSpaceId
 } from '@renderer/store/slices/notesTreeSlice'
 import { EMPTY_EDITOR_STATE } from './constants'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip'
+import { useMeetingModelsReady } from '@renderer/hooks/useMeetingModelsReady'
 import { FileText, Mic } from 'lucide-react'
 
 interface CreateItemDialogProps {
@@ -38,6 +40,7 @@ export const CreateItemDialog: FC<CreateItemDialogProps> = ({
   const loadingOperations = useAppSelector((state) => state.notesTree.loadingOperations)
   const [name, setName] = useState('')
   const [noteType, setNoteType] = useState<'note' | 'meeting'>('note')
+  const { isReady: meetingModelsReady } = useMeetingModelsReady()
 
   const isPending =
     type === 'note'
@@ -106,7 +109,8 @@ export const CreateItemDialog: FC<CreateItemDialogProps> = ({
                 type="single"
                 value={noteType}
                 onValueChange={(value) => {
-                  if (value) setNoteType(value as 'note' | 'meeting')
+                  if (value && (value !== 'meeting' || meetingModelsReady))
+                    setNoteType(value as 'note' | 'meeting')
                 }}
                 variant="outline"
                 className="w-full"
@@ -115,10 +119,25 @@ export const CreateItemDialog: FC<CreateItemDialogProps> = ({
                   <FileText className="size-4" />
                   Note
                 </ToggleGroupItem>
-                <ToggleGroupItem value="meeting" className="flex-1 gap-2">
-                  <Mic className="size-4" />
-                  Meeting Note
-                </ToggleGroupItem>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="flex flex-1">
+                      <ToggleGroupItem
+                        value="meeting"
+                        className="flex-1 gap-2"
+                        disabled={!meetingModelsReady}
+                      >
+                        <Mic className="size-4" />
+                        Meeting Note
+                      </ToggleGroupItem>
+                    </span>
+                  </TooltipTrigger>
+                  {!meetingModelsReady && (
+                    <TooltipContent side="bottom">
+                      <p>Download the required AI models in Settings to enable Meeting Notes</p>
+                    </TooltipContent>
+                  )}
+                </Tooltip>
               </ToggleGroup>
             </div>
           )}

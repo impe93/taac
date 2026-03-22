@@ -281,9 +281,17 @@ export interface AudioAPI {
   saveRecording: (
     noteId: string,
     spaceId: string,
-    data: { micAudio: Uint8Array; systemAudio?: Uint8Array; mode: 'remote' | 'in-person' }
+    data: {
+      micAudio: Uint8Array
+      systemAudio?: Uint8Array
+      mode: 'remote' | 'in-person'
+      durationSecs?: number
+    }
   ) => Promise<{ micPath: string; systemPath?: string }>
-  processRecording: (noteId: string, spaceId: string) => Promise<unknown>
+  processRecording: (
+    noteId: string,
+    spaceId: string
+  ) => Promise<{ metadata: import('./types').MeetingMetadata; content: string }>
   cancelProcessing: (noteId: string) => Promise<void>
   onProcessingProgress: (callback: (progress: ProcessingProgress) => void) => () => void
   isTranscriptionModelDownloaded: () => Promise<boolean>

@@ -27,6 +27,7 @@ import {
 } from './ipc/aiHandlers'
 import { registerImportHandlers } from './ipc/importHandlers'
 import { registerAudioHandlers } from './ipc/audioHandlers'
+import { AudioManager } from './audio/AudioManager'
 
 // Register custom protocol for serving local assets
 // Must be called before app is ready
@@ -235,9 +236,10 @@ app.on('window-all-closed', () => {
   }
 })
 
-app.on('before-quit', () => {
+app.on('before-quit', async () => {
   cancelBatchIndexing()
   disposeIndexingQueue()
+  await AudioManager.getInstance().dispose()
 })
 
 // In this file you can include the rest of your app's specific main process
