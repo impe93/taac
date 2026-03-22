@@ -63,7 +63,13 @@ export interface HardwareInfo {
 /**
  * Model capability types
  */
-export type ModelCapability = 'chat' | 'embedding' | 'code' | 'reasoning' | 'transcription' | 'diarization'
+export type ModelCapability =
+  | 'chat'
+  | 'embedding'
+  | 'code'
+  | 'reasoning'
+  | 'transcription'
+  | 'diarization'
 
 /**
  * Performance estimation levels
