@@ -138,4 +138,10 @@ export interface AppConfig {
     folders: Record<string, unknown>
     notes: Record<string, unknown>
   }
+  // Meeting Notes settings
+  meeting: {
+    keepAudioAfterTranscription: boolean
+    defaultRecordingMode: 'remote' | 'in-person'
+    whisperModelId: string
+  }
 }

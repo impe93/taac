@@ -5,6 +5,7 @@ import { Card, CardContent } from '@renderer/components/ui/card'
 import { ToggleGroup, ToggleGroupItem } from '@renderer/components/ui/toggle-group'
 import { cn } from '@renderer/lib/utils'
 import { useMeetingRecorder } from '@renderer/hooks/useMeetingRecorder'
+import { useConfig } from '@renderer/hooks/useConfig'
 
 type RecordingMode = 'remote' | 'in-person'
 
@@ -26,7 +27,8 @@ export const MeetingRecorder: FC<MeetingRecorderProps> = ({
   spaceId,
   onRecordingComplete
 }) => {
-  const [mode, setMode] = useState<RecordingMode>('remote')
+  const { data: meetingConfig } = useConfig('meeting')
+  const [mode, setMode] = useState<RecordingMode>(meetingConfig?.defaultRecordingMode ?? 'remote')
   const { state, startRecording, pauseRecording, resumeRecording, stopRecording, duration, error } =
     useMeetingRecorder(noteId)
 

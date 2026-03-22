@@ -52,6 +52,12 @@ export interface AppConfig {
     folders: Record<string, unknown>
     notes: Record<string, unknown>
   }
+  // Meeting Notes settings
+  meeting: {
+    keepAudioAfterTranscription: boolean
+    defaultRecordingMode: 'remote' | 'in-person'
+    whisperModelId: string
+  }
 }
 
 const schema = {
@@ -157,6 +163,19 @@ const schema = {
     default: {
       folders: {},
       notes: {}
+    }
+  },
+  meeting: {
+    type: 'object',
+    properties: {
+      keepAudioAfterTranscription: { type: 'boolean', default: true },
+      defaultRecordingMode: { type: 'string', enum: ['remote', 'in-person'], default: 'remote' },
+      whisperModelId: { type: 'string', default: 'whisper-small-onnx' }
+    },
+    default: {
+      keepAudioAfterTranscription: true,
+      defaultRecordingMode: 'remote',
+      whisperModelId: 'whisper-small-onnx'
     }
   }
 } as const

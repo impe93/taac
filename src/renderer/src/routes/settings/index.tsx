@@ -1,12 +1,21 @@
 import { type FC, type ReactNode, useMemo } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { Bot, Search, Download, Trash2, CheckCircle2, Pause, Play, X } from 'lucide-react'
+import { Bot, Search, Download, Trash2, CheckCircle2, Pause, Play, X, Mic } from 'lucide-react'
 import { Card, CardContent } from '@renderer/components/ui/card'
 import { Badge } from '@renderer/components/ui/badge'
 import { Button } from '@renderer/components/ui/button'
 import { Progress } from '@renderer/components/ui/progress'
+import { Switch } from '@renderer/components/ui/switch'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@renderer/components/ui/select'
 import { useAvailableModels } from '@renderer/hooks/useHardware'
 import { useDownloadedModels, useModelDownload, useDeleteModel } from '@renderer/hooks/useModels'
+import { useConfig, useSetConfig } from '@renderer/hooks/useConfig'
 import { formatSize, formatSpeed, formatETA } from '@renderer/lib/format'
 import type { ModelDefinition, DownloadProgress } from '@main/ai/types'
 
@@ -72,6 +81,118 @@ function SettingsPage(): ReactNode {
           )
         })}
       </div>
+
+      <MeetingNotesSettings downloadedModels={downloadedModels ?? []} />
+    </div>
+  )
+}
+
+interface MeetingNotesSettingsProps {
+  downloadedModels: ModelDefinition[]
+}
+
+const MeetingNotesSettings: FC<MeetingNotesSettingsProps> = ({ downloadedModels }) => {
+  const { data: meetingConfig } = useConfig('meeting')
+  const setConfig = useSetConfig<'meeting'>()
+
+  const whisperModels = useMemo(
+    () => downloadedModels.filter((m) => m.capabilities.includes('transcription')),
+    [downloadedModels]
+  )
+
+  if (!meetingConfig) return null
+
+  const handleKeepAudioChange = (checked: boolean): void => {
+    setConfig.mutate({
+      key: 'meeting',
+      value: { ...meetingConfig, keepAudioAfterTranscription: checked }
+    })
+  }
+
+  const handleRecordingModeChange = (value: string): void => {
+    setConfig.mutate({
+      key: 'meeting',
+      value: { ...meetingConfig, defaultRecordingMode: value as 'remote' | 'in-person' }
+    })
+  }
+
+  const handleWhisperModelChange = (value: string): void => {
+    setConfig.mutate({ key: 'meeting', value: { ...meetingConfig, whisperModelId: value } })
+  }
+
+  return (
+    <div className="mt-8">
+      <div className="mb-4 flex items-center gap-2">
+        <Mic className="size-5 text-muted-foreground" />
+        <h2 className="text-lg font-semibold">Meeting Notes</h2>
+      </div>
+      <Card>
+        <CardContent className="divide-y py-0">
+          {/* Keep audio toggle */}
+          <div className="flex items-center justify-between py-4">
+            <div className="flex-1 pr-4">
+              <p className="text-sm font-medium">Keep audio recordings after transcription</p>
+              <p className="text-xs text-muted-foreground">
+                Preserve the original audio files once transcription is complete
+              </p>
+            </div>
+            <Switch
+              checked={meetingConfig.keepAudioAfterTranscription}
+              onCheckedChange={handleKeepAudioChange}
+            />
+          </div>
+
+          {/* Default recording mode */}
+          <div className="flex items-center justify-between py-4">
+            <div className="flex-1 pr-4">
+              <p className="text-sm font-medium">Default recording mode</p>
+              <p className="text-xs text-muted-foreground">
+                Remote captures mic + system audio; In-person captures mic only
+              </p>
+            </div>
+            <Select
+              value={meetingConfig.defaultRecordingMode}
+              onValueChange={handleRecordingModeChange}
+            >
+              <SelectTrigger className="w-36">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="remote">Remote</SelectItem>
+                <SelectItem value="in-person">In-person</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Transcription model */}
+          <div className="flex items-center justify-between py-4">
+            <div className="flex-1 pr-4">
+              <p className="text-sm font-medium">Transcription model</p>
+              <p className="text-xs text-muted-foreground">
+                {whisperModels.length === 0
+                  ? 'No transcription models downloaded yet'
+                  : 'Whisper model used for meeting transcription'}
+              </p>
+            </div>
+            <Select
+              value={meetingConfig.whisperModelId}
+              onValueChange={handleWhisperModelChange}
+              disabled={whisperModels.length === 0}
+            >
+              <SelectTrigger className="w-52">
+                <SelectValue placeholder="No model available" />
+              </SelectTrigger>
+              <SelectContent>
+                {whisperModels.map((m) => (
+                  <SelectItem key={m.id} value={m.id}>
+                    {m.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   )
 }
