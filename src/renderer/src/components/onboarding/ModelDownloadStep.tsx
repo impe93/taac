@@ -21,6 +21,7 @@ import { Separator } from '@renderer/components/ui/separator'
 import { Skeleton } from '@renderer/components/ui/skeleton'
 import { useDownloadedModels, useModelDownload } from '@renderer/hooks/useModels'
 import { useHardwareInfo, useAvailableModels } from '@renderer/hooks/useHardware'
+import { useSetConfig } from '@renderer/hooks/useConfig'
 import { formatSize, formatSpeed, formatETA } from '@renderer/lib/format'
 import type { OnboardingAction, OnboardingState } from './OnboardingWizard'
 
@@ -72,6 +73,7 @@ export const ModelDownloadStep: FC<ModelDownloadStepProps> = ({ state, dispatch 
   const { data: hardwareInfo, isLoading: isLoadingHardware } = useHardwareInfo()
   const { data: availableModels } = useAvailableModels()
   const { progress, download, pause, resume } = useModelDownload()
+  const setConfig = useSetConfig<'meeting'>()
 
   const downloadedModelIds = useMemo(
     () => new Set(downloadedModels?.map((m) => m.id) ?? []),
@@ -110,6 +112,20 @@ export const ModelDownloadStep: FC<ModelDownloadStepProps> = ({ state, dispatch 
       dispatch({ type: 'SET_MODEL_STATUS', chat: true, embedding: true })
     }
   }, [allDownloaded, state.models.chatModelDownloaded, dispatch])
+
+  // Update whisperModelId config when a transcription model download completes
+  useEffect(() => {
+    const transcriptionIds = new Set(transcriptionModels.map((m) => m.id))
+    for (const [modelId, p] of progress) {
+      if (p.status === 'completed' && transcriptionIds.has(modelId)) {
+        setConfig.mutate({
+          key: 'meeting',
+          value: { whisperModelId: modelId } as Parameters<typeof setConfig.mutate>[0]['value']
+        })
+        break
+      }
+    }
+  }, [progress, transcriptionModels, setConfig])
 
   // Handlers
   const handleDownloadAll = (): void => {

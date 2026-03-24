@@ -85,10 +85,24 @@ export function useMeetingRecorder(noteId: string): UseMeetingRecorderReturn {
         micRecorderRef.current = micRecorder
 
         if (mode === 'remote') {
-          const systemStream = await navigator.mediaDevices.getDisplayMedia({ audio: true })
-          systemStreamRef.current = systemStream
+          const displayStream = await navigator.mediaDevices.getDisplayMedia({ audio: true })
 
-          const systemRecorder = new MediaRecorder(systemStream, {
+          // Stop video tracks immediately — we only need system audio
+          displayStream.getVideoTracks().forEach((track) => track.stop())
+
+          const audioTracks = displayStream.getAudioTracks()
+          if (audioTracks.length === 0) {
+            displayStream.getTracks().forEach((track) => track.stop())
+            throw new Error(
+              'System audio capture is not available. Ensure Screen Recording permission is granted in System Settings.'
+            )
+          }
+
+          // Create audio-only stream for the recorder
+          const audioOnlyStream = new MediaStream(audioTracks)
+          systemStreamRef.current = audioOnlyStream
+
+          const systemRecorder = new MediaRecorder(audioOnlyStream, {
             mimeType: 'audio/webm;codecs=opus'
           })
           systemRecorder.ondataavailable = (e: BlobEvent): void => {

@@ -210,12 +210,24 @@ app.whenReady().then(async () => {
 
   // Register display media request handler for system audio loopback capture (§3.2)
   // Must be set up after app is ready so session is available
-  session.defaultSession.setDisplayMediaRequestHandler(async (_request, callback) => {
-    console.log('[AudioSetup] Display media requested — granting system audio loopback access')
+  session.defaultSession.setDisplayMediaRequestHandler(async (request, callback) => {
+    console.log('[AudioSetup] Display media requested', {
+      videoRequested: request.videoRequested,
+      audioRequested: request.audioRequested
+    })
+
     const sources = await desktopCapturer.getSources({ types: ['screen'] })
+    if (sources.length === 0) {
+      console.error(
+        '[AudioSetup] No screen sources available — Screen Recording permission may be denied'
+      )
+      callback({})
+      return
+    }
+
     callback({
       video: sources[0], // Screen source required by API even when only audio is needed
-      audio: 'loopback' // System audio loopback — requires Electron 39+ / Chromium 142+
+      audio: 'loopback' // System audio loopback
     })
   })
   console.log('[AudioSetup] setDisplayMediaRequestHandler registered on default session')

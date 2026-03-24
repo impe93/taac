@@ -80,7 +80,9 @@ export class DiarizationService {
     // ------------------------------------------------------------------
     // 2. Dynamic import — §3.5 ESM pattern (same as node-llama-cpp)
     // ------------------------------------------------------------------
-    const sherpaOnnx: SherpaOnnxModule = await import('sherpa-onnx')
+    const sherpaOnnxModule = await import('sherpa-onnx-node')
+    // CJS module wrapped by dynamic import — exports are under .default
+    const sherpaOnnx: SherpaOnnxModule = sherpaOnnxModule.default ?? sherpaOnnxModule
     this.sherpaOnnx = sherpaOnnx
 
     // ------------------------------------------------------------------
@@ -93,9 +95,9 @@ export class DiarizationService {
     // 4. Create the offline speaker diarization pipeline (§5.5 config layout)
     //    numClusters: 0 → auto-detect number of speakers
     // ------------------------------------------------------------------
-    this.diarizer = sherpaOnnx.createOfflineSpeakerDiarization({
+    this.diarizer = new sherpaOnnx.OfflineSpeakerDiarization({
       segmentation: {
-        model: segmentationModelPath,
+        pyannote: { model: segmentationModelPath },
         numThreads,
         debug: 0
       },
@@ -105,7 +107,8 @@ export class DiarizationService {
         debug: 0
       },
       clustering: {
-        numClusters: 0 // 0 = auto-detect
+        numClusters: -1, // -1 = auto-detect
+        threshold: 0.5
       }
     })
 
@@ -119,11 +122,10 @@ export class DiarizationService {
    * Returns a single-speaker fallback result (rather than throwing) when the
    * service is in degraded mode (models not loaded), so the pipeline can continue.
    *
-   * @param wavPath     Absolute path to the 16 kHz mono WAV file
-   * @param numSpeakers Expected number of speakers; 0 = auto-detect (default)
-   * @returns           DiarizationResult with speaker-labelled segments
+   * @param wavPath  Absolute path to the 16 kHz mono WAV file
+   * @returns        DiarizationResult with speaker-labelled segments
    */
-  async diarize(wavPath: string, numSpeakers: number = 0): Promise<DiarizationResult> {
+  async diarize(wavPath: string): Promise<DiarizationResult> {
     // Degraded-mode guard — return a single-speaker result covering the full file
     if (!this.diarizer || !this.sherpaOnnx) {
       console.warn(
@@ -138,10 +140,7 @@ export class DiarizationService {
       throw new Error(`[DiarizationService] WAV file not found: "${wavPath}"`)
     }
 
-    console.log(
-      `[DiarizationService] Diarizing: ${wavPath}` +
-        (numSpeakers > 0 ? ` (numSpeakers=${numSpeakers})` : ' (auto-detect speakers)')
-    )
+    console.log(`[DiarizationService] Diarizing: ${wavPath} (auto-detect speakers)`)
 
     // ------------------------------------------------------------------
     // Read wave → process → extract segments
@@ -152,10 +151,9 @@ export class DiarizationService {
       samples: Float32Array
     }
 
-    // sherpa-onnx Node.js binding: process(samples, numSpeakers)
-    // numSpeakers=0 → auto-detect
+    // sherpa-onnx WASM binding: process(samples) — numSpeakers is set via config
     const rawSegments: Array<{ start: number; end: number; speaker: number }> =
-      this.diarizer.process(wave.samples, numSpeakers)
+      this.diarizer.process(wave.samples)
 
     if (!rawSegments || rawSegments.length === 0) {
       console.warn(

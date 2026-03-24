@@ -92,7 +92,7 @@
     "react-redux": "^9.2.0",
     "react-resizable-panels": "^2.1.7",
     "recharts": "^2.15.1",
-    "sherpa-onnx": "^1.12.31",
+    "sherpa-onnx-node": "^1.12.32",
     "sonner": "^2.0.2",
     "sqlite-vec": "0.1.7",
     "systeminformation": "^5.30.6",

@@ -16,7 +16,7 @@ export default defineConfig({
           'protobufjs',
           'ffmpeg-static',
           'fluent-ffmpeg',
-          'sherpa-onnx'
+          'sherpa-onnx-node'
         ]
       })
     ],
@@ -30,7 +30,7 @@ export default defineConfig({
           'protobufjs',
           'ffmpeg-static',
           'fluent-ffmpeg',
-          'sherpa-onnx'
+          'sherpa-onnx-node'
         ]
       }
     }

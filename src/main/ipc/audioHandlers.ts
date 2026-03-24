@@ -283,12 +283,9 @@ export function registerAudioHandlers(): void {
       const whisperModelId = configStore.get('meeting').whisperModelId
       const modelDir = join(app.getPath('userData'), 'models', whisperModelId)
       // Check if the model directory exists with required files
-      try {
-        await fs.access(join(modelDir, 'tokens.txt'))
-        return true
-      } catch {
-        return false
-      }
+      // File names follow the pattern: {variant}-tokens.txt (e.g., small-tokens.txt)
+      const entries = await fs.readdir(modelDir).catch(() => [] as string[])
+      return entries.some((f) => f.endsWith('-tokens.txt'))
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       throw new Error(`[AudioHandlers] Failed to check transcription model status: ${message}`)

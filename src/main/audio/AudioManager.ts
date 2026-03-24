@@ -18,6 +18,7 @@
  */
 
 import { join } from 'node:path'
+import fs from 'node:fs/promises'
 import { app } from 'electron'
 import { randomUUID } from 'node:crypto'
 import type {
@@ -65,18 +66,51 @@ export class AudioManager {
 
     console.log('[AudioManager] Initializing...')
 
-    // Default whisper model directory: {userData}/models/whisper-small-onnx
-    // Users download the model via the model management UI before recording.
-    const defaultWhisperModelDir = join(app.getPath('userData'), 'models', 'whisper-small-onnx')
+    // Whisper model directory: {userData}/models/{whisperModelId}/
+    // The configured whisper model ID determines which sub-directory to use.
+    // If the configured model isn't downloaded, fall back to any available transcription model.
+    const { configStore } = await import('../utils/configStore')
+    const { ModelRegistry } = await import('../ai/ModelRegistry')
+    const modelsBase = join(app.getPath('userData'), 'models')
+    let whisperModelId = configStore.get('meeting').whisperModelId
+    let whisperModelDir = join(modelsBase, whisperModelId)
+
+    const dirExists = await fs.access(whisperModelDir).then(() => true).catch(() => false)
+    if (!dirExists) {
+      console.warn(
+        `[AudioManager] Configured whisper model "${whisperModelId}" not found — searching for alternatives`
+      )
+      const transcriptionModels = ModelRegistry.getTranscriptionModels()
+      let found = false
+      for (const model of transcriptionModels) {
+        const candidateDir = join(modelsBase, model.id)
+        const exists = await fs.access(candidateDir).then(() => true).catch(() => false)
+        if (exists) {
+          whisperModelId = model.id
+          whisperModelDir = candidateDir
+          console.log(`[AudioManager] Using available transcription model: ${model.id}`)
+          // Update config so future initializations use the correct model
+          const meetingConfig = configStore.get('meeting')
+          configStore.set('meeting', { ...meetingConfig, whisperModelId: model.id })
+          found = true
+          break
+        }
+      }
+      if (!found) {
+        console.warn('[AudioManager] No transcription model found on disk')
+      }
+    }
 
     this.transcriptionService = new TranscriptionService()
-    await this.transcriptionService.initialize(defaultWhisperModelDir)
+    await this.transcriptionService.initialize(whisperModelDir)
 
-    // Default diarization model paths: {userData}/models/diarization/
-    // Models are bundled with the app or auto-downloaded during onboarding (§7.3).
-    const diarizationModelDir = join(app.getPath('userData'), 'models', 'diarization')
-    const segmentationModelPath = join(diarizationModelDir, 'segmentation.onnx')
-    const embeddingModelPath = join(diarizationModelDir, 'embedding.onnx')
+    // Diarization model paths: single-file models stored directly in {userData}/models/
+    const modelsDir = join(app.getPath('userData'), 'models')
+    const segmentationModelPath = join(modelsDir, 'model.onnx')
+    const embeddingModelPath = join(
+      modelsDir,
+      '3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx'
+    )
 
     this.diarizationService = new DiarizationService()
     await this.diarizationService.initialize(segmentationModelPath, embeddingModelPath)

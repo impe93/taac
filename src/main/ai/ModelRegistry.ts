@@ -63,7 +63,7 @@ const CURATED_MODELS: ModelDefinition[] = [
     name: 'Whisper Base (ONNX)',
     description:
       'OpenAI Whisper base model in ONNX format — good accuracy for clear audio with fast inference (~142MB)',
-    filename: 'whisper-base-encoder.onnx',
+    filename: 'base-encoder.int8.onnx',
     sizeBytes: 142 * 1024 * 1024, // ~142MB
     layers: 0,
     quantization: 'fp32',
@@ -71,25 +71,25 @@ const CURATED_MODELS: ModelDefinition[] = [
     capabilities: ['transcription'],
     hardwareTier: 'low',
     downloadUrl:
-      'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-base/resolve/main/whisper-base-encoder.int8.onnx',
+      'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-base/resolve/main/base-encoder.int8.onnx',
     files: [
       {
         role: 'encoder',
-        filename: 'whisper-base-encoder.int8.onnx',
+        filename: 'base-encoder.int8.onnx',
         downloadUrl:
-          'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-base/resolve/main/whisper-base-encoder.int8.onnx'
+          'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-base/resolve/main/base-encoder.int8.onnx'
       },
       {
         role: 'decoder',
-        filename: 'whisper-base-decoder.int8.onnx',
+        filename: 'base-decoder.int8.onnx',
         downloadUrl:
-          'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-base/resolve/main/whisper-base-decoder.int8.onnx'
+          'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-base/resolve/main/base-decoder.int8.onnx'
       },
       {
         role: 'tokens',
-        filename: 'whisper-base-tokens.txt',
+        filename: 'base-tokens.txt',
         downloadUrl:
-          'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-base/resolve/main/whisper-base-tokens.txt'
+          'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-base/resolve/main/base-tokens.txt'
       }
     ],
     license: 'MIT'
@@ -99,7 +99,7 @@ const CURATED_MODELS: ModelDefinition[] = [
     name: 'Whisper Small (ONNX)',
     description:
       'OpenAI Whisper small model in ONNX format — good accuracy/speed balance for multilingual transcription (~466MB)',
-    filename: 'whisper-small-encoder.int8.onnx',
+    filename: 'small-encoder.int8.onnx',
     sizeBytes: 466 * 1024 * 1024, // ~466MB
     layers: 0,
     quantization: 'int8',
@@ -107,25 +107,25 @@ const CURATED_MODELS: ModelDefinition[] = [
     capabilities: ['transcription'],
     hardwareTier: 'medium',
     downloadUrl:
-      'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-small/resolve/main/whisper-small-encoder.int8.onnx',
+      'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-small/resolve/main/small-encoder.int8.onnx',
     files: [
       {
         role: 'encoder',
-        filename: 'whisper-small-encoder.int8.onnx',
+        filename: 'small-encoder.int8.onnx',
         downloadUrl:
-          'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-small/resolve/main/whisper-small-encoder.int8.onnx'
+          'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-small/resolve/main/small-encoder.int8.onnx'
       },
       {
         role: 'decoder',
-        filename: 'whisper-small-decoder.int8.onnx',
+        filename: 'small-decoder.int8.onnx',
         downloadUrl:
-          'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-small/resolve/main/whisper-small-decoder.int8.onnx'
+          'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-small/resolve/main/small-decoder.int8.onnx'
       },
       {
         role: 'tokens',
-        filename: 'whisper-small-tokens.txt',
+        filename: 'small-tokens.txt',
         downloadUrl:
-          'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-small/resolve/main/whisper-small-tokens.txt'
+          'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-small/resolve/main/small-tokens.txt'
       }
     ],
     license: 'MIT'
@@ -135,7 +135,7 @@ const CURATED_MODELS: ModelDefinition[] = [
     name: 'Whisper Large v3 Turbo (ONNX)',
     description:
       'OpenAI Whisper large-v3-turbo model in ONNX format — near-best accuracy at 8x the speed of large-v3 (~1.6GB)',
-    filename: 'whisper-large-v3-turbo-encoder.int8.onnx',
+    filename: 'turbo-encoder.int8.onnx',
     sizeBytes: 1.6 * 1024 * 1024 * 1024, // ~1.6GB
     layers: 0,
     quantization: 'int8',
@@ -143,25 +143,25 @@ const CURATED_MODELS: ModelDefinition[] = [
     capabilities: ['transcription'],
     hardwareTier: 'high',
     downloadUrl:
-      'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-large-v3-turbo/resolve/main/whisper-large-v3-turbo-encoder.int8.onnx',
+      'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-turbo/resolve/main/turbo-encoder.int8.onnx',
     files: [
       {
         role: 'encoder',
-        filename: 'whisper-large-v3-turbo-encoder.int8.onnx',
+        filename: 'turbo-encoder.int8.onnx',
         downloadUrl:
-          'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-large-v3-turbo/resolve/main/whisper-large-v3-turbo-encoder.int8.onnx'
+          'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-turbo/resolve/main/turbo-encoder.int8.onnx'
       },
       {
         role: 'decoder',
-        filename: 'whisper-large-v3-turbo-decoder.int8.onnx',
+        filename: 'turbo-decoder.int8.onnx',
         downloadUrl:
-          'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-large-v3-turbo/resolve/main/whisper-large-v3-turbo-decoder.int8.onnx'
+          'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-turbo/resolve/main/turbo-decoder.int8.onnx'
       },
       {
         role: 'tokens',
-        filename: 'whisper-large-v3-turbo-tokens.txt',
+        filename: 'turbo-tokens.txt',
         downloadUrl:
-          'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-large-v3-turbo/resolve/main/whisper-large-v3-turbo-tokens.txt'
+          'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-turbo/resolve/main/turbo-tokens.txt'
       }
     ],
     license: 'MIT'
@@ -200,7 +200,7 @@ const CURATED_MODELS: ModelDefinition[] = [
     capabilities: ['diarization'],
     hardwareTier: 'low',
     downloadUrl:
-      'https://huggingface.co/csukuangfj/3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx/resolve/main/3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx',
+      'https://huggingface.co/csukuangfj/speaker-embedding-models/resolve/main/3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx',
     license: 'Apache 2.0'
   }
 ]

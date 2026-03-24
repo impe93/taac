@@ -68,11 +68,13 @@ export class TranscriptionService {
     }
 
     // ------------------------------------------------------------------
-    // 2. Discover model files (support both int8 and fp32 variants)
+    // 2. Discover model files — match by suffix pattern to support all
+    //    Whisper variants (e.g. base-encoder.int8.onnx, turbo-encoder.int8.onnx)
     // ------------------------------------------------------------------
-    const encoderPath = await this.findFile(modelDir, ['encoder.int8.onnx', 'encoder.onnx'])
-    const decoderPath = await this.findFile(modelDir, ['decoder.int8.onnx', 'decoder.onnx'])
-    const tokensPath = await this.findFile(modelDir, ['tokens.txt'])
+    const entries = await fs.readdir(modelDir)
+    const encoderPath = this.findByPattern(entries, modelDir, /encoder.*\.onnx$/i)
+    const decoderPath = this.findByPattern(entries, modelDir, /decoder.*\.onnx$/i)
+    const tokensPath = this.findByPattern(entries, modelDir, /tokens\.txt$/i)
 
     if (!encoderPath || !decoderPath || !tokensPath) {
       const missing: string[] = []
@@ -94,7 +96,9 @@ export class TranscriptionService {
     // ------------------------------------------------------------------
     // 3. Dynamic import — §3.5 ESM pattern (same as node-llama-cpp)
     // ------------------------------------------------------------------
-    const sherpaOnnx: SherpaOnnxModule = await import('sherpa-onnx')
+    const sherpaOnnxModule = await import('sherpa-onnx-node')
+    // CJS module wrapped by dynamic import — exports are under .default
+    const sherpaOnnx: SherpaOnnxModule = sherpaOnnxModule.default ?? sherpaOnnxModule
     this.sherpaOnnx = sherpaOnnx
 
     // ------------------------------------------------------------------
@@ -106,14 +110,14 @@ export class TranscriptionService {
     // ------------------------------------------------------------------
     // 5. Create the offline recognizer (§5.4 config layout)
     // ------------------------------------------------------------------
-    this.recognizer = sherpaOnnx.createOfflineRecognizer({
-      whisper: {
-        encoder: encoderPath,
-        decoder: decoderPath,
-        language: '', // empty string → auto-detect language
-        task: 'transcribe'
-      },
+    this.recognizer = new sherpaOnnx.OfflineRecognizer({
       modelConfig: {
+        whisper: {
+          encoder: encoderPath,
+          decoder: decoderPath,
+          language: '', // empty string → auto-detect language
+          task: 'transcribe'
+        },
         tokens: tokensPath,
         numThreads,
         debug: 0
@@ -161,8 +165,8 @@ export class TranscriptionService {
 
     const stream = this.recognizer.createStream()
 
-    // acceptWaveform signature in sherpa-onnx Node.js binding: (sampleRate, samples)
-    stream.acceptWaveform(wave.sampleRate, wave.samples)
+    // acceptWaveform signature in sherpa-onnx-node: ({ sampleRate, samples })
+    stream.acceptWaveform({ sampleRate: wave.sampleRate, samples: wave.samples })
 
     this.recognizer.decode(stream)
 
@@ -214,15 +218,12 @@ export class TranscriptionService {
   }
 
   /**
-   * Look for the first existing file from a list of candidates relative to dir.
-   * Returns the absolute path of the first match, or null if none found.
+   * Find the first file in entries matching a regex pattern.
+   * Returns the absolute path or null if no match.
    */
-  private async findFile(dir: string, candidates: string[]): Promise<string | null> {
-    for (const name of candidates) {
-      const candidate = join(dir, name)
-      if (await this.pathExists(candidate)) return candidate
-    }
-    return null
+  private findByPattern(entries: string[], dir: string, pattern: RegExp): string | null {
+    const match = entries.find((e) => pattern.test(e))
+    return match ? join(dir, match) : null
   }
 
   /**

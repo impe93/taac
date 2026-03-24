@@ -229,9 +229,9 @@ importers:
       recharts:
         specifier: ^2.15.1
         version: 2.15.1(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
-      sherpa-onnx:
-        specifier: ^1.12.31
-        version: 1.12.31
+      sherpa-onnx-node:
+        specifier: ^1.12.32
+        version: 1.12.32
       sonner:
         specifier: ^2.0.2
         version: 2.0.2(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
@@ -6044,8 +6044,38 @@ packages:
     resolution: {integrity: sha512-7++dFhtcx3353uBaq8DDR4NuxBetBzC7ZQOhmTQInHEd6bSrXdiEyzCvG07Z44UYdLShWUyXt5M/yhz8ekcb1A==}
     engines: {node: '>=8'}
 
-  sherpa-onnx@1.12.31:
-    resolution: {integrity: sha512-LK5L29NnwHJ3gSvwBZE5HHRxlWHoEHmw7aUfWLb4BXSVNE9wBseloZQPjnDJudfdvJLtd/E5sAuGICSN8MjK5A==}
+  sherpa-onnx-darwin-arm64@1.12.32:
+    resolution: {integrity: sha512-I+/IQoY291S/EcFovjLV0TdhjG/HO48XMeVLvTWPkbzA7IfWYjmsPA8Bw2Fiox6vI31VvsLCWJ0PmVsl1l4uUw==}
+    cpu: [arm64]
+    os: [darwin]
+
+  sherpa-onnx-darwin-x64@1.12.32:
+    resolution: {integrity: sha512-dM0fbRQm9eD4poqmFWjdMMtCwAhOYXantNYpo8fHp1vVDmx2kl9gSQWJF5+8/PS5C6oqf2b5OcboZY0fM46ZdQ==}
+    cpu: [x64]
+    os: [darwin]
+
+  sherpa-onnx-linux-arm64@1.12.32:
+    resolution: {integrity: sha512-2nv3LMos9aj8kJOPAiNBreFhqhEXoYxE+8k1tC+2M/lW0qzhX6wQgEI5gvmu2fQm1itbtKa0nwhjUYHEmYkjnA==}
+    cpu: [arm64]
+    os: [linux]
+
+  sherpa-onnx-linux-x64@1.12.32:
+    resolution: {integrity: sha512-kC6C1KZywi3ra241QL0VZ88C/bWvHCk1z+Mlhe5C246uIC8yrnVE+heu+vHWR2ni3cTkjlBGw8/Raz7BfhKvfA==}
+    cpu: [x64]
+    os: [linux]
+
+  sherpa-onnx-node@1.12.32:
+    resolution: {integrity: sha512-xvW2SynI+8yZiEuL2Jpj+XifOKHKvolB9OhVGXt6L0A48t2iED+C8TSgS4NfiyKzBRMihQ5Uv9b6Dp8WX8cXJA==}
+
+  sherpa-onnx-win-ia32@1.12.32:
+    resolution: {integrity: sha512-UyO7n5JfEYbL5rPG8sFvnbtyGs5qkeKIWRBR8HKufrn6qfweyfSR9+Yl9752TVDD0fsuQfJJiGvoIItr9JwEow==}
+    cpu: [ia32]
+    os: [win32]
+
+  sherpa-onnx-win-x64@1.12.32:
+    resolution: {integrity: sha512-CyBbRag604MFbpJtSyi6FGOJ1qnOflV1HqlL5wwVo64t/ooOJeU6y1mUdtigThHK8xRSN/oHqcC+XnYVFc2rrQ==}
+    cpu: [x64]
+    os: [win32]
 
   side-channel-list@1.0.0:
     resolution: {integrity: sha512-FCLHtRD/gnpCiCHEiJLOwdmFP+wzCmDEkc9y7NsYxeF4u7Btsn1ZuwgwJGxImImHicJArLP4R0yX4c2KCrMrTA==}
@@ -13712,7 +13742,32 @@ snapshots:
 
   shebang-regex@3.0.0: {}
 
-  sherpa-onnx@1.12.31: {}
+  sherpa-onnx-darwin-arm64@1.12.32:
+    optional: true
+
+  sherpa-onnx-darwin-x64@1.12.32:
+    optional: true
+
+  sherpa-onnx-linux-arm64@1.12.32:
+    optional: true
+
+  sherpa-onnx-linux-x64@1.12.32:
+    optional: true
+
+  sherpa-onnx-node@1.12.32:
+    optionalDependencies:
+      sherpa-onnx-darwin-arm64: 1.12.32
+      sherpa-onnx-darwin-x64: 1.12.32
+      sherpa-onnx-linux-arm64: 1.12.32
+      sherpa-onnx-linux-x64: 1.12.32
+      sherpa-onnx-win-ia32: 1.12.32
+      sherpa-onnx-win-x64: 1.12.32
+
+  sherpa-onnx-win-ia32@1.12.32:
+    optional: true
+
+  sherpa-onnx-win-x64@1.12.32:
+    optional: true
 
   side-channel-list@1.0.0:
     dependencies:

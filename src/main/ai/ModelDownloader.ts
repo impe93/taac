@@ -55,13 +55,43 @@ export class ModelDownloader extends EventEmitter {
   }
 
   /**
-   * Start downloading a model
+   * Start downloading a model.
+   * For multi-file models (those with a `files` array in their definition),
+   * each file is downloaded sequentially into a sub-directory named after the modelId.
    */
   async downloadModel(modelId: string, url: string, filename: string): Promise<void> {
     if (this.downloads.has(modelId)) {
       throw new DownloadFailedError(modelId, 'Download already in progress')
     }
 
+    const model = ModelRegistry.getModel(modelId)
+
+    // Multi-file model: download each file into {modelsDir}/{modelId}/
+    if (model?.files && model.files.length > 0) {
+      const modelDir = join(this.modelsDir, modelId)
+      await fs.mkdir(modelDir, { recursive: true })
+
+      for (let i = 0; i < model.files.length; i++) {
+        const file = model.files[i]
+        const task: DownloadTask = {
+          modelId,
+          url: file.downloadUrl,
+          filename: file.filename,
+          abortController: new AbortController(),
+          resumePosition: 0
+        }
+
+        this.downloads.set(modelId, task)
+        try {
+          await this.executeDownload(task, modelDir)
+        } finally {
+          this.downloads.delete(modelId)
+        }
+      }
+      return
+    }
+
+    // Single-file model: download directly into modelsDir
     const task: DownloadTask = {
       modelId,
       url,
@@ -81,10 +111,11 @@ export class ModelDownloader extends EventEmitter {
 
   /**
    * Execute the actual download with resume support
+   * @param targetDir — directory where the final file is placed (defaults to modelsDir)
    */
-  private async executeDownload(task: DownloadTask): Promise<void> {
-    const tempPath = join(this.tempDir, `${task.modelId}.part`)
-    const finalPath = join(this.modelsDir, task.filename)
+  private async executeDownload(task: DownloadTask, targetDir?: string): Promise<void> {
+    const tempPath = join(this.tempDir, `${task.modelId}-${task.filename}.part`)
+    const finalPath = join(targetDir ?? this.modelsDir, task.filename)
 
     // Check for partial download to resume
     try {
@@ -247,7 +278,7 @@ export class ModelDownloader extends EventEmitter {
   }
 
   /**
-   * Cancel a download and remove temp file
+   * Cancel a download and remove temp files
    */
   async cancelDownload(modelId: string): Promise<void> {
     const task = this.downloads.get(modelId)
@@ -256,12 +287,23 @@ export class ModelDownloader extends EventEmitter {
       this.downloads.delete(modelId)
     }
 
-    // Remove temp file
-    const tempPath = join(this.tempDir, `${modelId}.part`)
+    // Remove temp files (both single-file and multi-file patterns)
     try {
-      await fs.unlink(tempPath)
+      const tempFiles = await fs.readdir(this.tempDir)
+      for (const file of tempFiles) {
+        if (file.startsWith(`${modelId}-`) && file.endsWith('.part')) {
+          await fs.unlink(join(this.tempDir, file)).catch(() => {})
+        }
+      }
     } catch {
-      // Ignore if file doesn't exist
+      // Ignore if temp dir doesn't exist
+    }
+
+    // Also remove partially downloaded model directory for multi-file models
+    const model = ModelRegistry.getModel(modelId)
+    if (model?.files && model.files.length > 0) {
+      const modelDir = join(this.modelsDir, modelId)
+      await fs.rm(modelDir, { recursive: true, force: true }).catch(() => {})
     }
 
     // Clear cached progress
@@ -269,16 +311,31 @@ export class ModelDownloader extends EventEmitter {
   }
 
   /**
-   * Check if a model is downloaded
+   * Check if a model is downloaded.
+   * For multi-file models, checks that ALL files exist in the model sub-directory.
    */
   async isModelDownloaded(modelId: string): Promise<boolean> {
     const model = ModelRegistry.getModel(modelId)
     if (!model) return false
 
+    // Multi-file model: check all files in {modelsDir}/{modelId}/
+    if (model.files && model.files.length > 0) {
+      const modelDir = join(this.modelsDir, modelId)
+      for (const file of model.files) {
+        try {
+          const stats = await fs.stat(join(modelDir, file.filename))
+          if (stats.size === 0) return false
+        } catch {
+          return false
+        }
+      }
+      return true
+    }
+
+    // Single-file model
     const modelPath = join(this.modelsDir, model.filename)
     try {
       const stats = await fs.stat(modelPath)
-      // Check if file exists and has reasonable size
       return stats.size > 0
     } catch {
       return false
@@ -286,27 +343,42 @@ export class ModelDownloader extends EventEmitter {
   }
 
   /**
-   * Get list of downloaded models with full definitions
+   * Get list of downloaded models with full definitions.
+   * Checks all models in the registry, including multi-file models.
    */
   async getDownloadedModels(): Promise<import('./types').ModelDefinition[]> {
-    try {
-      const files = await fs.readdir(this.modelsDir)
-      return files
-        .filter((f) => f.endsWith('.gguf'))
-        .map((f) => ModelRegistry.getModelByFilename(f))
-        .filter((model): model is import('./types').ModelDefinition => model !== undefined)
-    } catch {
-      return []
+    const allModels = ModelRegistry.getAllModels()
+    const downloaded: import('./types').ModelDefinition[] = []
+
+    for (const model of allModels) {
+      if (await this.isModelDownloaded(model.id)) {
+        downloaded.push(model)
+      }
     }
+
+    return downloaded
   }
 
   /**
-   * Delete a downloaded model
+   * Delete a downloaded model.
+   * For multi-file models, removes the entire model sub-directory.
    */
   async deleteModel(modelId: string): Promise<void> {
     const model = ModelRegistry.getModel(modelId)
     if (!model) return
 
+    // Multi-file model: remove entire directory
+    if (model.files && model.files.length > 0) {
+      const modelDir = join(this.modelsDir, modelId)
+      try {
+        await fs.rm(modelDir, { recursive: true, force: true })
+      } catch {
+        // Ignore if directory doesn't exist
+      }
+      return
+    }
+
+    // Single-file model
     const modelPath = join(this.modelsDir, model.filename)
     try {
       await fs.unlink(modelPath)
@@ -337,11 +409,17 @@ export class ModelDownloader extends EventEmitter {
   }
 
   /**
-   * Get model file path
+   * Get model file path.
+   * For multi-file models, returns the model sub-directory path.
    */
   getModelPath(modelId: string): string | null {
     const model = ModelRegistry.getModel(modelId)
     if (!model) return null
+
+    if (model.files && model.files.length > 0) {
+      return join(this.modelsDir, modelId)
+    }
+
     return join(this.modelsDir, model.filename)
   }
 
