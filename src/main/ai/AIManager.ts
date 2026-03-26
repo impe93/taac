@@ -43,6 +43,8 @@ export interface GenerationOptions {
   topP?: number
   stopSequences?: string[]
   isolated?: boolean
+  /** Override context size for isolated sessions (default 512). Capped at model's trainContextSize. */
+  contextSize?: number
 }
 
 /**
@@ -463,7 +465,10 @@ export class AIManager {
     if (options?.isolated) {
       // Create a temporary, isolated context and session for one-off completions (e.g. title generation)
       // This avoids polluting the main chat session's history
-      tempContext = await loaded.model.createContext({ contextSize: 512 })
+      const requestedSize = options.contextSize ?? 512
+      const modelMax = loaded.model.trainContextSize ?? this.config.maxContextSize
+      const isolatedContextSize = Math.min(requestedSize, modelMax)
+      tempContext = await loaded.model.createContext({ contextSize: isolatedContextSize })
       const tempSequence = tempContext.getSequence()
       // Extract system prompt from messages and pass it to the session constructor
       const systemMessage = messages.find((m) => m.role === 'system')

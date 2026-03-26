@@ -46,6 +46,7 @@ const DEFAULT_CHAT_MODEL_ID = 'qwen3-4b-instruct-2507-q8'
 
 export class AudioManager {
   private static instance: AudioManager | null = null
+  private static readonly MAX_SPEAKERS_PER_TRACK = 4
   private initialized = false
   private transcriptionService: TranscriptionService | null = null
   private diarizationService: DiarizationService | null = null
@@ -75,7 +76,10 @@ export class AudioManager {
     let whisperModelId = configStore.get('meeting').whisperModelId
     let whisperModelDir = join(modelsBase, whisperModelId)
 
-    const dirExists = await fs.access(whisperModelDir).then(() => true).catch(() => false)
+    const dirExists = await fs
+      .access(whisperModelDir)
+      .then(() => true)
+      .catch(() => false)
     if (!dirExists) {
       console.warn(
         `[AudioManager] Configured whisper model "${whisperModelId}" not found — searching for alternatives`
@@ -84,7 +88,10 @@ export class AudioManager {
       let found = false
       for (const model of transcriptionModels) {
         const candidateDir = join(modelsBase, model.id)
-        const exists = await fs.access(candidateDir).then(() => true).catch(() => false)
+        const exists = await fs
+          .access(candidateDir)
+          .then(() => true)
+          .catch(() => false)
         if (exists) {
           whisperModelId = model.id
           whisperModelDir = candidateDir
@@ -181,12 +188,14 @@ export class AudioManager {
     onProgress({ stage: 'diarizing', progress: 0, message: 'Identifying speakers...' })
     console.log('[AudioManager] Stage: diarizing')
 
-    const micDiarization = await this.diarizationService!.diarize(micWavPath)
+    let micDiarization = await this.diarizationService!.diarize(micWavPath)
+    micDiarization = this.capSpeakers(micDiarization, AudioManager.MAX_SPEAKERS_PER_TRACK)
 
     let systemDiarization: DiarizationResult | null = null
     if (mode === 'remote' && systemWavPath) {
       onProgress({ stage: 'diarizing', progress: 50, message: 'Identifying remote speakers...' })
       systemDiarization = await this.diarizationService!.diarize(systemWavPath)
+      systemDiarization = this.capSpeakers(systemDiarization, AudioManager.MAX_SPEAKERS_PER_TRACK)
     }
 
     onProgress({ stage: 'diarizing', progress: 100, message: 'Speaker identification complete' })
@@ -305,19 +314,8 @@ export class AudioManager {
       }
     }
 
-    const segments: TranscriptionSegment[] = []
-
-    // Assign mic transcription segments to diarized speakers
-    for (const seg of micTranscription.segments) {
-      const diarSeg = this.findDiarizationSegment(micDiarization.segments, seg.startTime)
-      const speakerId = micSpeakerIdxToId.get(diarSeg?.speaker ?? 0) ?? 'speaker-mic-0'
-      const duration = seg.endTime - seg.startTime
-      const speaker = speakersMap.get(speakerId)
-      if (speaker) speaker.totalSpeakingTime += duration
-      segments.push({ speakerId, startTime: seg.startTime, endTime: seg.endTime, text: seg.text })
-    }
-
-    // Assign system transcription segments to diarized speakers
+    // Build system segments first (higher quality — direct digital capture)
+    const systemSegments: TranscriptionSegment[] = []
     if (systemTranscription && systemDiarization) {
       for (const seg of systemTranscription.segments) {
         const diarSeg = this.findDiarizationSegment(systemDiarization.segments, seg.startTime)
@@ -325,14 +323,85 @@ export class AudioManager {
         const duration = seg.endTime - seg.startTime
         const speaker = speakersMap.get(speakerId)
         if (speaker) speaker.totalSpeakingTime += duration
-        segments.push({ speakerId, startTime: seg.startTime, endTime: seg.endTime, text: seg.text })
+        systemSegments.push({
+          speakerId,
+          startTime: seg.startTime,
+          endTime: seg.endTime,
+          text: seg.text
+        })
       }
     }
+
+    // Assign mic transcription segments, deduplicating bleed-through from system audio.
+    // For each mic segment, check if there's a temporally overlapping system segment
+    // with similar text. If so, it's bleed-through (system audio picked up by mic) — skip it.
+    const segments: TranscriptionSegment[] = [...systemSegments]
+    const TIME_TOLERANCE_SECS = 2
+    const SIMILARITY_THRESHOLD = 0.6
+    let droppedCount = 0
+
+    for (const micSeg of micTranscription.segments) {
+      // Find system segments that overlap in time (within tolerance)
+      const overlapping = systemSegments.filter(
+        (sysSeg) =>
+          micSeg.startTime <= sysSeg.endTime + TIME_TOLERANCE_SECS &&
+          micSeg.endTime >= sysSeg.startTime - TIME_TOLERANCE_SECS
+      )
+
+      // Check if any overlapping system segment has similar text
+      const isDuplicate = overlapping.some(
+        (sysSeg) => this.computeTextSimilarity(micSeg.text, sysSeg.text) > SIMILARITY_THRESHOLD
+      )
+
+      if (isDuplicate) {
+        droppedCount++
+        continue
+      }
+
+      // Genuine mic-only speech — keep as "You"
+      const diarSeg = this.findDiarizationSegment(micDiarization.segments, micSeg.startTime)
+      const speakerId = micSpeakerIdxToId.get(diarSeg?.speaker ?? 0) ?? 'speaker-mic-0'
+      const duration = micSeg.endTime - micSeg.startTime
+      const speaker = speakersMap.get(speakerId)
+      if (speaker) speaker.totalSpeakingTime += duration
+      segments.push({
+        speakerId,
+        startTime: micSeg.startTime,
+        endTime: micSeg.endTime,
+        text: micSeg.text
+      })
+    }
+
+    if (droppedCount > 0) {
+      console.log(
+        `[AudioManager] Deduplication: dropped ${droppedCount} mic segment(s) that were bleed-through from system audio`
+      )
+    }
+
+    // Remove speakers with zero speaking time (phantom speakers from dropped segments)
+    const activeSpeakers = Array.from(speakersMap.values()).filter((s) => s.totalSpeakingTime > 0)
 
     // Sort merged segments chronologically
     segments.sort((a, b) => a.startTime - b.startTime)
 
-    return { speakers: Array.from(speakersMap.values()), transcriptionSegments: segments }
+    return { speakers: activeSpeakers, transcriptionSegments: segments }
+  }
+
+  /**
+   * Compute Jaccard similarity between two text strings based on word sets.
+   * Returns a value between 0 (completely different) and 1 (identical).
+   */
+  private computeTextSimilarity(a: string, b: string): number {
+    const wordsA = new Set(a.toLowerCase().split(/\s+/).filter(Boolean))
+    const wordsB = new Set(b.toLowerCase().split(/\s+/).filter(Boolean))
+    if (wordsA.size === 0 && wordsB.size === 0) return 1
+    if (wordsA.size === 0 || wordsB.size === 0) return 0
+    let intersectionSize = 0
+    for (const word of wordsA) {
+      if (wordsB.has(word)) intersectionSize++
+    }
+    const unionSize = wordsA.size + wordsB.size - intersectionSize
+    return unionSize === 0 ? 0 : intersectionSize / unionSize
   }
 
   /**
@@ -373,6 +442,36 @@ export class AudioManager {
     timestamp: number
   ): DiarizationSegment | null {
     return segments.find((s) => s.startTime <= timestamp && timestamp < s.endTime) ?? null
+  }
+
+  /**
+   * Cap the number of speakers in a diarization result.
+   * If there are more speakers than the cap, merge the least-frequent ones
+   * into the most dominant speaker (by total duration).
+   */
+  private capSpeakers(result: DiarizationResult, maxSpeakers: number): DiarizationResult {
+    if (result.numSpeakers <= maxSpeakers) return result
+
+    console.log(`[AudioManager] Capping speakers: ${result.numSpeakers} → ${maxSpeakers}`)
+
+    // Calculate total duration per speaker
+    const durations = new Map<number, number>()
+    for (const s of result.segments) {
+      durations.set(s.speaker, (durations.get(s.speaker) ?? 0) + (s.endTime - s.startTime))
+    }
+
+    // Keep top N speakers by duration
+    const sorted = [...durations.entries()].sort((a, b) => b[1] - a[1])
+    const keepSpeakers = new Set(sorted.slice(0, maxSpeakers).map(([id]) => id))
+    const primarySpeaker = sorted[0][0]
+
+    // Remap excess speakers to the primary speaker
+    const segments = result.segments.map((s) => ({
+      ...s,
+      speaker: keepSpeakers.has(s.speaker) ? s.speaker : primarySpeaker
+    }))
+
+    return { segments, numSpeakers: maxSpeakers }
   }
 
   // ---------------------------------------------------------------------------
@@ -492,14 +591,26 @@ Do not include any text outside of these sections. Use the exact section heading
       { role: 'user', content: userMessage }
     ]
 
+    const aiManager = AIManager.getInstance()
+
+    // Ensure AIManager is initialized (loads llama.cpp + GPU backend)
+    if (!aiManager.isInitialized()) {
+      console.log('[AudioManager] AIManager not initialized — initializing now...')
+      await aiManager.initialize()
+    }
+
     const modelId = this.getActiveChatModelId()
     console.log(`[AudioManager] Summarizing with model: ${modelId}`)
 
+    // Ensure the chat model is loaded before generating
+    await aiManager.loadModel(modelId)
+    console.log(`[AudioManager] Model ${modelId} ready`)
+
     try {
-      const aiManager = AIManager.getInstance()
       const generator = aiManager.generateChatCompletion(modelId, messages, {
         isolated: true,
-        maxTokens: 4096
+        maxTokens: 4096,
+        contextSize: 32768
       })
 
       let fullContent = ''
@@ -526,7 +637,9 @@ Do not include any text outside of these sections. Use the exact section heading
       return { content: fullContent, actionItems }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
+      const stack = err instanceof Error ? err.stack : ''
       console.error(`[AudioManager] Summarization failed, falling back to raw transcript: ${msg}`)
+      if (stack) console.error(`[AudioManager] Stack: ${stack}`)
       return {
         content: this.buildFallbackContent(transcriptionSegments, speakers),
         actionItems: []

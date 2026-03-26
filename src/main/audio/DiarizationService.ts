@@ -108,7 +108,7 @@ export class DiarizationService {
       },
       clustering: {
         numClusters: -1, // -1 = auto-detect
-        threshold: 0.5
+        threshold: 0.8 // higher threshold = fewer, more confident speaker clusters
       }
     })
 
@@ -146,7 +146,7 @@ export class DiarizationService {
     // Read wave → process → extract segments
     // (§5.5 pipeline)
     // ------------------------------------------------------------------
-    const wave = this.sherpaOnnx.readWave(wavPath) as {
+    const wave = this.sherpaOnnx.readWave(wavPath, false) as {
       sampleRate: number
       samples: Float32Array
     }

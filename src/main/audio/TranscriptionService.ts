@@ -137,6 +137,11 @@ export class TranscriptionService {
    * @param wavPath  Absolute path to the 16 kHz mono WAV file
    * @returns        TranscriptionResult with text, segments, and detected language
    */
+  /** Whisper context window in seconds — audio is chunked at this boundary */
+  private static readonly CHUNK_DURATION_SECS = 30
+  /** Overlap between consecutive chunks to avoid cutting words at boundaries */
+  private static readonly CHUNK_OVERLAP_SECS = 1
+
   async transcribe(wavPath: string): Promise<TranscriptionResult> {
     // Degraded-mode guard
     if (!this.recognizer || !this.sherpaOnnx) {
@@ -154,27 +159,121 @@ export class TranscriptionService {
 
     console.log(`[TranscriptionService] Transcribing: ${wavPath}`)
 
-    // ------------------------------------------------------------------
-    // Read wave → create stream → accept waveform → decode → get result
-    // (§5.4 pipeline)
-    // ------------------------------------------------------------------
-    const wave = this.sherpaOnnx.readWave(wavPath) as {
+    const wave = this.sherpaOnnx.readWave(wavPath, false) as {
       sampleRate: number
       samples: Float32Array
     }
 
-    const stream = this.recognizer.createStream()
+    const chunkSamples = TranscriptionService.CHUNK_DURATION_SECS * wave.sampleRate
+    const totalSamples = wave.samples.length
+    const totalDurationSecs = totalSamples / wave.sampleRate
 
-    // acceptWaveform signature in sherpa-onnx-node: ({ sampleRate, samples })
-    stream.acceptWaveform({ sampleRate: wave.sampleRate, samples: wave.samples })
+    // Short audio — single-pass (fast path)
+    if (totalSamples <= chunkSamples) {
+      console.log(
+        `[TranscriptionService] Short audio (${totalDurationSecs.toFixed(1)}s) — single pass`
+      )
+      return this.transcribeSinglePass(wave.samples, wave.sampleRate)
+    }
 
-    this.recognizer.decode(stream)
+    // Long audio — chunked processing
+    const overlapSamples = TranscriptionService.CHUNK_OVERLAP_SECS * wave.sampleRate
+    const stepSamples = chunkSamples - overlapSamples
+    const numChunks = Math.ceil((totalSamples - overlapSamples) / stepSamples)
+
+    console.log(
+      `[TranscriptionService] Long audio (${totalDurationSecs.toFixed(1)}s) — ` +
+        `processing in ${numChunks} chunk(s) of ${TranscriptionService.CHUNK_DURATION_SECS}s`
+    )
+
+    const allSegments: TranscriptionSegment[] = []
+    let fullText = ''
+    let detectedLanguage = 'en'
+    let offset = 0
+
+    for (let chunkIdx = 0; offset < totalSamples; chunkIdx++) {
+      const end = Math.min(offset + chunkSamples, totalSamples)
+      const chunk = wave.samples.slice(offset, end)
+      const chunkOffsetSecs = offset / wave.sampleRate
+      const chunkDurationSecs = chunk.length / wave.sampleRate
+
+      console.log(
+        `[TranscriptionService] Chunk ${chunkIdx + 1}/${numChunks}: ` +
+          `offset=${chunkOffsetSecs.toFixed(1)}s, duration=${chunkDurationSecs.toFixed(1)}s`
+      )
+
+      const chunkResult = this.transcribeChunk(chunk, wave.sampleRate)
+
+      // Capture language from first chunk that detects one
+      if (chunkIdx === 0 && chunkResult.detectedLanguage !== 'en') {
+        detectedLanguage = chunkResult.detectedLanguage
+      }
+
+      // Build segments with offset-adjusted timestamps
+      const segments = this.buildSegments(chunkResult.raw, chunkResult.text)
+
+      // If no timestamps available, estimate from chunk position
+      if (segments.length === 1 && segments[0].startTime === 0 && segments[0].endTime === 0) {
+        segments[0].startTime = chunkOffsetSecs
+        segments[0].endTime = chunkOffsetSecs + chunkDurationSecs
+      } else {
+        // Offset all timestamps by chunk position
+        for (const seg of segments) {
+          seg.startTime += chunkOffsetSecs
+          seg.endTime += chunkOffsetSecs
+        }
+      }
+
+      allSegments.push(...segments)
+      if (chunkResult.text.trim()) {
+        fullText += (fullText ? ' ' : '') + chunkResult.text.trim()
+      }
+
+      // Advance by step (chunk minus overlap)
+      offset += stepSamples
+      if (end >= totalSamples) break
+    }
+
+    console.log(
+      `[TranscriptionService] Done — ${fullText.length} chars, ` +
+        `${allSegments.length} segment(s), lang="${detectedLanguage}"`
+    )
+
+    return { text: fullText, segments: allSegments, detectedLanguage }
+  }
+
+  /**
+   * Transcribe a single short audio pass (entire samples fit in Whisper context).
+   */
+  private transcribeSinglePass(samples: Float32Array, sampleRate: number): TranscriptionResult {
+    const result = this.transcribeChunk(samples, sampleRate)
+    const segments = this.buildSegments(result.raw, result.text)
+
+    console.log(
+      `[TranscriptionService] Done — ${result.text.length} chars, ` +
+        `${segments.length} segment(s), lang="${result.detectedLanguage}"`
+    )
+
+    return { text: result.text, segments, detectedLanguage: result.detectedLanguage }
+  }
+
+  /**
+   * Transcribe a single chunk of audio samples.
+   * Returns the raw result object for segment building, plus extracted text and language.
+   */
+  private transcribeChunk(
+    samples: Float32Array,
+    sampleRate: number
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ): { text: string; detectedLanguage: string; raw: Record<string, any> } {
+    const stream = this.recognizer!.createStream()
+    stream.acceptWaveform({ sampleRate, samples })
+    this.recognizer!.decode(stream)
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const raw = this.recognizer.getResult(stream) as Record<string, any>
+    const raw = this.recognizer!.getResult(stream) as Record<string, any>
 
     const text: string = typeof raw.text === 'string' ? raw.text : ''
-    // sherpa-onnx may expose language in different fields depending on version
     const detectedLanguage: string =
       typeof raw.lang === 'string' && raw.lang
         ? raw.lang
@@ -182,14 +281,7 @@ export class TranscriptionService {
           ? raw.language
           : 'en'
 
-    const segments = this.buildSegments(raw, text)
-
-    console.log(
-      `[TranscriptionService] Done — ${text.length} chars, ` +
-        `${segments.length} segment(s), lang="${detectedLanguage}"`
-    )
-
-    return { text, segments, detectedLanguage }
+    return { text, detectedLanguage, raw }
   }
 
   /**
