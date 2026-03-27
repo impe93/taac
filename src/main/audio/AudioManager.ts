@@ -46,7 +46,6 @@ const DEFAULT_CHAT_MODEL_ID = 'qwen3-4b-instruct-2507-q8'
 
 export class AudioManager {
   private static instance: AudioManager | null = null
-  private static readonly MAX_SPEAKERS_PER_TRACK = 4
   private initialized = false
   private transcriptionService: TranscriptionService | null = null
   private diarizationService: DiarizationService | null = null
@@ -182,20 +181,22 @@ export class AudioManager {
 
     onProgress({ stage: 'transcribing', progress: 100, message: 'Transcription complete' })
 
+    // Detect language early so it's available for summarization
+    const detectedLanguage =
+      micTranscription.detectedLanguage || systemTranscription?.detectedLanguage || 'en'
+
     // ------------------------------------------------------------------
     // Stage 2: Diarization
     // ------------------------------------------------------------------
     onProgress({ stage: 'diarizing', progress: 0, message: 'Identifying speakers...' })
     console.log('[AudioManager] Stage: diarizing')
 
-    let micDiarization = await this.diarizationService!.diarize(micWavPath)
-    micDiarization = this.capSpeakers(micDiarization, AudioManager.MAX_SPEAKERS_PER_TRACK)
+    const micDiarization = await this.diarizationService!.diarize(micWavPath)
 
     let systemDiarization: DiarizationResult | null = null
     if (mode === 'remote' && systemWavPath) {
       onProgress({ stage: 'diarizing', progress: 50, message: 'Identifying remote speakers...' })
       systemDiarization = await this.diarizationService!.diarize(systemWavPath)
-      systemDiarization = this.capSpeakers(systemDiarization, AudioManager.MAX_SPEAKERS_PER_TRACK)
     }
 
     onProgress({ stage: 'diarizing', progress: 100, message: 'Speaker identification complete' })
@@ -220,6 +221,7 @@ export class AudioManager {
     const { content, actionItems } = await this.summarizeTranscript(
       speakers,
       transcriptionSegments,
+      detectedLanguage,
       onProgress
     )
 
@@ -229,9 +231,6 @@ export class AudioManager {
     // Build and return MeetingMetadata + content
     // (Cleanup is handled by audioHandlers based on config §4.2)
     // ------------------------------------------------------------------
-    const detectedLanguage =
-      micTranscription.detectedLanguage || systemTranscription?.detectedLanguage || 'en'
-
     const metadata: MeetingMetadata = {
       recordingMode: mode,
       duration: durationSecs,
@@ -444,39 +443,46 @@ export class AudioManager {
     return segments.find((s) => s.startTime <= timestamp && timestamp < s.endTime) ?? null
   }
 
-  /**
-   * Cap the number of speakers in a diarization result.
-   * If there are more speakers than the cap, merge the least-frequent ones
-   * into the most dominant speaker (by total duration).
-   */
-  private capSpeakers(result: DiarizationResult, maxSpeakers: number): DiarizationResult {
-    if (result.numSpeakers <= maxSpeakers) return result
-
-    console.log(`[AudioManager] Capping speakers: ${result.numSpeakers} → ${maxSpeakers}`)
-
-    // Calculate total duration per speaker
-    const durations = new Map<number, number>()
-    for (const s of result.segments) {
-      durations.set(s.speaker, (durations.get(s.speaker) ?? 0) + (s.endTime - s.startTime))
-    }
-
-    // Keep top N speakers by duration
-    const sorted = [...durations.entries()].sort((a, b) => b[1] - a[1])
-    const keepSpeakers = new Set(sorted.slice(0, maxSpeakers).map(([id]) => id))
-    const primarySpeaker = sorted[0][0]
-
-    // Remap excess speakers to the primary speaker
-    const segments = result.segments.map((s) => ({
-      ...s,
-      speaker: keepSpeakers.has(s.speaker) ? s.speaker : primarySpeaker
-    }))
-
-    return { segments, numSpeakers: maxSpeakers }
-  }
-
   // ---------------------------------------------------------------------------
   // Summarization helpers (§6)
   // ---------------------------------------------------------------------------
+
+  /**
+   * Convert ISO 639-1 language code to a human-readable language name.
+   */
+  private getLanguageName(code: string): string {
+    const map: Record<string, string> = {
+      en: 'English',
+      it: 'Italian',
+      es: 'Spanish',
+      fr: 'French',
+      de: 'German',
+      pt: 'Portuguese',
+      nl: 'Dutch',
+      ru: 'Russian',
+      zh: 'Chinese',
+      ja: 'Japanese',
+      ko: 'Korean',
+      ar: 'Arabic',
+      hi: 'Hindi',
+      pl: 'Polish',
+      sv: 'Swedish',
+      da: 'Danish',
+      fi: 'Finnish',
+      no: 'Norwegian',
+      tr: 'Turkish',
+      cs: 'Czech',
+      ro: 'Romanian',
+      hu: 'Hungarian',
+      uk: 'Ukrainian',
+      el: 'Greek',
+      he: 'Hebrew',
+      th: 'Thai',
+      vi: 'Vietnamese',
+      id: 'Indonesian'
+    }
+    return map[code] ?? code
+  }
 
   /**
    * Returns the ID of the first loaded chat model, or the default model ID.
@@ -556,9 +562,11 @@ export class AudioManager {
   private async summarizeTranscript(
     speakers: Speaker[],
     transcriptionSegments: TranscriptionSegment[],
+    language: string,
     onProgress: (progress: ProcessingProgress) => void
   ): Promise<{ content: string; actionItems: ActionItem[] }> {
     const transcriptText = this.formatTranscriptForPrompt(transcriptionSegments, speakers)
+    const languageName = this.getLanguageName(language)
 
     const systemPrompt = `You are a meeting summarizer. Given a timestamped transcript with speaker labels, produce a structured summary in markdown format with the following sections:
 
@@ -582,6 +590,7 @@ Checklist format with assignee and deadline if mentioned:
 [Timestamped transcript with speaker labels]
 </details>
 
+IMPORTANT: Write ALL content (body text, bullet points, descriptions) in ${languageName}. The section headings (## Meeting Summary, ## Key Topics Discussed, ## Key Decisions, ## Action Items, ## Full Transcript) MUST remain exactly as shown above in English for parsing consistency.
 Do not include any text outside of these sections. Use the exact section headings above.`
 
     const userMessage = `Here is the meeting transcript:\n\n${transcriptText}`

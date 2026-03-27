@@ -108,7 +108,7 @@ export class DiarizationService {
       },
       clustering: {
         numClusters: -1, // -1 = auto-detect
-        threshold: 0.8 // higher threshold = fewer, more confident speaker clusters
+        threshold: 0.9 // higher threshold = fewer, more confident speaker clusters
       }
     })
 

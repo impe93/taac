@@ -21,7 +21,6 @@ import { toast } from 'sonner'
 import { MeetingRecorder } from '@renderer/components/meeting/MeetingRecorder'
 import { MeetingProgress } from '@renderer/components/meeting/MeetingProgress'
 import { MeetingMetadataBar } from '@renderer/components/meeting/MeetingMetadataBar'
-import { ActionItemsList } from '@renderer/components/meeting/ActionItemsList'
 import type { ProcessingResult } from '@renderer/hooks/useMeetingProcessing'
 
 export const Route = createFileRoute('/note/$noteId')({
@@ -256,20 +255,6 @@ function NoteView(): ReactElement {
             <MeetingMetadataBar metadata={note.meetingMetadata} />
           </div>
         )}
-
-        {/* Action items for completed meeting notes */}
-        {note.type === 'meeting' &&
-          note.meetingMetadata &&
-          note.meetingMetadata.actionItems.length > 0 && (
-            <div className="mt-3">
-              <ActionItemsList
-                noteId={note.id}
-                folderId={note.folderId}
-                actionItems={note.meetingMetadata.actionItems}
-                metadata={note.meetingMetadata}
-              />
-            </div>
-          )}
 
         {note.type !== 'meeting' && (
           <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">

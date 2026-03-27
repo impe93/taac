@@ -1,5 +1,5 @@
 import { type FC } from 'react'
-import { Calendar, Clock, Users, Languages } from 'lucide-react'
+import { Calendar, Clock, Languages } from 'lucide-react'
 import { Badge } from '@renderer/components/ui/badge'
 import type { MeetingMetadata } from '@preload/types'
 
@@ -38,10 +38,6 @@ export const MeetingMetadataBar: FC<MeetingMetadataBarProps> = ({ metadata }) =>
       <Badge variant="secondary" className="gap-1.5 font-normal">
         <Clock className="size-3" />
         {formatDuration(metadata.duration)}
-      </Badge>
-      <Badge variant="secondary" className="gap-1.5 font-normal">
-        <Users className="size-3" />
-        {metadata.speakers.length} speaker{metadata.speakers.length !== 1 ? 's' : ''}
       </Badge>
       {metadata.language && (
         <Badge variant="secondary" className="gap-1.5 font-normal">
