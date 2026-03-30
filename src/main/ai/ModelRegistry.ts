@@ -10,6 +10,10 @@
  */
 
 import type { ModelDefinition, HardwareTier } from './types'
+import type { ModelFormat } from './types'
+
+// Re-export for use in AudioManager without importing types.ts directly
+export type { ModelFormat }
 
 /**
  * Curated list of tested models organized by hardware tier
@@ -168,6 +172,62 @@ const CURATED_MODELS: ModelDefinition[] = [
   },
 
   // ============================================================================
+  // TRANSCRIPTION MODELS — Whisper GGML via whisper.cpp / @fugood/whisper.node
+  // GPU-accelerated (Metal on macOS Apple Silicon, CUDA on Windows/Linux)
+  // ============================================================================
+  {
+    id: 'whisper-base-ggml',
+    name: 'Whisper Base (GGML - GPU)',
+    description:
+      'OpenAI Whisper base model in GGML format — GPU-accelerated via Metal/CUDA (~142MB)',
+    filename: 'ggml-base.bin',
+    sizeBytes: 142 * 1024 * 1024,
+    layers: 0,
+    quantization: 'fp32',
+    contextLength: 0,
+    format: 'ggml' as const,
+    capabilities: ['transcription'],
+    hardwareTier: 'low',
+    downloadUrl:
+      'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin',
+    license: 'MIT'
+  },
+  {
+    id: 'whisper-small-ggml',
+    name: 'Whisper Small (GGML - GPU)',
+    description:
+      'OpenAI Whisper small model in GGML format — GPU-accelerated, better multilingual accuracy (~466MB)',
+    filename: 'ggml-small.bin',
+    sizeBytes: 466 * 1024 * 1024,
+    layers: 0,
+    quantization: 'fp32',
+    contextLength: 0,
+    format: 'ggml' as const,
+    capabilities: ['transcription'],
+    hardwareTier: 'medium',
+    downloadUrl:
+      'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin',
+    license: 'MIT'
+  },
+  {
+    id: 'whisper-large-v3-turbo-ggml',
+    name: 'Whisper Large v3 Turbo (GGML - GPU)',
+    description:
+      'OpenAI Whisper large-v3-turbo in GGML format — best accuracy at 8x speed of large-v3 (~809MB)',
+    filename: 'ggml-large-v3-turbo.bin',
+    sizeBytes: 809 * 1024 * 1024,
+    layers: 0,
+    quantization: 'fp32',
+    contextLength: 0,
+    format: 'ggml' as const,
+    capabilities: ['transcription'],
+    hardwareTier: 'high',
+    downloadUrl:
+      'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin',
+    license: 'MIT'
+  },
+
+  // ============================================================================
   // DIARIZATION MODELS - Speaker segmentation & embedding via sherpa-onnx (§5.3)
   // Small enough to bundle with the app or auto-download silently during onboarding.
   // ============================================================================
@@ -265,10 +325,28 @@ export class ModelRegistry {
   }
 
   /**
-   * Get transcription (Whisper ONNX) models
+   * Get all transcription models (both GGML GPU and ONNX CPU)
    */
   static getTranscriptionModels(): ModelDefinition[] {
     return Array.from(this.models.values()).filter((m) => m.capabilities.includes('transcription'))
+  }
+
+  /**
+   * Get GGML transcription models (whisper.cpp, GPU-accelerated)
+   */
+  static getGgmlTranscriptionModels(): ModelDefinition[] {
+    return Array.from(this.models.values()).filter(
+      (m) => m.capabilities.includes('transcription') && m.format === 'ggml'
+    )
+  }
+
+  /**
+   * Get ONNX transcription models (sherpa-onnx, CPU)
+   */
+  static getOnnxTranscriptionModels(): ModelDefinition[] {
+    return Array.from(this.models.values()).filter(
+      (m) => m.capabilities.includes('transcription') && m.format !== 'ggml'
+    )
   }
 
   /**
@@ -279,35 +357,45 @@ export class ModelRegistry {
   }
 
   /**
-   * Get recommended models for a hardware tier
+   * Get recommended models for a hardware tier.
+   *
+   * @param tier      Hardware tier for filtering compatible models
+   * @param hasGpu    Whether GPU is available — if true, GGML transcription models are preferred
    */
-  static getRecommendedModels(tier: HardwareTier): {
+  static getRecommendedModels(
+    tier: HardwareTier,
+    hasGpu = false
+  ): {
     chat: ModelDefinition | undefined
     embedding: ModelDefinition | undefined
     transcription: ModelDefinition | undefined
   } {
     const compatible = this.getModelsForTier(tier)
+    const tierOrder: HardwareTier[] = ['low', 'medium', 'high', 'ultra']
 
     // Get the most capable compatible chat model (highest tier that fits)
     const chatModels = compatible
       .filter((m) => m.capabilities.includes('chat'))
-      .sort((a, b) => {
-        const tierOrder: HardwareTier[] = ['low', 'medium', 'high', 'ultra']
-        return tierOrder.indexOf(b.hardwareTier) - tierOrder.indexOf(a.hardwareTier)
-      })
+      .sort((a, b) => tierOrder.indexOf(b.hardwareTier) - tierOrder.indexOf(a.hardwareTier))
 
     // Get the smallest embedding model (they're all good quality)
     const embeddingModels = compatible
       .filter((m) => m.capabilities.includes('embedding'))
       .sort((a, b) => a.sizeBytes - b.sizeBytes)
 
-    // Get the most capable compatible transcription model (highest tier that fits) (§7.4)
-    const transcriptionModels = compatible
+    // Prefer GGML (GPU) models when GPU is available, fall back to ONNX (CPU) (§7.4)
+    const transcriptionCandidates = compatible
       .filter((m) => m.capabilities.includes('transcription'))
-      .sort((a, b) => {
-        const tierOrder: HardwareTier[] = ['low', 'medium', 'high', 'ultra']
-        return tierOrder.indexOf(b.hardwareTier) - tierOrder.indexOf(a.hardwareTier)
-      })
+      .filter((m) => (hasGpu ? m.format === 'ggml' : m.format !== 'ggml'))
+      .sort((a, b) => tierOrder.indexOf(b.hardwareTier) - tierOrder.indexOf(a.hardwareTier))
+
+    // If GPU preferred but no GGML model fits the tier, fall back to ONNX
+    const transcriptionModels =
+      transcriptionCandidates.length > 0
+        ? transcriptionCandidates
+        : compatible
+            .filter((m) => m.capabilities.includes('transcription'))
+            .sort((a, b) => tierOrder.indexOf(b.hardwareTier) - tierOrder.indexOf(a.hardwareTier))
 
     return {
       chat: chatModels[0],

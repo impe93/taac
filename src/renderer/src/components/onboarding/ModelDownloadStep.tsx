@@ -8,7 +8,8 @@ import {
   CheckCircle2,
   AlertCircle,
   Loader2,
-  Mic
+  Mic,
+  Zap
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { DownloadProgress, ModelDefinition } from '@main/ai/types'
@@ -86,13 +87,17 @@ export const ModelDownloadStep: FC<ModelDownloadStepProps> = ({ state, dispatch 
 
   const allDownloaded = MODELS.every((m) => isModelComplete(m.id))
 
-  // Transcription models from registry, sorted by tier (low → high)
+  // GPU available when Metal (macOS Apple Silicon) or CUDA (Windows/Linux) is detected
+  const hasGpu = !!(hardwareInfo?.gpu.hasMetal || hardwareInfo?.gpu.hasCuda)
+
+  // Transcription models from registry — GGML (GPU) when GPU is detected, ONNX (CPU) otherwise
   const transcriptionModels = useMemo(
     () =>
       (availableModels ?? [])
         .filter((m) => m.capabilities.includes('transcription'))
+        .filter((m) => (hasGpu ? m.format === 'ggml' : m.format !== 'ggml'))
         .sort((a, b) => TIER_ORDER.indexOf(a.hardwareTier) - TIER_ORDER.indexOf(b.hardwareTier)),
-    [availableModels]
+    [availableModels, hasGpu]
   )
 
   // The best transcription model compatible with the user's hardware tier
@@ -228,8 +233,14 @@ export const ModelDownloadStep: FC<ModelDownloadStepProps> = ({ state, dispatch 
           <div className="flex items-center gap-3">
             <Separator className="flex-1" />
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Mic className="size-4" />
+              {hasGpu ? <Zap className="size-4 text-yellow-500" /> : <Mic className="size-4" />}
               <span>Transcription Model</span>
+              {hasGpu && (
+                <Badge variant="outline" className="gap-1 text-xs text-yellow-600 border-yellow-400/60">
+                  <Zap className="size-2.5" />
+                  GPU
+                </Badge>
+              )}
               <Badge variant="outline" className="text-xs">
                 Optional
               </Badge>
@@ -238,8 +249,10 @@ export const ModelDownloadStep: FC<ModelDownloadStepProps> = ({ state, dispatch 
           </div>
 
           <p className="text-sm text-muted-foreground">
-            Required for Meeting Notes — transcribes speech to text locally. You can download this
-            later from Settings.
+            Required for Meeting Notes — transcribes speech to text locally.{' '}
+            {hasGpu
+              ? 'GPU-accelerated models are shown for your hardware. You can download this later from Settings.'
+              : 'You can download this later from Settings.'}
           </p>
 
           <div className="grid w-full gap-3">
@@ -435,6 +448,12 @@ const TranscriptionModelCard: FC<TranscriptionModelCardProps> = ({
                 {isRecommended && (
                   <Badge variant="default" className="text-xs">
                     Recommended
+                  </Badge>
+                )}
+                {model.format === 'ggml' && (
+                  <Badge variant="outline" className="gap-1 text-xs text-yellow-600 border-yellow-400/60">
+                    <Zap className="size-2.5" />
+                    GPU
                   </Badge>
                 )}
               </div>

@@ -10,11 +10,21 @@
 
 import ffmpeg from 'fluent-ffmpeg'
 import ffmpegStatic from 'ffmpeg-static'
+import { sep } from 'node:path'
 
 // Set the ffmpeg binary path once at module load time.
 // ffmpeg-static exports the path string (null only if the binary is missing).
-if (ffmpegStatic) {
-  ffmpeg.setFfmpegPath(ffmpegStatic)
+const rawFfmpegPath: string | null = ffmpegStatic
+if (rawFfmpegPath) {
+  // In a packaged Electron app, ffmpeg-static resolves its __dirname to the
+  // virtual asar path (e.g. .../app.asar/node_modules/ffmpeg-static/ffmpeg).
+  // app.asar is a file, not a directory — spawn() gets ENOTDIR when it tries
+  // to execute a binary from inside it. The binary is physically extracted to
+  // app.asar.unpacked by electron-builder (asarUnpack config), so we redirect
+  // the path there. In dev mode the path never contains "app.asar", so this
+  // replace is a safe no-op.
+  const ffmpegPath = rawFfmpegPath.replace(`app.asar${sep}`, `app.asar.unpacked${sep}`)
+  ffmpeg.setFfmpegPath(ffmpegPath)
 } else {
   console.warn('[AudioConverter] ffmpeg-static binary not found — conversion will likely fail')
 }

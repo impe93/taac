@@ -3,10 +3,12 @@
  *
  * Coordinates the full post-processing pipeline for meeting notes:
  *   1. (Conversion already done in audioHandlers before processRecording is called)
- *   2. Transcription via TranscriptionService (stub — real impl in a later task)
- *   3. Diarization via DiarizationService (stub — real impl in a later task)
- *   4. Timeline merge + speaker label assignment
- *   5. Summarization via AIManager (stub — real impl in a later task)
+ *   2. Transcription via ProcessingWorkerManager (off main thread)
+ *      - GPU path: WhisperGpuService + GGML model (Metal / CUDA)
+ *      - CPU path: TranscriptionService + ONNX model (sherpa-onnx)
+ *   3. Diarization via ProcessingWorkerManager (off main thread, always CPU)
+ *   4. Timeline merge + speaker label assignment (main thread, lightweight)
+ *   5. Summarization via AIManager (main thread, GPU via node-llama-cpp)
  *   6. Construction of the MeetingMetadata result object
  *
  * §3.1  Singleton with private constructor + getInstance()
@@ -33,9 +35,11 @@ import type {
   DiarizationResult,
   DiarizationSegment
 } from './types'
-import { TranscriptionService } from './TranscriptionService'
-import { DiarizationService } from './DiarizationService'
+import { ProcessingWorkerManager } from './ProcessingWorkerManager'
+import type { WorkerInitConfig } from './processingWorker'
 import { AIManager } from '../ai/AIManager'
+import { HardwareDetector } from '../ai/HardwareDetector'
+import { ModelRegistry } from '../ai/ModelRegistry'
 import type { ChatMessage } from '../ai/AIManager'
 
 const DEFAULT_CHAT_MODEL_ID = 'qwen3-4b-instruct-2507-q8'
@@ -47,8 +51,7 @@ const DEFAULT_CHAT_MODEL_ID = 'qwen3-4b-instruct-2507-q8'
 export class AudioManager {
   private static instance: AudioManager | null = null
   private initialized = false
-  private transcriptionService: TranscriptionService | null = null
-  private diarizationService: DiarizationService | null = null
+  private workerManager: ProcessingWorkerManager | null = null
 
   private constructor() {}
 
@@ -66,72 +69,155 @@ export class AudioManager {
 
     console.log('[AudioManager] Initializing...')
 
-    // Whisper model directory: {userData}/models/{whisperModelId}/
-    // The configured whisper model ID determines which sub-directory to use.
-    // If the configured model isn't downloaded, fall back to any available transcription model.
     const { configStore } = await import('../utils/configStore')
-    const { ModelRegistry } = await import('../ai/ModelRegistry')
     const modelsBase = join(app.getPath('userData'), 'models')
-    let whisperModelId = configStore.get('meeting').whisperModelId
-    let whisperModelDir = join(modelsBase, whisperModelId)
 
-    const dirExists = await fs
-      .access(whisperModelDir)
-      .then(() => true)
-      .catch(() => false)
-    if (!dirExists) {
-      console.warn(
-        `[AudioManager] Configured whisper model "${whisperModelId}" not found — searching for alternatives`
-      )
-      const transcriptionModels = ModelRegistry.getTranscriptionModels()
-      let found = false
-      for (const model of transcriptionModels) {
-        const candidateDir = join(modelsBase, model.id)
+    // ------------------------------------------------------------------
+    // Detect hardware GPU capabilities
+    // ------------------------------------------------------------------
+    const hardware = await HardwareDetector.detect()
+    const hasGpu = hardware.gpu.hasMetal || hardware.gpu.hasCuda
+    console.log(
+      `[AudioManager] GPU: ${hardware.gpu.name} | Metal: ${hardware.gpu.hasMetal} | CUDA: ${hardware.gpu.hasCuda}`
+    )
+
+    // ------------------------------------------------------------------
+    // Select transcription model based on GPU availability
+    //
+    // GPU path  → GGML model (whisper.cpp, Metal / CUDA)
+    // CPU path  → ONNX model (sherpa-onnx)
+    // ------------------------------------------------------------------
+    let transcriptionMode: 'gpu' | 'cpu' = 'cpu'
+    let whisperModelPath: string | undefined
+    let whisperModelDir: string | undefined
+
+    const meetingConfig = configStore.get('meeting')
+    const configuredModelId = meetingConfig.whisperModelId
+
+    if (hasGpu) {
+      // Try to find a GGML model — prefer the one in config if it's GGML,
+      // otherwise look for any downloaded GGML model
+      const ggmlModels = ModelRegistry.getGgmlTranscriptionModels()
+
+      // Check if the configured model is a GGML model that exists on disk
+      const configuredGgml = ggmlModels.find((m) => m.id === configuredModelId)
+      if (configuredGgml) {
+        const candidatePath = join(modelsBase, configuredGgml.filename)
         const exists = await fs
-          .access(candidateDir)
+          .access(candidatePath)
           .then(() => true)
           .catch(() => false)
         if (exists) {
-          whisperModelId = model.id
-          whisperModelDir = candidateDir
-          console.log(`[AudioManager] Using available transcription model: ${model.id}`)
-          // Update config so future initializations use the correct model
-          const meetingConfig = configStore.get('meeting')
-          configStore.set('meeting', { ...meetingConfig, whisperModelId: model.id })
-          found = true
-          break
+          whisperModelPath = candidatePath
+          transcriptionMode = 'gpu'
+          console.log(`[AudioManager] GPU transcription — model: ${configuredGgml.id}`)
         }
       }
-      if (!found) {
-        console.warn('[AudioManager] No transcription model found on disk')
+
+      // If configured GGML model not found, scan for any available GGML model
+      if (!whisperModelPath) {
+        for (const model of ggmlModels.sort((a, b) => b.sizeBytes - a.sizeBytes)) {
+          const candidatePath = join(modelsBase, model.filename)
+          const exists = await fs
+            .access(candidatePath)
+            .then(() => true)
+            .catch(() => false)
+          if (exists) {
+            whisperModelPath = candidatePath
+            transcriptionMode = 'gpu'
+            console.log(`[AudioManager] GPU transcription — using available model: ${model.id}`)
+            // Update config so future runs use this model
+            configStore.set('meeting', { ...meetingConfig, whisperModelId: model.id })
+            break
+          }
+        }
+      }
+
+      if (!whisperModelPath) {
+        console.warn(
+          '[AudioManager] GPU available but no GGML model found on disk — falling back to CPU'
+        )
       }
     }
 
-    this.transcriptionService = new TranscriptionService()
-    await this.transcriptionService.initialize(whisperModelDir)
+    // CPU fallback: find an ONNX model directory
+    if (transcriptionMode === 'cpu' || !whisperModelPath) {
+      transcriptionMode = 'cpu'
+      let onnxModelId = configuredModelId
+      let onnxModelDir = join(modelsBase, onnxModelId)
 
-    // Diarization model paths: single-file models stored directly in {userData}/models/
-    const modelsDir = join(app.getPath('userData'), 'models')
-    const segmentationModelPath = join(modelsDir, 'model.onnx')
+      const dirExists = await fs
+        .access(onnxModelDir)
+        .then(() => true)
+        .catch(() => false)
+
+      if (!dirExists) {
+        console.warn(
+          `[AudioManager] Configured ONNX model "${onnxModelId}" not found — searching for alternatives`
+        )
+        const onnxModels = ModelRegistry.getOnnxTranscriptionModels()
+        let found = false
+        for (const model of onnxModels) {
+          const candidateDir = join(modelsBase, model.id)
+          const exists = await fs
+            .access(candidateDir)
+            .then(() => true)
+            .catch(() => false)
+          if (exists) {
+            onnxModelId = model.id
+            onnxModelDir = candidateDir
+            console.log(`[AudioManager] CPU transcription — using available model: ${model.id}`)
+            configStore.set('meeting', { ...meetingConfig, whisperModelId: model.id })
+            found = true
+            break
+          }
+        }
+        if (!found) {
+          console.warn('[AudioManager] No transcription model found on disk')
+        }
+      } else {
+        console.log(`[AudioManager] CPU transcription — model dir: ${onnxModelDir}`)
+      }
+
+      whisperModelDir = onnxModelDir
+    }
+
+    // ------------------------------------------------------------------
+    // Diarization model paths (always CPU, sherpa-onnx)
+    // ------------------------------------------------------------------
+    const segmentationModelPath = join(modelsBase, 'model.onnx')
     const embeddingModelPath = join(
-      modelsDir,
+      modelsBase,
       '3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx'
     )
 
-    this.diarizationService = new DiarizationService()
-    await this.diarizationService.initialize(segmentationModelPath, embeddingModelPath)
+    // ------------------------------------------------------------------
+    // Start the processing worker
+    // ------------------------------------------------------------------
+    const workerConfig: WorkerInitConfig = {
+      transcriptionMode,
+      whisperModelPath,
+      whisperModelDir,
+      hasMetal: hardware.gpu.hasMetal,
+      hasCuda: hardware.gpu.hasCuda,
+      segmentationModelPath,
+      embeddingModelPath
+    }
+
+    this.workerManager = new ProcessingWorkerManager()
+    await this.workerManager.initialize(workerConfig)
 
     this.initialized = true
-    console.log('[AudioManager] Initialized')
+    console.log(
+      `[AudioManager] Initialized — transcription: ${transcriptionMode.toUpperCase()}, worker: ready`
+    )
   }
 
   // §3.4 — full cleanup
   async dispose(): Promise<void> {
     console.log('[AudioManager] Disposing...')
-    this.transcriptionService?.dispose()
-    this.diarizationService?.dispose()
-    this.transcriptionService = null
-    this.diarizationService = null
+    await this.workerManager?.dispose()
+    this.workerManager = null
     this.initialized = false
     console.log('[AudioManager] Disposed')
   }
@@ -166,17 +252,17 @@ export class AudioManager {
     console.log(`[AudioManager] processRecording — note=${noteId} space=${spaceId} mode=${mode}`)
 
     // ------------------------------------------------------------------
-    // Stage 1: Transcription
+    // Stage 1: Transcription (runs in worker thread — non-blocking)
     // ------------------------------------------------------------------
     onProgress({ stage: 'transcribing', progress: 0, message: 'Transcribing audio...' })
     console.log('[AudioManager] Stage: transcribing')
 
-    const micTranscription = await this.transcriptionService!.transcribe(micWavPath)
+    const micTranscription = await this.workerManager!.transcribe(micWavPath)
 
     let systemTranscription: TranscriptionResult | null = null
     if (mode === 'remote' && systemWavPath) {
       onProgress({ stage: 'transcribing', progress: 50, message: 'Transcribing system audio...' })
-      systemTranscription = await this.transcriptionService!.transcribe(systemWavPath)
+      systemTranscription = await this.workerManager!.transcribe(systemWavPath)
     }
 
     onProgress({ stage: 'transcribing', progress: 100, message: 'Transcription complete' })
@@ -186,23 +272,23 @@ export class AudioManager {
       micTranscription.detectedLanguage || systemTranscription?.detectedLanguage || 'en'
 
     // ------------------------------------------------------------------
-    // Stage 2: Diarization
+    // Stage 2: Diarization (runs in worker thread — non-blocking)
     // ------------------------------------------------------------------
     onProgress({ stage: 'diarizing', progress: 0, message: 'Identifying speakers...' })
     console.log('[AudioManager] Stage: diarizing')
 
-    const micDiarization = await this.diarizationService!.diarize(micWavPath)
+    const micDiarization = await this.workerManager!.diarize(micWavPath)
 
     let systemDiarization: DiarizationResult | null = null
     if (mode === 'remote' && systemWavPath) {
       onProgress({ stage: 'diarizing', progress: 50, message: 'Identifying remote speakers...' })
-      systemDiarization = await this.diarizationService!.diarize(systemWavPath)
+      systemDiarization = await this.workerManager!.diarize(systemWavPath)
     }
 
     onProgress({ stage: 'diarizing', progress: 100, message: 'Speaker identification complete' })
 
     // ------------------------------------------------------------------
-    // Stage 3: Merge timelines + assign speaker labels
+    // Stage 3: Merge timelines + assign speaker labels (main thread, lightweight)
     // ------------------------------------------------------------------
     const { speakers, transcriptionSegments } = this.buildTimeline(
       mode,
@@ -213,7 +299,7 @@ export class AudioManager {
     )
 
     // ------------------------------------------------------------------
-    // Stage 4: Summarization
+    // Stage 4: Summarization (main thread, GPU via AIManager)
     // ------------------------------------------------------------------
     onProgress({ stage: 'summarizing', progress: 0, message: 'Generating summary...' })
     console.log('[AudioManager] Stage: summarizing')

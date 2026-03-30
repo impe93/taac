@@ -16,12 +16,17 @@ export default defineConfig({
           'protobufjs',
           'ffmpeg-static',
           'fluent-ffmpeg',
-          'sherpa-onnx-node'
+          'sherpa-onnx-node',
+          '@fugood/whisper.node'
         ]
       })
     ],
     build: {
       rollupOptions: {
+        input: {
+          index: 'src/main/index.ts',
+          processingWorker: 'src/main/audio/processingWorker.ts'
+        },
         // Explicitly mark native modules as external
         external: [
           'node-llama-cpp',
@@ -30,7 +35,8 @@ export default defineConfig({
           'protobufjs',
           'ffmpeg-static',
           'fluent-ffmpeg',
-          'sherpa-onnx-node'
+          'sherpa-onnx-node',
+          '@fugood/whisper.node'
         ]
       }
     }

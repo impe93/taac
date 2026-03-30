@@ -72,6 +72,11 @@ export type ModelCapability =
   | 'diarization'
 
 /**
+ * Model file format — determines which transcription engine handles the model
+ */
+export type ModelFormat = 'gguf' | 'ggml' | 'onnx'
+
+/**
  * Performance estimation levels
  */
 export type EstimatedPerformance = 'slow' | 'moderate' | 'fast' | 'very-fast'
@@ -101,6 +106,8 @@ export interface ModelDefinition {
   capabilities: ModelCapability[]
   hardwareTier: HardwareTier
   license: string
+  /** File format — determines which inference engine loads the model */
+  format?: ModelFormat
   /** Additional files required by multi-file models (e.g. Whisper ONNX encoder/decoder/tokens) */
   files?: ModelFile[]
 }
