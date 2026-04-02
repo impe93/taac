@@ -1,8 +1,12 @@
 import { useMemo } from 'react'
 import { useDownloadedModels } from './useModels'
 
-const DIARIZATION_MODEL_IDS = [
-  'sherpa-onnx-pyannote-segmentation',
+/** Segmentation model is always required */
+const SEGMENTATION_MODEL_ID = 'sherpa-onnx-pyannote-segmentation'
+
+/** At least one embedding model is required — NeMo TitaNet Small is the preferred (faster) option */
+const EMBEDDING_MODEL_IDS = [
+  'sherpa-onnx-nemo-titanet-small',
   'sherpa-onnx-3dspeaker-embedding'
 ]
 
@@ -19,7 +23,9 @@ export const useMeetingModelsReady = (): MeetingModelsStatus => {
     const downloadedIds = new Set(downloaded.map((m) => m.id))
 
     const hasTranscription = downloaded.some((m) => m.capabilities.includes('transcription'))
-    const hasDiarization = DIARIZATION_MODEL_IDS.every((id) => downloadedIds.has(id))
+    const hasSegmentation = downloadedIds.has(SEGMENTATION_MODEL_ID)
+    const hasEmbedding = EMBEDDING_MODEL_IDS.some((id) => downloadedIds.has(id))
+    const hasDiarization = hasSegmentation && hasEmbedding
     const hasChat = downloaded.some((m) => m.capabilities.includes('chat'))
 
     const missingCategories: string[] = []

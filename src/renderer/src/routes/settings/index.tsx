@@ -56,6 +56,7 @@ const TRANSCRIPTION_MODEL_ROWS: ModelRowConfig[] = [
 
 const DIARIZATION_MODEL_ROWS: ModelRowConfig[] = [
   { id: 'sherpa-onnx-pyannote-segmentation', label: 'Diarization', icon: Users },
+  { id: 'sherpa-onnx-nemo-titanet-small', label: 'Diarization · Fast', icon: Users },
   { id: 'sherpa-onnx-3dspeaker-embedding', label: 'Diarization', icon: Users }
 ]
 
@@ -186,7 +187,9 @@ const MeetingModelsSection: FC<MeetingModelsSectionProps> = ({
         </div>
 
         <div>
-          <p className="mb-2 text-sm font-medium text-muted-foreground">Speaker Identification</p>
+          <p className="mb-2 text-sm font-medium text-muted-foreground">
+            Speaker Identification (segmentation + one embedding)
+          </p>
           <div className="space-y-3">{renderModelRows(DIARIZATION_MODEL_ROWS)}</div>
         </div>
       </div>

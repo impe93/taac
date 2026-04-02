@@ -188,8 +188,7 @@ const CURATED_MODELS: ModelDefinition[] = [
     format: 'ggml' as const,
     capabilities: ['transcription'],
     hardwareTier: 'low',
-    downloadUrl:
-      'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin',
+    downloadUrl: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin',
     license: 'MIT'
   },
   {
@@ -205,8 +204,7 @@ const CURATED_MODELS: ModelDefinition[] = [
     format: 'ggml' as const,
     capabilities: ['transcription'],
     hardwareTier: 'medium',
-    downloadUrl:
-      'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin',
+    downloadUrl: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin',
     license: 'MIT'
   },
   {
@@ -251,9 +249,9 @@ const CURATED_MODELS: ModelDefinition[] = [
     id: 'sherpa-onnx-3dspeaker-embedding',
     name: 'Speaker Embedding (3D-Speaker)',
     description:
-      'ERes2Net speaker embedding model — creates voice fingerprints to cluster speakers (~10MB). Intended to be bundled with the app.',
+      'ERes2Net speaker embedding model — creates voice fingerprints to cluster speakers (~40MB). Intended to be bundled with the app.',
     filename: '3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx',
-    sizeBytes: 10 * 1024 * 1024, // ~10MB
+    sizeBytes: 40 * 1024 * 1024, // ~40MB
     layers: 0,
     quantization: 'fp32',
     contextLength: 0,
@@ -261,6 +259,22 @@ const CURATED_MODELS: ModelDefinition[] = [
     hardwareTier: 'low',
     downloadUrl:
       'https://huggingface.co/csukuangfj/speaker-embedding-models/resolve/main/3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx',
+    license: 'Apache 2.0'
+  },
+  {
+    id: 'sherpa-onnx-nemo-titanet-small',
+    name: 'Speaker Embedding (NeMo TitaNet Small)',
+    description:
+      'NVIDIA NeMo TitaNet Small — ~2.7x faster speaker embedding extraction with comparable accuracy (~40MB)',
+    filename: 'nemo_en_titanet_small.onnx',
+    sizeBytes: 40.3 * 1024 * 1024, // ~40.3MB
+    layers: 0,
+    quantization: 'fp32',
+    contextLength: 0,
+    capabilities: ['diarization'],
+    hardwareTier: 'low',
+    downloadUrl:
+      'https://huggingface.co/csukuangfj/speaker-embedding-models/resolve/main/nemo_en_titanet_small.onnx',
     license: 'Apache 2.0'
   }
 ]

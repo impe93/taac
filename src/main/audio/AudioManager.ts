@@ -35,7 +35,7 @@ import type {
   DiarizationResult,
   DiarizationSegment
 } from './types'
-import { ProcessingWorkerManager } from './ProcessingWorkerManager'
+import { ProcessingUtilityManager } from './ProcessingUtilityManager'
 import type { WorkerInitConfig } from './processingWorker'
 import { AIManager } from '../ai/AIManager'
 import { HardwareDetector } from '../ai/HardwareDetector'
@@ -51,7 +51,7 @@ const DEFAULT_CHAT_MODEL_ID = 'qwen3-4b-instruct-2507-q8'
 export class AudioManager {
   private static instance: AudioManager | null = null
   private initialized = false
-  private workerManager: ProcessingWorkerManager | null = null
+  private workerManager: ProcessingUtilityManager | null = null
 
   private constructor() {}
 
@@ -184,11 +184,23 @@ export class AudioManager {
 
     // ------------------------------------------------------------------
     // Diarization model paths (always CPU, sherpa-onnx)
+    // Prefer NeMo TitaNet Small (~2.7x faster) if available, fall back to 3DSpeaker
     // ------------------------------------------------------------------
     const segmentationModelPath = join(modelsBase, 'model.onnx')
-    const embeddingModelPath = join(
+
+    const nemoEmbeddingPath = join(modelsBase, 'nemo_en_titanet_small.onnx')
+    const threeDSpeakerEmbeddingPath = join(
       modelsBase,
       '3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx'
+    )
+
+    const nemoExists = await fs
+      .access(nemoEmbeddingPath)
+      .then(() => true)
+      .catch(() => false)
+    const embeddingModelPath = nemoExists ? nemoEmbeddingPath : threeDSpeakerEmbeddingPath
+    console.log(
+      `[AudioManager] Diarization embedding: ${nemoExists ? 'NeMo TitaNet Small' : '3DSpeaker ERes2Net'}`
     )
 
     // ------------------------------------------------------------------
@@ -204,7 +216,7 @@ export class AudioManager {
       embeddingModelPath
     }
 
-    this.workerManager = new ProcessingWorkerManager()
+    this.workerManager = new ProcessingUtilityManager()
     await this.workerManager.initialize(workerConfig)
 
     this.initialized = true

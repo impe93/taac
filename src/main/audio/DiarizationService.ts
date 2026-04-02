@@ -86,24 +86,31 @@ export class DiarizationService {
     this.sherpaOnnx = sherpaOnnx
 
     // ------------------------------------------------------------------
-    // 3. Determine thread count — half the logical CPUs, clamped [2, 4]
+    // 3. Determine thread counts — with process isolation (utilityProcess),
+    //    we can use more threads without starving the main process.
+    //    Segmentation is lightweight → fewer threads.
+    //    Embedding extraction is the bottleneck → more threads.
     // ------------------------------------------------------------------
-    const numThreads = Math.max(2, Math.min(4, Math.floor(os.cpus().length / 2)))
-    console.log(`[DiarizationService] Using ${numThreads} threads`)
+    const cpuCount = os.cpus().length
+    const segThreads = Math.max(2, Math.min(4, Math.floor(cpuCount / 4)))
+    const embThreads = Math.max(2, Math.min(6, Math.floor(cpuCount / 2)))
+    console.log(
+      `[DiarizationService] Threads — segmentation: ${segThreads}, embedding: ${embThreads} (${cpuCount} logical CPUs)`
+    )
 
     // ------------------------------------------------------------------
     // 4. Create the offline speaker diarization pipeline (§5.5 config layout)
-    //    numClusters: 0 → auto-detect number of speakers
+    //    numClusters: -1 → auto-detect number of speakers
     // ------------------------------------------------------------------
     this.diarizer = new sherpaOnnx.OfflineSpeakerDiarization({
       segmentation: {
         pyannote: { model: segmentationModelPath },
-        numThreads,
+        numThreads: segThreads,
         debug: 0
       },
       embedding: {
         model: embeddingModelPath,
-        numThreads,
+        numThreads: embThreads,
         debug: 0
       },
       clustering: {

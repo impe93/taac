@@ -49,6 +49,53 @@ export type WorkerOutMessage =
   | { type: 'task-error'; taskId: string; error: string }
   | { type: 'progress'; taskId: string; stage: string; percentage: number }
 
+// ─── Dual-mode message port ──────────────────────────────────────────────────
+// Supports both node:worker_threads (Worker) and Electron utilityProcess.
+// Worker threads: parentPort is non-null, messages arrive directly.
+// Utility process: parentPort is null, messages arrive on process.parentPort
+// wrapped in { data: ... }.
+
+interface IMessagePort {
+  onMessage(handler: (msg: WorkerInMessage) => void): void
+  postMessage(msg: WorkerOutMessage): void
+}
+
+// Access Electron's process.parentPort (only exists in utility processes)
+const electronParentPort = (process as NodeJS.Process & { parentPort?: Electron.ParentPort })
+  .parentPort
+
+function createPort(): IMessagePort {
+  if (parentPort) {
+    const wp = parentPort
+    return {
+      onMessage: (handler): void => {
+        wp.on('message', handler)
+      },
+      postMessage: (msg): void => {
+        wp.postMessage(msg)
+      }
+    }
+  }
+
+  if (electronParentPort) {
+    const ep = electronParentPort
+    return {
+      onMessage: (handler): void => {
+        ep.on('message', (e) => handler(e.data as WorkerInMessage))
+      },
+      postMessage: (msg): void => {
+        ep.postMessage(msg)
+      }
+    }
+  }
+
+  throw new Error(
+    '[Worker] No message port available — must run as worker thread or utility process'
+  )
+}
+
+const port = createPort()
+
 // ─── Worker state ─────────────────────────────────────────────────────────────
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -60,7 +107,7 @@ let diarizationService: any | null = null
 let activeMode: 'gpu' | 'cpu' | null = null
 
 function send(msg: WorkerOutMessage): void {
-  parentPort!.postMessage(msg)
+  port.postMessage(msg)
 }
 
 // ─── Initialization ───────────────────────────────────────────────────────────
@@ -166,7 +213,7 @@ async function handleDiarize(wavPath: string, taskId: string): Promise<void> {
 
 // ─── Message dispatcher ───────────────────────────────────────────────────────
 
-parentPort!.on('message', (msg: WorkerInMessage) => {
+port.onMessage((msg: WorkerInMessage) => {
   switch (msg.type) {
     case 'init':
       handleInit(msg.config)
