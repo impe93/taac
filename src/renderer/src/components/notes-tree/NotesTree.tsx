@@ -13,6 +13,7 @@ import { TreeNote } from './TreeNote'
 import { EmptyTreeArea } from './EmptyTreeArea'
 import { CreateItemDialog } from './CreateItemDialog'
 import { DeleteItemDialog } from './DeleteItemDialog'
+import { RenameFolderDialog } from './RenameFolderDialog'
 import { Skeleton } from '@renderer/components/ui/skeleton'
 import { Button } from '@renderer/components/ui/button'
 
@@ -43,6 +44,12 @@ export const NotesTree: FC = () => {
     folderId?: string
   } | null>(null)
 
+  const [renameDialog, setRenameDialog] = useState<{
+    open: boolean
+    folderId: string
+    currentName: string
+  } | null>(null)
+
   // Callbacks per child components
   const handleCreateNote = (parentFolderId: string): void => {
     setCreateDialog({ open: true, type: 'note', parentFolderId })
@@ -58,6 +65,10 @@ export const NotesTree: FC = () => {
 
   const handleDeleteFolder = (folderId: string, folderName: string): void => {
     setDeleteDialog({ open: true, type: 'folder', itemId: folderId, itemName: folderName })
+  }
+
+  const handleRenameFolder = (folderId: string, folderName: string): void => {
+    setRenameDialog({ open: true, folderId, currentName: folderName })
   }
 
   // Loading state (skeleton)
@@ -150,6 +161,7 @@ export const NotesTree: FC = () => {
                 level={0}
                 onCreateNote={handleCreateNote}
                 onCreateFolder={handleCreateFolder}
+                onRenameFolder={handleRenameFolder}
                 onDeleteFolder={handleDeleteFolder}
                 onDeleteNote={handleDeleteNote}
               />
@@ -174,6 +186,15 @@ export const NotesTree: FC = () => {
           folderId={deleteDialog.folderId}
           open={deleteDialog.open}
           onOpenChange={(open) => setDeleteDialog(open ? deleteDialog : null)}
+        />
+      )}
+
+      {renameDialog && (
+        <RenameFolderDialog
+          folderId={renameDialog.folderId}
+          currentName={renameDialog.currentName}
+          open={renameDialog.open}
+          onOpenChange={(open) => setRenameDialog(open ? renameDialog : null)}
         />
       )}
     </>

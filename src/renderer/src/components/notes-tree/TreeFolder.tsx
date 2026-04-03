@@ -1,4 +1,4 @@
-import { type FC, useState, useEffect, useRef } from 'react'
+import { type FC, useEffect, useRef } from 'react'
 import { useAppDispatch, useAppSelector } from '@renderer/store/hooks'
 import {
   toggleFolder,
@@ -14,19 +14,10 @@ import {
   CollapsibleContent,
   CollapsibleTrigger
 } from '@renderer/components/ui/collapsible'
-import { ChevronRight, Folder, FolderOpen, MoreHorizontal } from 'lucide-react'
+import { ChevronRight, Folder, FolderOpen } from 'lucide-react'
 import { cn } from '@renderer/lib/utils'
 import { TreeNote } from './TreeNote'
 import { FolderContextMenu } from './FolderContextMenu'
-import { Button } from '@renderer/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger
-} from '@renderer/components/ui/dropdown-menu'
-import { FileText, FolderPlus, Trash2 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip'
 
 interface TreeFolderProps {
@@ -34,6 +25,7 @@ interface TreeFolderProps {
   level: number
   onCreateNote: (folderId: string) => void
   onCreateFolder: (folderId: string) => void
+  onRenameFolder: (folderId: string, folderName: string) => void
   onDeleteFolder: (folderId: string, folderName: string) => void
   onDeleteNote: (noteId: string, noteName: string, folderId: string) => void
 }
@@ -43,6 +35,7 @@ export const TreeFolder: FC<TreeFolderProps> = ({
   level,
   onCreateNote,
   onCreateFolder,
+  onRenameFolder,
   onDeleteFolder,
   onDeleteNote
 }) => {
@@ -50,8 +43,6 @@ export const TreeFolder: FC<TreeFolderProps> = ({
   const folder = useAppSelector(selectFolder(folderId))
   const notes = useAppSelector(selectNotesInFolder(folderId))
   const expandedFolders = useAppSelector(selectExpandedFolders)
-  const [showActions, setShowActions] = useState(false)
-
   // HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
   // Setup draggable
   const {
@@ -124,14 +115,13 @@ export const TreeFolder: FC<TreeFolderProps> = ({
         ref={setRefs}
         style={style}
         className={cn('group relative', isOver && 'bg-accent/50 ring-2 ring-primary/50 rounded-md')}
-        onMouseEnter={() => setShowActions(true)}
-        onMouseLeave={() => setShowActions(false)}
       >
         <FolderContextMenu
           folderId={folderId}
           folderName={folder.name}
           onCreateNote={() => onCreateNote(folderId)}
           onCreateFolder={() => onCreateFolder(folderId)}
+          onRename={() => onRenameFolder(folderId, folder.name)}
           onDelete={() => onDeleteFolder(folderId, folder.name)}
         >
           <CollapsibleTrigger asChild>
@@ -162,36 +152,6 @@ export const TreeFolder: FC<TreeFolderProps> = ({
           </CollapsibleTrigger>
         </FolderContextMenu>
 
-        {/* Dropdown menu pulsante 3 puntini hover */}
-        {showActions && (
-          <div className="absolute right-1 top-1 z-10">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                <Button variant="ghost" size="icon" className="size-6">
-                  <MoreHorizontal className="size-3.5" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => onCreateNote(folderId)}>
-                  <FileText className="size-4 mr-2" />
-                  New Note
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => onCreateFolder(folderId)}>
-                  <FolderPlus className="size-4 mr-2" />
-                  New Folder
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  className="text-destructive focus:text-destructive"
-                  onClick={() => onDeleteFolder(folderId, folder.name)}
-                >
-                  <Trash2 className="size-4 mr-2" />
-                  Delete Folder
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        )}
       </div>
 
       <CollapsibleContent className="space-y-1">
@@ -214,6 +174,7 @@ export const TreeFolder: FC<TreeFolderProps> = ({
             level={level + 1}
             onCreateNote={onCreateNote}
             onCreateFolder={onCreateFolder}
+            onRenameFolder={onRenameFolder}
             onDeleteFolder={onDeleteFolder}
             onDeleteNote={onDeleteNote}
           />

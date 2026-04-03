@@ -6,13 +6,14 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger
 } from '@renderer/components/ui/context-menu'
-import { FileText, FolderPlus, Trash2 } from 'lucide-react'
+import { FileText, FolderPlus, Pencil, Trash2 } from 'lucide-react'
 
 interface FolderContextMenuProps {
   folderId: string
   folderName: string
   onCreateNote: () => void
   onCreateFolder: () => void
+  onRename: () => void
   onDelete: () => void
   children: React.ReactNode
 }
@@ -20,6 +21,7 @@ interface FolderContextMenuProps {
 export const FolderContextMenu: FC<FolderContextMenuProps> = ({
   onCreateNote,
   onCreateFolder,
+  onRename,
   onDelete,
   children
 }) => {
@@ -34,6 +36,11 @@ export const FolderContextMenu: FC<FolderContextMenuProps> = ({
         <ContextMenuItem onClick={onCreateFolder}>
           <FolderPlus className="size-4 mr-2" />
           New Folder
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onClick={onRename}>
+          <Pencil className="size-4 mr-2" />
+          Rename Folder
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem variant="destructive" onClick={onDelete}>
