@@ -1,6 +1,4 @@
 import { type FC } from 'react'
-import { useDroppable } from '@dnd-kit/core'
-import { cn } from '@renderer/lib/utils'
 import { EmptySpaceContextMenu } from './EmptySpaceContextMenu'
 
 interface EmptyTreeAreaProps {
@@ -14,26 +12,9 @@ export const EmptyTreeArea: FC<EmptyTreeAreaProps> = ({
   onCreateFolder,
   children
 }) => {
-  // Setup droppable for root level
-  const { setNodeRef, isOver } = useDroppable({
-    id: 'folder-drop-root',
-    data: {
-      type: 'folder',
-      folderId: 'root'
-    }
-  })
-
   return (
     <EmptySpaceContextMenu onCreateNote={onCreateNote} onCreateFolder={onCreateFolder}>
-      <div
-        ref={setNodeRef}
-        className={cn(
-          'min-h-[200px] w-full transition-colors',
-          isOver && 'bg-accent/30 ring-2 ring-primary/30 rounded-md'
-        )}
-      >
-        {children}
-      </div>
+      <div className="min-h-[200px] w-full">{children}</div>
     </EmptySpaceContextMenu>
   )
 }

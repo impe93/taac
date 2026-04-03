@@ -11,6 +11,7 @@ import {
 import { TreeFolder } from './TreeFolder'
 import { TreeNote } from './TreeNote'
 import { EmptyTreeArea } from './EmptyTreeArea'
+import { RootDropZone } from './RootDropZone'
 import { CreateItemDialog } from './CreateItemDialog'
 import { DeleteItemDialog } from './DeleteItemDialog'
 import { RenameFolderDialog } from './RenameFolderDialog'
@@ -167,6 +168,7 @@ export const NotesTree: FC = () => {
               />
             ))}
           </div>
+          <RootDropZone />
         </EmptyTreeArea>
       </div>
 
