@@ -129,11 +129,15 @@ export const useAIChat = (modelId: string) => {
     return unsubscribe
   }, [])
 
+  const abortGeneration = useCallback(async (): Promise<void> => {
+    await window.ai.stopGeneration()
+  }, [])
+
   const sendMessage = useCallback(
     async (
       messages: ChatMessage[],
       options?: Pick<GenerationOptions, 'maxTokens' | 'temperature'>
-    ): Promise<string> => {
+    ): Promise<{ response: string; aborted?: boolean }> => {
       setIsGenerating(true)
       setCurrentResponse('')
 
@@ -143,9 +147,13 @@ export const useAIChat = (modelId: string) => {
           messages,
           options
         )
-        return result.response
+        if (result.aborted) {
+          return { response: '', aborted: true }
+        }
+        return { response: result.response }
       } finally {
         setIsGenerating(false)
+        setCurrentResponse('')
       }
     },
     [modelId]
@@ -153,6 +161,7 @@ export const useAIChat = (modelId: string) => {
 
   return {
     sendMessage,
+    abortGeneration,
     isGenerating,
     currentResponse
   }

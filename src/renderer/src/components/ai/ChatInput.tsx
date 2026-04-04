@@ -1,11 +1,13 @@
 import { type FC, type KeyboardEvent, useState, useRef, useEffect } from 'react'
-import { Send, Loader2 } from 'lucide-react'
+import { Send, Square } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { Textarea } from '@renderer/components/ui/textarea'
 import { cn } from '@renderer/lib/utils'
 
 interface ChatInputProps {
   onSend: (message: string) => void
+  onStop?: () => void
+  restoredValue?: string
   isDisabled?: boolean
   isLoading?: boolean
   placeholder?: string
@@ -14,6 +16,8 @@ interface ChatInputProps {
 
 export const ChatInput: FC<ChatInputProps> = ({
   onSend,
+  onStop,
+  restoredValue,
   isDisabled = false,
   isLoading = false,
   placeholder = 'Type a message...',
@@ -50,6 +54,17 @@ export const ChatInput: FC<ChatInputProps> = ({
     textareaRef.current?.focus()
   }, [])
 
+  // Restore value when generation is aborted
+  useEffect(() => {
+    if (restoredValue !== undefined && restoredValue !== '') {
+      setValue(restoredValue)
+      // Focus and move cursor to end
+      if (textareaRef.current) {
+        textareaRef.current.focus()
+      }
+    }
+  }, [restoredValue])
+
   return (
     <div className={cn('flex items-end gap-2', className)}>
       <Textarea
@@ -62,15 +77,27 @@ export const ChatInput: FC<ChatInputProps> = ({
         className="min-h-10 max-h-40 resize-none"
         rows={1}
       />
-      <Button
-        onClick={handleSend}
-        disabled={!canSend}
-        size="icon"
-        className="shrink-0"
-        aria-label="Send message"
-      >
-        {isLoading ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-      </Button>
+      {isLoading ? (
+        <Button
+          onClick={onStop}
+          size="icon"
+          variant="destructive"
+          className="shrink-0"
+          aria-label="Stop generation"
+        >
+          <Square className="size-4" />
+        </Button>
+      ) : (
+        <Button
+          onClick={handleSend}
+          disabled={!canSend}
+          size="icon"
+          className="shrink-0"
+          aria-label="Send message"
+        >
+          <Send className="size-4" />
+        </Button>
+      )}
     </div>
   )
 }

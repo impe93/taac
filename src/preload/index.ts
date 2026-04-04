@@ -169,6 +169,11 @@ const aiAPI = {
     }
   },
 
+  stopGeneration: () => ipcRenderer.invoke('ai:stopGeneration'),
+
+  removeLastMessage: (conversationId: string) =>
+    ipcRenderer.invoke('ai:removeLastMessage', conversationId),
+
   // Vector Search / RAG
   initializeVectorDB: (spaceId: string) => ipcRenderer.invoke('ai:initializeVectorDB', spaceId),
 

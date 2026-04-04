@@ -53,6 +53,7 @@ export interface GenerationOptions {
 export interface ChatCompletionResult {
   response: string
   tokensUsed: number
+  aborted?: boolean
 }
 
 // Type for the dynamically imported node-llama-cpp module
@@ -445,7 +446,8 @@ export class AIManager {
   async *generateChatCompletion(
     modelId: string,
     messages: ChatMessage[],
-    options?: GenerationOptions
+    options?: GenerationOptions,
+    signal?: AbortSignal
   ): AsyncGenerator<string, ChatCompletionResult> {
     if (!this.nodeLlamaCpp) {
       throw new AINotInitializedError()
@@ -511,6 +513,7 @@ export class AIManager {
         temperature: options?.temperature ?? 0.7,
         topP: options?.topP,
         stopOnAbortSignal: true,
+        signal,
         onTextChunk: (chunk: string) => {
           fullResponse += chunk
           // If there's a waiting consumer, resolve immediately

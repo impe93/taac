@@ -216,6 +216,8 @@ export interface AIAPI {
     options?: { maxTokens?: number; temperature?: number }
   ) => Promise<ChatCompletionResult>
   onResponseChunk: (callback: (data: ResponseChunkData) => void) => () => void
+  stopGeneration: () => Promise<void>
+  removeLastMessage: (conversationId: string) => Promise<void>
 
   // Vector Search / RAG
   initializeVectorDB: (spaceId: string) => Promise<void>

@@ -49,6 +49,18 @@ export const useCreateConversation = (): ReturnType<
   })
 }
 
+// Remove the last message from a conversation (used when generation is aborted)
+export const useRemoveLastMessage = (): ReturnType<typeof useMutation<void, Error, string>> => {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (conversationId: string) => window.ai.removeLastMessage(conversationId),
+    onSuccess: (_, conversationId) => {
+      queryClient.invalidateQueries({ queryKey: conversationKeys.detail(conversationId) })
+    }
+  })
+}
+
 // Add a message to a conversation
 export const useAddMessage = (): ReturnType<
   typeof useMutation<

@@ -204,6 +204,7 @@ export interface GenerationOptions {
 export interface ChatCompletionResult {
   response: string
   tokensUsed: number
+  aborted?: boolean
 }
 
 // ============================================================================

@@ -178,6 +178,25 @@ export class ConversationManager {
   }
 
   /**
+   * Remove the last non-system message from a conversation
+   */
+  async removeLastMessage(conversationId: string): Promise<void> {
+    const conversation = this.conversations.get(conversationId)
+    if (!conversation) {
+      throw new ConversationNotFoundError(conversationId)
+    }
+
+    if (conversation.messages.length > 0) {
+      const lastMsg = conversation.messages[conversation.messages.length - 1]
+      if (lastMsg.role !== 'system') {
+        conversation.messages.pop()
+        conversation.updatedAt = new Date().toISOString()
+        await this.saveConversation(conversation)
+      }
+    }
+  }
+
+  /**
    * Add a note to conversation context
    */
   async addNoteToContext(conversationId: string, noteRef: NoteReference): Promise<void> {

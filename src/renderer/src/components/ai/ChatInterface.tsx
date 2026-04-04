@@ -214,6 +214,7 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
   const {
     messages,
     addMessage,
+    removeLastMessage,
     isLoadingMessages,
     conversation,
     isPersistent,
@@ -227,6 +228,7 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
   const [contextNotes, setContextNotes] = useState<ContextNote[]>([])
   const [isSearchingContext, setIsSearchingContext] = useState(false)
   const [ragError, setRagError] = useState<string | null>(null)
+  const [restoredInput, setRestoredInput] = useState<string>('')
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -235,7 +237,8 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
   const effectiveSystemPrompt = conversation?.systemPrompt ?? systemPrompt
 
   // AI hooks
-  const { sendMessage, isGenerating, currentResponse } = useAIChat(effectiveModelId)
+  const { sendMessage, abortGeneration, isGenerating, currentResponse } =
+    useAIChat(effectiveModelId)
   const { loadedModels, isLoadingModels } = useLoadedModels()
   const updateTitle = useUpdateConversationTitle()
   const { isInitialized, isCheckingInitialized, initialize, isInitializing, initializeError } =
@@ -401,7 +404,14 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
 
     try {
       // Send to AI and wait for response
-      const response = await sendMessage(apiMessages)
+      const { response, aborted } = await sendMessage(apiMessages)
+
+      // If generation was aborted, remove user message and restore input
+      if (aborted) {
+        await removeLastMessage()
+        setRestoredInput(content)
+        return
+      }
 
       // Add assistant message using the unified addMessage function
       await addMessage('assistant', response, noteRefs)
@@ -629,6 +639,8 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
       <div className="p-4 border-t shrink-0">
         <ChatInput
           onSend={handleSend}
+          onStop={abortGeneration}
+          restoredValue={restoredInput}
           isDisabled={isSearchingContext}
           isLoading={isGenerating}
           placeholder={

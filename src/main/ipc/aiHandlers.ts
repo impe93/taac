@@ -54,6 +54,9 @@ const vectorDBManagers: Map<string, VectorDBManager> = new Map()
 // AbortController for batch indexing (ai:indexAllNotes)
 let batchIndexAbort: AbortController | null = null
 
+// AbortController for active chat generation (ai:generateResponse)
+let generationAbort: AbortController | null = null
+
 /**
  * Flag to track initialization state
  */
@@ -557,12 +560,19 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
       try {
         const manager = getAIManager()
 
+        // Create AbortController for this generation
+        generationAbort = new AbortController()
+        const { signal } = generationAbort
+
         let fullResponse = ''
 
         // Iterate over the async generator for streaming
-        const generator = manager.generateChatCompletion(modelId, messages, options)
+        const generator = manager.generateChatCompletion(modelId, messages, options, signal)
 
         for await (const chunk of generator) {
+          // Check if aborted between chunks
+          if (signal.aborted) break
+
           fullResponse += chunk
 
           // Send chunk to renderer via webContents
@@ -572,9 +582,46 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
           })
         }
 
+        const wasAborted = signal.aborted
+        generationAbort = null
+
+        if (wasAborted) {
+          return { response: '', aborted: true }
+        }
+
         return { response: fullResponse }
       } catch (error) {
+        generationAbort = null
+        // If error is due to abort, return aborted result instead of throwing
+        if ((error as Error).name === 'AbortError') {
+          return { response: '', aborted: true }
+        }
         throw new Error(`Failed to generate response: ${(error as Error).message}`)
+      }
+    }
+  )
+
+  /**
+   * Stop an in-flight chat generation by aborting the AbortController
+   */
+  ipcMain.handle('ai:stopGeneration', async () => {
+    if (generationAbort) {
+      generationAbort.abort()
+      generationAbort = null
+    }
+  })
+
+  /**
+   * Remove the last message from a conversation (used when generation is aborted)
+   */
+  ipcMain.handle(
+    'ai:removeLastMessage',
+    async (_event: IpcMainInvokeEvent, conversationId: string) => {
+      try {
+        const convManager = getConversationManager()
+        await convManager.removeLastMessage(conversationId)
+      } catch (error) {
+        throw new Error(`Failed to remove last message: ${(error as Error).message}`)
       }
     }
   )

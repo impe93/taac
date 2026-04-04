@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo } from 'react'
-import { useConversation, useAddMessage } from './useConversations'
+import { useConversation, useAddMessage, useRemoveLastMessage } from './useConversations'
 import type { ChatMessage, NoteReference, Conversation } from '@main/ai/types'
 
 /**
@@ -22,6 +22,8 @@ interface ChatStateReturn {
     content: string,
     noteRefs?: NoteReference[]
   ) => Promise<ChatMessage>
+  /** Remove the last message from the conversation */
+  removeLastMessage: () => Promise<void>
   /** Whether messages are being loaded from a conversation */
   isLoadingMessages: boolean
   /** The loaded conversation (if using persistent mode) */
@@ -48,6 +50,7 @@ export const useChatState = ({
   // Query for persistent mode
   const conversationQuery = useConversation(conversationId)
   const addMessageMutation = useAddMessage()
+  const removeLastMessageMutation = useRemoveLastMessage()
 
   const isPersistent = Boolean(conversationId)
 
@@ -91,9 +94,19 @@ export const useChatState = ({
     [isPersistent, conversationId, addMessageMutation]
   )
 
+  // Remove last message handler - works for both modes
+  const removeLastMessage = useCallback(async (): Promise<void> => {
+    if (isPersistent && conversationId) {
+      await removeLastMessageMutation.mutateAsync(conversationId)
+    } else {
+      setLocalMessages((prev) => prev.slice(0, -1))
+    }
+  }, [isPersistent, conversationId, removeLastMessageMutation])
+
   return {
     messages,
     addMessage,
+    removeLastMessage,
     isLoadingMessages: isPersistent && conversationQuery.isLoading,
     conversation: conversationQuery.data,
     isPersistent,
