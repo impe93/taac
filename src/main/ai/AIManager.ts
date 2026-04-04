@@ -398,6 +398,7 @@ export class AIManager {
       })
       // Create a context sequence for chat operations
       loaded.contextSequence = loaded.context.getSequence()
+      this.disableSequenceCheckpoints(loaded.contextSequence)
     }
 
     return loaded.context
@@ -472,6 +473,7 @@ export class AIManager {
       const isolatedContextSize = Math.min(requestedSize, modelMax)
       tempContext = await loaded.model.createContext({ contextSize: isolatedContextSize })
       const tempSequence = tempContext.getSequence()
+      this.disableSequenceCheckpoints(tempSequence)
       // Extract system prompt from messages and pass it to the session constructor
       const systemMessage = messages.find((m) => m.role === 'system')
       session = new this.nodeLlamaCpp.LlamaChatSession({
@@ -601,6 +603,7 @@ export class AIManager {
     // Recreate context sequence if context exists
     if (loaded.context) {
       loaded.contextSequence = loaded.context.getSequence()
+      this.disableSequenceCheckpoints(loaded.contextSequence)
     }
   }
 
@@ -653,6 +656,20 @@ export class AIManager {
         })
       }
     }
+  }
+
+  /**
+   * Disable context sequence checkpoints for hybrid/recurrent models.
+   *
+   * Workaround for llama.cpp crash in state_seq_get_data when serializing
+   * SSM state for hybrid architectures (e.g. Qwen3.5 Gated DeltaNet).
+   * See: https://github.com/ggml-org/llama.cpp/issues/20176
+   *
+   * Trade-off: full prompt re-processing on each turn (already the expected
+   * behavior for Qwen3.5, see https://github.com/ggml-org/llama.cpp/issues/20225)
+   */
+  private disableSequenceCheckpoints(sequence: LlamaContextSequence): void {
+    Object.defineProperty(sequence, 'needsCheckpoints', { get: () => false })
   }
 
   /**

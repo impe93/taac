@@ -101,14 +101,13 @@ export class HardwareDetector {
     const embeddingModels = compatibleModels.filter((m) => m.capabilities.includes('embedding'))
 
     // Chat model recommendation
-    if (chatModels.find((m) => m.id === 'qwen3-4b-instruct-2507-q8')) {
-      const perf: EstimatedPerformance =
-        hardware.tier === 'high' || hardware.tier === 'ultra' ? 'very-fast' : 'fast'
+    if (chatModels.find((m) => m.id === 'qwen3-5-2b-q8')) {
+      const perf: EstimatedPerformance = hardware.tier === 'low' ? 'fast' : 'very-fast'
       recommendations.push({
-        modelId: 'qwen3-4b-instruct-2507-q8',
-        reason: 'Chat model with strong reasoning and multilingual capabilities',
+        modelId: 'qwen3-5-2b-q8',
+        reason: 'Compact chat model with strong reasoning and multilingual capabilities',
         estimatedPerformance: perf,
-        gpuLayersRecommended: hardware.tier === 'low' ? 0 : -1
+        gpuLayersRecommended: -1
       })
     }
 

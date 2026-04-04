@@ -20,22 +20,21 @@ export type { ModelFormat }
  */
 const CURATED_MODELS: ModelDefinition[] = [
   // ============================================================================
-  // MEDIUM TIER - Balanced models (4-8GB)
+  // LOW TIER - Compact chat model (~2GB)
   // ============================================================================
   {
-    id: 'qwen3-4b-instruct-2507-q8',
-    name: 'Qwen3 4B Instruct 2507 (Q8_0)',
+    id: 'qwen3-5-2b-q8',
+    name: 'Qwen3.5 2B (Q8_0)',
     description:
-      'Alibaba Qwen3 4B instruction-tuned model with strong reasoning and multilingual capabilities',
-    filename: 'Qwen3-4B-Instruct-2507-Q8_0.gguf',
-    sizeBytes: 4.28 * 1024 * 1024 * 1024, // ~4.28GB
-    layers: 36,
+      'Alibaba Qwen3.5 2B hybrid SSM/attention model with strong reasoning and multilingual capabilities',
+    filename: 'Qwen3.5-2B-Q8_0.gguf',
+    sizeBytes: 2.01 * 1024 * 1024 * 1024, // ~2.01GB
+    layers: 24,
     quantization: 'Q8_0',
-    contextLength: 262144,
+    contextLength: 65536,
     capabilities: ['chat', 'code', 'reasoning'],
-    hardwareTier: 'medium',
-    downloadUrl:
-      'https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-Q8_0.gguf',
+    hardwareTier: 'low',
+    downloadUrl: 'https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q8_0.gguf',
     license: 'Apache 2.0'
   },
 

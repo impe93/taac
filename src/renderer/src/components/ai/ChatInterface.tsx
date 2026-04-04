@@ -106,31 +106,16 @@ const EmptyState: FC = () => (
 
 const DEFAULT_RAG_SEARCH_LIMIT = 5
 
-const DEFAULT_SYSTEM_PROMPT = `<assistant_config>
-  <role>You are a personal knowledge assistant integrated into a note-taking app.</role>
+const DEFAULT_SYSTEM_PROMPT = `You are a personal knowledge assistant in a note-taking app.
 
-  <objective>
-    Answer the user's questions concisely and directly.
-    Focus on giving a useful, accurate response — not on explaining your reasoning process.
-    If the user asks for a list, provide a list. If they ask a question, answer it directly.
-    Do not mention that you searched notes, retrieved context, or used any system.
-  </objective>
-
-  <knowledge_handling>
-    You may receive relevant notes from the user's personal knowledge base as background context.
-    Treat these notes as your own memory — use the information naturally without referencing the notes explicitly.
-    Never say "Note 1 says...", "According to the retrieved context...", or similar.
-    Never mention note IDs, note titles, relevance scores, or any system metadata.
-    If the information isn't available in your context, simply say you don't know.
-  </knowledge_handling>
-
-  <formatting>
-    Always respond in Markdown.
-    Never use tables — use prose paragraphs or bullet lists instead.
-    Keep responses concise. Avoid unnecessary preamble or filler phrases.
-    Do not start with "Of course!", "Great question!", or similar openers.
-  </formatting>
-</assistant_config>`
+Rules:
+- Answer the user's question concisely and directly.
+- Do NOT mention notes, context, knowledge base, search results, or any internal system.
+- Use information naturally as if you already know it.
+- If you don't have the information, say you don't know.
+- Respond in Markdown. Use bullet lists or short paragraphs. Never use tables.
+- Do NOT start with filler phrases like "Great question!" or "Of course!".
+- Only answer what the user asked. Do not add unsolicited advice or implementation details.`
 
 /**
  * Resolves the full folder path for a note by walking up the folder hierarchy.
@@ -154,8 +139,8 @@ const getFolderPath = (
 }
 
 /**
- * Builds a context prompt from relevant notes using XML structure.
- * Notes are passed as background knowledge — the model is instructed not to reference them explicitly.
+ * Builds a user message with background knowledge prepended.
+ * Uses plain-text format (no XML tags) so the model doesn't leak internal structure.
  */
 const buildContextPrompt = (
   notes: ContextNote[],
@@ -166,23 +151,14 @@ const buildContextPrompt = (
 
   const notesContext = notes
     .map((note) => {
-      const sectionTag = note.sectionHeader ? `\n    <section>${note.sectionHeader}</section>` : ''
-      // Prefer pre-computed path from metadata; fall back to Redux-computed path for legacy notes
+      const section = note.sectionHeader ? ` (${note.sectionHeader})` : ''
       const folderPath = note.folderPath ?? getFolderPath(note.folderId, folders)
-      const folderPathTag = folderPath ? `\n    <folder_path>${folderPath}</folder_path>` : ''
-      return `  <note>
-    <title>${note.title}</title>${sectionTag}${folderPathTag}
-    <relevance>${note.relevanceScore.toFixed(0)}%</relevance>
-    <content>${note.fullContent}</content>
-  </note>`
+      const folder = folderPath ? ` [${folderPath}]` : ''
+      return `--- ${note.title}${section}${folder} ---\n${note.fullContent}`
     })
-    .join('\n')
+    .join('\n\n')
 
-  return `<knowledge_base>
-${notesContext}
-</knowledge_base>
-
-<question>${userMessage}</question>`
+  return `Background information:\n${notesContext}\n\nQuestion: ${userMessage}`
 }
 
 /**
@@ -373,7 +349,7 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
       relevantNotes = allContextNotes
     }
 
-    // Build content with context if RAG is enabled and we have context
+    // Build user message content with RAG context if available
     const messageContentForAPI =
       isRAGEnabled && relevantNotes.length > 0
         ? buildContextPrompt(relevantNotes, content, folders)

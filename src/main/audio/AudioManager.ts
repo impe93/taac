@@ -42,7 +42,7 @@ import { HardwareDetector } from '../ai/HardwareDetector'
 import { ModelRegistry } from '../ai/ModelRegistry'
 import type { ChatMessage } from '../ai/AIManager'
 
-const DEFAULT_CHAT_MODEL_ID = 'qwen3-4b-instruct-2507-q8'
+const DEFAULT_CHAT_MODEL_ID = 'qwen3-5-2b-q8'
 
 // ---------------------------------------------------------------------------
 // AudioManager

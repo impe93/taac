@@ -41,9 +41,9 @@ interface ModelConfig {
 
 const MODELS: ModelConfig[] = [
   {
-    id: 'qwen3-4b-instruct-2507-q8',
-    name: 'Qwen3 4B Instruct',
-    size: '~4.3 GB',
+    id: 'qwen3-5-2b-q8',
+    name: 'Qwen3.5 2B',
+    size: '~2.0 GB',
     purpose: 'Powers the AI assistant',
     icon: Bot,
     label: 'AI Chat Model'

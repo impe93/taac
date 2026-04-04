@@ -41,7 +41,7 @@ interface ModelRowConfig {
 }
 
 const MODEL_ROWS: ModelRowConfig[] = [
-  { id: 'qwen3-4b-instruct-2507-q8', label: 'AI Chat', icon: Bot },
+  { id: 'qwen3-5-2b-q8', label: 'AI Chat', icon: Bot },
   { id: 'nomic-embed-text-v2-moe', label: 'Search', icon: Search }
 ]
 
