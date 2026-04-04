@@ -41,6 +41,7 @@ export interface GenerationOptions {
   maxTokens?: number
   temperature?: number
   topP?: number
+  repeatPenalty?: number
   stopSequences?: string[]
   isolated?: boolean
   /** Override context size for isolated sessions (default 512). Capped at model's trainContextSize. */
@@ -465,6 +466,9 @@ export class AIManager {
     let session: InstanceType<typeof this.nodeLlamaCpp.LlamaChatSession>
     let tempContext: Awaited<ReturnType<typeof loaded.model.createContext>> | null = null
 
+    // Extract system prompt from messages — needed for both isolated and persistent sessions
+    const systemMessage = messages.find((m) => m.role === 'system')
+
     if (options?.isolated) {
       // Create a temporary, isolated context and session for one-off completions (e.g. title generation)
       // This avoids polluting the main chat session's history
@@ -474,8 +478,6 @@ export class AIManager {
       tempContext = await loaded.model.createContext({ contextSize: isolatedContextSize })
       const tempSequence = tempContext.getSequence()
       this.disableSequenceCheckpoints(tempSequence)
-      // Extract system prompt from messages and pass it to the session constructor
-      const systemMessage = messages.find((m) => m.role === 'system')
       session = new this.nodeLlamaCpp.LlamaChatSession({
         contextSequence: tempSequence,
         systemPrompt: systemMessage?.content
@@ -484,7 +486,8 @@ export class AIManager {
       // Reuse or create the persistent chat session
       if (!loaded.chatSession && loaded.contextSequence) {
         loaded.chatSession = new this.nodeLlamaCpp.LlamaChatSession({
-          contextSequence: loaded.contextSequence
+          contextSequence: loaded.contextSequence,
+          systemPrompt: systemMessage?.content
         })
       }
 
@@ -495,10 +498,8 @@ export class AIManager {
     }
 
     // Convert messages to llama.cpp chat history format
-    // For isolated sessions, filter out system messages (handled via systemPrompt in constructor)
-    const filteredMessages = options?.isolated
-      ? messages.filter((m) => m.role !== 'system')
-      : messages
+    // Filter out system messages for both session types (handled via systemPrompt in constructor)
+    const filteredMessages = messages.filter((m) => m.role !== 'system')
     const chatHistory = this.convertToChatHistory(filteredMessages)
 
     // Set up real-time streaming with async queue pattern
@@ -514,6 +515,9 @@ export class AIManager {
         maxTokens: options?.maxTokens ?? 2048,
         temperature: options?.temperature ?? 0.7,
         topP: options?.topP,
+        repeatPenalty: options?.repeatPenalty
+          ? { penalty: options.repeatPenalty }
+          : undefined,
         stopOnAbortSignal: true,
         signal,
         onTextChunk: (chunk: string) => {

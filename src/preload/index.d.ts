@@ -213,7 +213,7 @@ export interface AIAPI {
   generateResponse: (
     modelId: string,
     messages: ChatMessageInput[],
-    options?: { maxTokens?: number; temperature?: number }
+    options?: { maxTokens?: number; temperature?: number; repeatPenalty?: number }
   ) => Promise<ChatCompletionResult>
   onResponseChunk: (callback: (data: ResponseChunkData) => void) => () => void
   stopGeneration: () => Promise<void>

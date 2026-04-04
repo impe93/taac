@@ -136,7 +136,7 @@ export const useAIChat = (modelId: string) => {
   const sendMessage = useCallback(
     async (
       messages: ChatMessage[],
-      options?: Pick<GenerationOptions, 'maxTokens' | 'temperature'>
+      options?: Pick<GenerationOptions, 'maxTokens' | 'temperature' | 'repeatPenalty'>
     ): Promise<{ response: string; aborted?: boolean }> => {
       setIsGenerating(true)
       setCurrentResponse('')

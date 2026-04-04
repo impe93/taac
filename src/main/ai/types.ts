@@ -194,6 +194,7 @@ export interface GenerationOptions {
   maxTokens?: number
   temperature?: number
   topP?: number
+  repeatPenalty?: number
   stopSequences?: string[]
   isolated?: boolean
 }

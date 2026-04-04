@@ -157,7 +157,7 @@ const aiAPI = {
   generateResponse: (
     modelId: string,
     messages: Array<{ role: string; content: string }>,
-    options?: { maxTokens?: number; temperature?: number }
+    options?: { maxTokens?: number; temperature?: number; repeatPenalty?: number }
   ) => ipcRenderer.invoke('ai:generateResponse', modelId, messages, options),
 
   onResponseChunk: (callback: (data: { chunk: string; fullResponse: string }) => void) => {
