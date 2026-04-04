@@ -236,7 +236,7 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
 
   // AI hooks
   const { sendMessage, isGenerating, currentResponse } = useAIChat(effectiveModelId)
-  const { loadedModels, isLoadingModels, loadModel, isLoadingModel } = useLoadedModels()
+  const { loadedModels, isLoadingModels } = useLoadedModels()
   const updateTitle = useUpdateConversationTitle()
   const { isInitialized, isCheckingInitialized, initialize, isInitializing, initializeError } =
     useAIInitialize()
@@ -294,11 +294,6 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
   // Check if the model is loaded
   const loadedModel = loadedModels.find((m) => m.id === effectiveModelId)
   const isModelLoaded = Boolean(loadedModel)
-
-  // Handler to load model
-  const handleLoadModel = useCallback((): void => {
-    loadModel(effectiveModelId)
-  }, [loadModel, effectiveModelId])
 
   // Auto-scroll to bottom when messages change or during streaming
   const scrollToBottom = useCallback(() => {
@@ -514,11 +509,13 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
           <Badge variant={isModelLoaded ? 'default' : 'secondary'} className="gap-1.5">
             {isModelLoaded ? (
               'Ready'
-            ) : (
+            ) : isGenerating ? (
               <>
                 <Loader2 className="size-3 animate-spin" />
-                Loading
+                Loading model...
               </>
+            ) : (
+              'Not loaded'
             )}
           </Badge>
         </div>
@@ -548,38 +545,6 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
                   </>
                 ) : (
                   'Riprova'
-                )}
-              </Button>
-            </AlertDescription>
-          </Alert>
-        </div>
-      )}
-
-      {/* Model not loaded warning */}
-      {!isModelLoaded && (
-        <div className="px-4 pt-3 shrink-0">
-          <Alert>
-            <AlertTriangle className="size-4" />
-            <AlertTitle>Modello non caricato</AlertTitle>
-            <AlertDescription className="flex items-center justify-between gap-4">
-              <span className="text-sm">
-                Il modello <strong>{effectiveModelId}</strong> non è caricato in memoria. Caricalo
-                per iniziare a chattare.
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleLoadModel}
-                disabled={isLoadingModel}
-                className="shrink-0"
-              >
-                {isLoadingModel ? (
-                  <>
-                    <Loader2 className="size-4 mr-2 animate-spin" />
-                    Caricamento...
-                  </>
-                ) : (
-                  'Carica Modello'
                 )}
               </Button>
             </AlertDescription>
@@ -643,6 +608,20 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
                 onNoteClick={onNoteClick}
               />
             ))}
+            {/* Loading indicator: model loading or waiting for first chunk */}
+            {isGenerating && !currentResponse && (
+              <div className="flex gap-3">
+                <div className="flex items-center justify-center size-8 rounded-full bg-muted shrink-0">
+                  <Bot className="size-4 text-muted-foreground" />
+                </div>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="size-4 animate-spin" />
+                  {isModelLoaded
+                    ? 'Generating response...'
+                    : 'Loading model...'}
+                </div>
+              </div>
+            )}
             <div ref={messagesEndRef} />
           </div>
         )}
@@ -652,16 +631,14 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
       <div className="p-4 border-t shrink-0">
         <ChatInput
           onSend={handleSend}
-          isDisabled={!isModelLoaded || isSearchingContext}
+          isDisabled={isSearchingContext}
           isLoading={isGenerating}
           placeholder={
             isSearchingContext
               ? 'Searching for relevant notes...'
-              : isModelLoaded
-                ? isRAGEnabled
-                  ? 'Ask a question about your notes...'
-                  : 'Type a message...'
-                : 'Waiting for model to load...'
+              : isRAGEnabled
+                ? 'Ask a question about your notes...'
+                : 'Type a message...'
           }
         />
       </div>
