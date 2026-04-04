@@ -23,7 +23,8 @@ import {
   notifyNoteSaved,
   notifyFolderMoved,
   disposeIndexingQueue,
-  cancelBatchIndexing
+  cancelBatchIndexing,
+  initializeEmbeddingSubsystem
 } from './ipc/aiHandlers'
 import { registerImportHandlers } from './ipc/importHandlers'
 import { registerAudioHandlers } from './ipc/audioHandlers'
@@ -207,6 +208,14 @@ app.whenReady().then(async () => {
   })
 
   createWindow()
+
+  // Deferred embedding subsystem init — enables auto-indexing without requiring
+  // the user to open the AI chat panel first. Runs after window is visible.
+  setTimeout(() => {
+    initializeEmbeddingSubsystem(getOrCreateFsManager).catch((error) => {
+      console.error('[App] Deferred embedding init failed:', error)
+    })
+  }, 2000)
 
   // Register display media request handler for system audio loopback capture (§3.2)
   // Must be set up after app is ready so session is available

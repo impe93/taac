@@ -37,9 +37,7 @@ export class WhisperGpuService {
   async initialize(modelPath: string, useGpu: boolean): Promise<void> {
     if (this.initialized) return
 
-    console.log(
-      `[WhisperGpuService] Initializing — model: ${modelPath}, useGpu: ${useGpu}`
-    )
+    console.log(`[WhisperGpuService] Initializing — model: ${modelPath}, useGpu: ${useGpu}`)
 
     const exists = await this.pathExists(modelPath)
     if (!exists) {
@@ -61,9 +59,7 @@ export class WhisperGpuService {
     })
 
     this.initialized = true
-    console.log(
-      `[WhisperGpuService] Initialized — GPU: ${useGpu ? 'enabled' : 'disabled'}`
-    )
+    console.log(`[WhisperGpuService] Initialized — GPU: ${useGpu ? 'enabled' : 'disabled'}`)
   }
 
   /**
@@ -93,7 +89,7 @@ export class WhisperGpuService {
     const maxThreads = Math.max(2, Math.min(8, Math.floor(os.cpus().length / 2)))
 
     const { promise } = this.context.transcribeFile(wavPath, {
-      maxThreads,
+      maxThreads
       // Omitting language → auto-detect (whisper.cpp default)
     })
 
@@ -110,8 +106,7 @@ export class WhisperGpuService {
       )
       .filter((s: TranscriptionSegment) => s.text.length > 0)
 
-    const detectedLanguage =
-      typeof raw.language === 'string' && raw.language ? raw.language : 'en'
+    const detectedLanguage = typeof raw.language === 'string' && raw.language ? raw.language : 'en'
 
     console.log(
       `[WhisperGpuService] Done — ${(raw.result ?? '').length} chars, ` +

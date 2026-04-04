@@ -243,7 +243,44 @@ const aiAPI = {
   deleteConversation: (id: string) => ipcRenderer.invoke('ai:deleteConversation', id),
 
   generateTitle: (modelId: string, userMessage: string, assistantResponse: string) =>
-    ipcRenderer.invoke('ai:generateTitle', modelId, userMessage, assistantResponse)
+    ipcRenderer.invoke('ai:generateTitle', modelId, userMessage, assistantResponse),
+
+  // Embedding model needed event (broadcast from main process at startup)
+  onEmbeddingModelNeeded: (callback: (data: { modelId: string }) => void) => {
+    const handler = (_: unknown, data: { modelId: string }): void => callback(data)
+    ipcRenderer.on('ai:embedding-model-needed', handler)
+    return (): void => {
+      ipcRenderer.removeListener('ai:embedding-model-needed', handler)
+    }
+  },
+
+  // Auto-index progress events from IndexingQueue (per-note background indexing)
+  onAutoIndexProgress: (
+    callback: (data: {
+      spaceId: string
+      noteId: string
+      noteTitle: string
+      status: 'queued' | 'indexing' | 'completed' | 'skipped' | 'error'
+      queueSize: number
+      error?: string
+    }) => void
+  ) => {
+    const handler = (
+      _: unknown,
+      data: {
+        spaceId: string
+        noteId: string
+        noteTitle: string
+        status: 'queued' | 'indexing' | 'completed' | 'skipped' | 'error'
+        queueSize: number
+        error?: string
+      }
+    ): void => callback(data)
+    ipcRenderer.on('ai:auto-index-progress', handler)
+    return (): void => {
+      ipcRenderer.removeListener('ai:auto-index-progress', handler)
+    }
+  }
 }
 
 // Import API

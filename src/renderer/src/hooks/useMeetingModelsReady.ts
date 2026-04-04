@@ -5,10 +5,7 @@ import { useDownloadedModels } from './useModels'
 const SEGMENTATION_MODEL_ID = 'sherpa-onnx-pyannote-segmentation'
 
 /** At least one embedding model is required — NeMo TitaNet Small is the preferred (faster) option */
-const EMBEDDING_MODEL_IDS = [
-  'sherpa-onnx-nemo-titanet-small',
-  'sherpa-onnx-3dspeaker-embedding'
-]
+const EMBEDDING_MODEL_IDS = ['sherpa-onnx-nemo-titanet-small', 'sherpa-onnx-3dspeaker-embedding']
 
 interface MeetingModelsStatus {
   isReady: boolean

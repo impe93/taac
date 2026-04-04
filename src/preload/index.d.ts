@@ -255,6 +255,21 @@ export interface AIAPI {
     userMessage: string,
     assistantResponse: string
   ) => Promise<string>
+
+  // Embedding model needed event (broadcast at startup if model is missing)
+  onEmbeddingModelNeeded: (callback: (data: { modelId: string }) => void) => () => void
+
+  // Auto-index progress events from IndexingQueue (per-note background indexing)
+  onAutoIndexProgress: (
+    callback: (data: {
+      spaceId: string
+      noteId: string
+      noteTitle: string
+      status: 'queued' | 'indexing' | 'completed' | 'skipped' | 'error'
+      queueSize: number
+      error?: string
+    }) => void
+  ) => () => void
 }
 
 // Import API interface

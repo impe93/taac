@@ -236,7 +236,10 @@ export const ModelDownloadStep: FC<ModelDownloadStepProps> = ({ state, dispatch 
               {hasGpu ? <Zap className="size-4 text-yellow-500" /> : <Mic className="size-4" />}
               <span>Transcription Model</span>
               {hasGpu && (
-                <Badge variant="outline" className="gap-1 text-xs text-yellow-600 border-yellow-400/60">
+                <Badge
+                  variant="outline"
+                  className="gap-1 text-xs text-yellow-600 border-yellow-400/60"
+                >
                   <Zap className="size-2.5" />
                   GPU
                 </Badge>
@@ -451,7 +454,10 @@ const TranscriptionModelCard: FC<TranscriptionModelCardProps> = ({
                   </Badge>
                 )}
                 {model.format === 'ggml' && (
-                  <Badge variant="outline" className="gap-1 text-xs text-yellow-600 border-yellow-400/60">
+                  <Badge
+                    variant="outline"
+                    className="gap-1 text-xs text-yellow-600 border-yellow-400/60"
+                  >
                     <Zap className="size-2.5" />
                     GPU
                   </Badge>

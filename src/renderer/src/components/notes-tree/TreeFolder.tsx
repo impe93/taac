@@ -151,7 +151,6 @@ export const TreeFolder: FC<TreeFolderProps> = ({
             </button>
           </CollapsibleTrigger>
         </FolderContextMenu>
-
       </div>
 
       <CollapsibleContent className="space-y-1">

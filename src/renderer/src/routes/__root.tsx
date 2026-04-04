@@ -17,6 +17,7 @@ import {
 import { Bot, Settings } from 'lucide-react'
 import { cn } from '@renderer/lib/utils'
 import { useConfig } from '@renderer/hooks/useConfig'
+import { IndexingStatusIndicator } from '@renderer/components/ai/IndexingStatusIndicator'
 
 const RootLayout: FC = () => {
   const isMacOS = window.platform === 'darwin'
@@ -78,8 +79,9 @@ const RootLayout: FC = () => {
                   </TooltipContent>
                 </Tooltip>
               </div>
-              {/* AI Panel toggle button */}
+              {/* Indexing status + AI Panel toggle */}
               <div className="hidden items-center gap-2 px-4 md:flex">
+                <IndexingStatusIndicator />
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button

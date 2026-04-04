@@ -45,7 +45,9 @@ export const RenameFolderDialog: FC<RenameFolderDialogProps> = ({
     }
 
     setIsPending(true)
-    await dispatch(updateFolder({ spaceId: activeSpaceId, folderId, updates: { name: trimmedName } }))
+    await dispatch(
+      updateFolder({ spaceId: activeSpaceId, folderId, updates: { name: trimmedName } })
+    )
     setIsPending(false)
     onOpenChange(false)
   }

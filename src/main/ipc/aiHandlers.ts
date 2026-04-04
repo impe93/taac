@@ -26,6 +26,7 @@ import {
 } from '../ai'
 import type { GenerationOptions, ExpandedResult, IndexingProgressEvent } from '../ai'
 import type { FileSystemManager, Note, FolderMetadata } from '../utils/fileSystem'
+import { configStore } from '../utils/configStore'
 
 type GetFsManager = (spaceId: string) => FileSystemManager
 
@@ -126,11 +127,13 @@ function getOrCreateIndexingQueue(getFsManager: GetFsManager): IndexingQueue {
       getOrCreateVectorDB(spaceId, getFsManager)
     )
 
-    // Forward progress events to all BrowserWindows
+    // Forward auto-index progress events to all BrowserWindows
     indexingQueue.on('progress', (event: IndexingProgressEvent) => {
       const windows = BrowserWindow.getAllWindows()
       for (const win of windows) {
-        win.webContents.send('ai:indexing-progress', event)
+        if (!win.webContents.isDestroyed()) {
+          win.webContents.send('ai:auto-index-progress', event)
+        }
       }
     })
   }
@@ -160,6 +163,45 @@ async function tryEnableAutoIndexing(getFsManager: GetFsManager): Promise<void> 
 }
 
 /**
+ * Initialize the embedding subsystem at app startup (deferred).
+ *
+ * Performs a lightweight check: if the embedding model is already downloaded,
+ * initializes AIManager and enables the IndexingQueue. If the model is missing,
+ * broadcasts 'ai:embedding-model-needed' to prompt the user.
+ *
+ * Safe to call multiple times — AIManager.initialize() is idempotent.
+ */
+export async function initializeEmbeddingSubsystem(getFsManager: GetFsManager): Promise<void> {
+  try {
+    const dl = await getDownloader()
+    const service = getEmbeddingService()
+    const modelId = service.getEmbeddingModel()
+    const isDownloaded = await dl.isModelDownloaded(modelId)
+
+    if (!isDownloaded) {
+      console.log('[EmbeddingInit] Embedding model not downloaded — auto-indexing deferred')
+      const windows = BrowserWindow.getAllWindows()
+      for (const win of windows) {
+        win.webContents.send('ai:embedding-model-needed', { modelId })
+      }
+      return
+    }
+
+    // Initialize AIManager (idempotent — safe if called again later from AIChatPanel)
+    const manager = getAIManager()
+    await manager.initialize()
+    isAIInitialized = true
+
+    // Enable the indexing queue
+    await tryEnableAutoIndexing(getFsManager)
+
+    console.log('[EmbeddingInit] Embedding subsystem ready — auto-indexing enabled')
+  } catch (error) {
+    console.error('[EmbeddingInit] Failed:', error)
+  }
+}
+
+/**
  * Notify that a note was saved. Enqueues background indexing (debounced).
  *
  * This function is non-blocking: it extracts text from the Lexical content
@@ -176,6 +218,9 @@ export function notifyNoteSaved(
   folderPath?: string
 ): void {
   if (!indexingQueue) return
+
+  // Check if auto-indexing is enabled in user config
+  if (configStore.get('autoIndexNotes') === false) return
 
   // Extract text from Lexical editor state
   const textContent = extractTextFromLexicalContent(rawContent)
@@ -349,10 +394,9 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
       const dl = await getDownloader()
       await dl.downloadModel(modelId, model.downloadUrl, model.filename)
 
-      // Re-check auto-indexing availability (the embedding model may have just been downloaded)
-      if (isAIInitialized) {
-        await tryEnableAutoIndexing(getOrCreateFsManager)
-      }
+      // Bootstrap embedding subsystem after model download — enables auto-indexing
+      // even if the user hasn't opened the chat panel yet
+      await initializeEmbeddingSubsystem(getOrCreateFsManager)
 
       return { success: true }
     } catch (error) {

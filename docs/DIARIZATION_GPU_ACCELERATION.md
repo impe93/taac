@@ -5,6 +5,7 @@
 ## Premessa
 
 La ricerca ha evidenziato che la GPU acceleration ha **benefici limitati per la diarizzazione** rispetto all'ASR:
+
 - I modelli di segmentation/embedding sono piccoli (5-10MB) e gia' veloci su CPU
 - Il clustering (spectral/agglomerative) e' sempre CPU-bound
 - Miglioramento atteso: **20-40%** (vs 10-50x per trascrizione con whisper.cpp)
@@ -16,12 +17,12 @@ Questa phase va implementata solo se, dopo Phase 1+2, la diarizzazione resta un 
 
 ### Perche' questo approccio
 
-| Approccio | Pro | Contro |
-|-----------|-----|--------|
-| **onnxruntime-node (scelto)** | npm package standard, CoreML macOS prebuilt, CUDA Linux prebuilt | CoreML ha limiti su forme dinamiche; richiede reimplementazione pipeline |
-| Python subprocess (pyannote + PyTorch) | GPU pieno (MPS/CUDA), miglior supporto | +100-500MB bundle, complessita' gestione runtime Python |
-| pyannote-rs (Rust) via NAPI-RS | CoreML + DirectML, performante | Nessun binding Node.js, enorme effort di sviluppo |
-| sherpa-onnx-node con CUDA manuale | Cambio minimo | Solo Linux, richiede binary replacement manuale |
+| Approccio                              | Pro                                                              | Contro                                                                   |
+| -------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| **onnxruntime-node (scelto)**          | npm package standard, CoreML macOS prebuilt, CUDA Linux prebuilt | CoreML ha limiti su forme dinamiche; richiede reimplementazione pipeline |
+| Python subprocess (pyannote + PyTorch) | GPU pieno (MPS/CUDA), miglior supporto                           | +100-500MB bundle, complessita' gestione runtime Python                  |
+| pyannote-rs (Rust) via NAPI-RS         | CoreML + DirectML, performante                                   | Nessun binding Node.js, enorme effort di sviluppo                        |
+| sherpa-onnx-node con CUDA manuale      | Cambio minimo                                                    | Solo Linux, richiede binary replacement manuale                          |
 
 ### Architettura
 
@@ -136,14 +137,15 @@ export class DiarizationGpuService {
   ): Promise<void> {
     if (this.initialized) return
 
-    console.log(
-      `[DiarizationGpuService] Initializing with ${gpuBackend} backend`
-    )
+    console.log(`[DiarizationGpuService] Initializing with ${gpuBackend} backend`)
 
     // Verify model files exist
     for (const p of [segmentationModelPath, embeddingModelPath]) {
-      try { await fs.access(p) }
-      catch { throw new Error(`Model not found: ${p}`) }
+      try {
+        await fs.access(p)
+      } catch {
+        throw new Error(`Model not found: ${p}`)
+      }
     }
 
     // Dynamic import (§3.5)
@@ -155,7 +157,7 @@ export class DiarizationGpuService {
     if (gpuBackend === 'coreml') {
       executionProviders.push({
         name: 'CoreMLExecutionProvider',
-        coreMlFlags: 0  // COREML_FLAG_USE_CPU_AND_GPU
+        coreMlFlags: 0 // COREML_FLAG_USE_CPU_AND_GPU
       })
     } else if (gpuBackend === 'cuda') {
       executionProviders.push({ name: 'CUDAExecutionProvider' })
@@ -172,10 +174,7 @@ export class DiarizationGpuService {
       )
       console.log('[DiarizationGpuService] Segmentation session created')
 
-      this.embeddingSession = await ort.InferenceSession.create(
-        embeddingModelPath,
-        sessionOptions
-      )
+      this.embeddingSession = await ort.InferenceSession.create(embeddingModelPath, sessionOptions)
       console.log('[DiarizationGpuService] Embedding session created')
 
       this.initialized = true
@@ -184,7 +183,7 @@ export class DiarizationGpuService {
       // Clean up partial init
       this.segmentationSession = null
       this.embeddingSession = null
-      throw err  // Let caller fall back to CPU DiarizationService
+      throw err // Let caller fall back to CPU DiarizationService
     }
   }
 
@@ -349,7 +348,7 @@ export class DiarizationGpuService {
 // Nel WorkerInitConfig, aggiungere:
 export interface WorkerInitConfig {
   // ... campi esistenti ...
-  diarizationMode: 'gpu' | 'cpu'           // nuovo
+  diarizationMode: 'gpu' | 'cpu' // nuovo
   diarizationGpuBackend?: 'coreml' | 'cuda' // nuovo
 }
 
@@ -400,13 +399,13 @@ const workerConfig: WorkerInitConfig = {
 
 ## Rischi e mitigazioni
 
-| Rischio | Probabilita' | Impatto | Mitigazione |
-|---------|-------------|---------|-------------|
-| CoreML non supporta operatori ONNX con forme dinamiche | Alta | Medio | Test immediato al primo step; se `InferenceSession.create()` fallisce, il fallback CPU e' automatico |
-| Reimplementazione pipeline introduce regressioni di accuratezza | Media | Alto | Validare output vs. sherpa-onnx su set di registrazioni di test note |
-| onnxruntime-node aggiunge ~15-20MB al bundle | Bassa | Basso | Accettabile -- l'app gia' include moduli nativi pesanti |
-| Sliding window del modello segmentation non funziona correttamente | Media | Alto | Testare con registrazioni di durata variabile; confrontare con output sherpa-onnx |
-| Clustering custom meno accurato di sherpa-onnx | Media | Medio | Usare stesso threshold (0.9) e confrontare risultati |
+| Rischio                                                            | Probabilita' | Impatto | Mitigazione                                                                                          |
+| ------------------------------------------------------------------ | ------------ | ------- | ---------------------------------------------------------------------------------------------------- |
+| CoreML non supporta operatori ONNX con forme dinamiche             | Alta         | Medio   | Test immediato al primo step; se `InferenceSession.create()` fallisce, il fallback CPU e' automatico |
+| Reimplementazione pipeline introduce regressioni di accuratezza    | Media        | Alto    | Validare output vs. sherpa-onnx su set di registrazioni di test note                                 |
+| onnxruntime-node aggiunge ~15-20MB al bundle                       | Bassa        | Basso   | Accettabile -- l'app gia' include moduli nativi pesanti                                              |
+| Sliding window del modello segmentation non funziona correttamente | Media        | Alto    | Testare con registrazioni di durata variabile; confrontare con output sherpa-onnx                    |
+| Clustering custom meno accurato di sherpa-onnx                     | Media        | Medio   | Usare stesso threshold (0.9) e confrontare risultati                                                 |
 
 ## Stima di effort
 
