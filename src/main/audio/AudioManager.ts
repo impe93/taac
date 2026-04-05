@@ -620,9 +620,24 @@ export class AudioManager {
   /**
    * Build a fallback content string (raw transcript) used when summarization fails.
    */
-  private buildFallbackContent(segments: TranscriptionSegment[], speakers: Speaker[]): string {
-    const transcriptText = this.formatTranscriptForPrompt(segments, speakers)
-    return `## Full Transcript\n\n<details>\n<summary>Click to expand full transcript</summary>\n\n${transcriptText}\n</details>\n`
+  private buildFallbackContent(): string {
+    return [
+      '## Meeting Summary',
+      '',
+      '_Automatic summarization was not available._',
+      '',
+      '## Key Topics Discussed',
+      '',
+      '_Not available._',
+      '',
+      '## Key Decisions',
+      '',
+      '_Not available._',
+      '',
+      '## Action Items',
+      '',
+      '_Not available._'
+    ].join('\n')
   }
 
   /**
@@ -666,30 +681,25 @@ export class AudioManager {
     const transcriptText = this.formatTranscriptForPrompt(transcriptionSegments, speakers)
     const languageName = this.getLanguageName(language)
 
-    const systemPrompt = `You are a meeting summarizer. Given a timestamped transcript with speaker labels, produce a structured summary in markdown format with the following sections:
+    const systemPrompt = `You are a meeting summarizer. Given a timestamped transcript with speaker labels, produce a structured and comprehensive summary in markdown format with the following sections:
 
 ## Meeting Summary
-A concise overview of the meeting (3-5 sentences).
+A comprehensive and detailed overview of the meeting. Write as many paragraphs as needed to thoroughly capture all important points, context, and nuances discussed. Do not limit yourself to a fixed number of sentences — cover everything that matters.
 
 ## Key Topics Discussed
-Organized by topic, with relevant details and who contributed.
+Organized by topic. For each topic, provide thorough details including the context, what was discussed, different viewpoints expressed, who contributed, and any conclusions reached. Be comprehensive — do not omit relevant details.
 
 ## Key Decisions
-Numbered list of decisions made during the meeting.
+Numbered list of decisions made during the meeting. For each decision, include the rationale and any conditions or caveats discussed.
 
 ## Action Items
 Checklist format with assignee and deadline if mentioned:
 - [ ] [Action description] — Assigned to: [Speaker] — Due: [Date if mentioned]
 
-## Full Transcript
-<details>
-<summary>Click to expand full transcript</summary>
+Be thorough and detailed in all sections. This summary will serve as a reference document and will be indexed for search, so completeness is more important than brevity.
 
-[Timestamped transcript with speaker labels]
-</details>
-
-IMPORTANT: Write ALL content (body text, bullet points, descriptions) in ${languageName}. The section headings (## Meeting Summary, ## Key Topics Discussed, ## Key Decisions, ## Action Items, ## Full Transcript) MUST remain exactly as shown above in English for parsing consistency.
-Do not include any text outside of these sections. Use the exact section headings above.`
+IMPORTANT: Write ALL content (body text, bullet points, descriptions) in ${languageName}. The section headings (## Meeting Summary, ## Key Topics Discussed, ## Key Decisions, ## Action Items) MUST remain exactly as shown above in English for parsing consistency.
+Do not include any text outside of these sections. Use the exact section headings above. Do NOT include a transcript section.`
 
     const userMessage = `Here is the meeting transcript:\n\n${transcriptText}`
 
@@ -716,7 +726,7 @@ Do not include any text outside of these sections. Use the exact section heading
     try {
       const generator = aiManager.generateChatCompletion(modelId, messages, {
         isolated: true,
-        maxTokens: 4096,
+        maxTokens: 8192,
         contextSize: 32768
       })
 
@@ -739,6 +749,12 @@ Do not include any text outside of these sections. Use the exact section heading
         }
       }
 
+      // Strip any Full Transcript section the LLM might have added
+      const transcriptHeadingIndex = fullContent.indexOf('## Full Transcript')
+      if (transcriptHeadingIndex !== -1) {
+        fullContent = fullContent.substring(0, transcriptHeadingIndex).trimEnd()
+      }
+
       console.log(`[AudioManager] Summarization complete (${fullContent.length} chars)`)
       const actionItems = this.parseActionItems(fullContent)
       return { content: fullContent, actionItems }
@@ -748,7 +764,7 @@ Do not include any text outside of these sections. Use the exact section heading
       console.error(`[AudioManager] Summarization failed, falling back to raw transcript: ${msg}`)
       if (stack) console.error(`[AudioManager] Stack: ${stack}`)
       return {
-        content: this.buildFallbackContent(transcriptionSegments, speakers),
+        content: this.buildFallbackContent(),
         actionItems: []
       }
     }
