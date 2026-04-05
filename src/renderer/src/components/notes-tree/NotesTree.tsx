@@ -111,7 +111,7 @@ export const NotesTree: FC = () => {
         <div className="p-4 text-center">
           <p className="text-sm text-muted-foreground mb-2">No notes or folders yet</p>
           <p className="text-xs text-muted-foreground">
-            Right-click here to create your first note or folder
+            Use the + button above or right-click here to get started
           </p>
         </div>
         <CreateItemDialog
