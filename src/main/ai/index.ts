@@ -30,5 +30,10 @@ export { ConversationManager } from './ConversationManager'
 export { EmbeddingService } from './EmbeddingService'
 export type { ExtendedChunkingOptions, TextChunk, IndexableNote } from './EmbeddingService'
 
+export { RerankerService } from './RerankerService'
+export type { RerankDocument, RerankResult } from './RerankerService'
+
+export { QueryExpander } from './QueryExpander'
+
 export { IndexingQueue } from './IndexingQueue'
 export type { IndexingJob, IndexingProgressEvent, IndexingQueueOptions } from './IndexingQueue'

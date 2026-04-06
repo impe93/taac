@@ -59,6 +59,26 @@ const CURATED_MODELS: ModelDefinition[] = [
   },
 
   // ============================================================================
+  // RERANKING MODELS - Cross-encoder rerankers for search result quality
+  // ============================================================================
+  {
+    id: 'qwen3-reranker-0.6b-q8',
+    name: 'Qwen3 Reranker 0.6B (Q8_0)',
+    description:
+      'Qwen3 cross-encoder reranker — improves search relevance by re-scoring query/document pairs (~596MB)',
+    filename: 'qwen3-reranker-0.6b-q8_0.gguf',
+    sizeBytes: 595_778_560, // ~596MB
+    layers: 28,
+    quantization: 'Q8_0',
+    contextLength: 8192,
+    capabilities: ['reranking'],
+    hardwareTier: 'low',
+    downloadUrl:
+      'https://huggingface.co/ggml-org/Qwen3-Reranker-0.6B-Q8_0-GGUF/resolve/main/qwen3-reranker-0.6b-q8_0.gguf',
+    license: 'Apache 2.0'
+  },
+
+  // ============================================================================
   // TRANSCRIPTION MODELS - Whisper ONNX via sherpa-onnx (§5.2)
   // ============================================================================
   {
@@ -360,6 +380,13 @@ export class ModelRegistry {
     return Array.from(this.models.values()).filter(
       (m) => m.capabilities.includes('transcription') && m.format !== 'ggml'
     )
+  }
+
+  /**
+   * Get reranking models (cross-encoder rerankers)
+   */
+  static getRerankerModels(): ModelDefinition[] {
+    return Array.from(this.models.values()).filter((m) => m.capabilities.includes('reranking'))
   }
 
   /**

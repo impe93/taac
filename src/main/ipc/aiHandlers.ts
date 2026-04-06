@@ -22,7 +22,9 @@ import {
   ConversationManager,
   VectorDBManager,
   EmbeddingService,
-  IndexingQueue
+  IndexingQueue,
+  RerankerService,
+  QueryExpander
 } from '../ai'
 import type { GenerationOptions, ExpandedResult, IndexingProgressEvent } from '../ai'
 import type { FileSystemManager, Note, FolderMetadata } from '../utils/fileSystem'
@@ -47,6 +49,7 @@ let aiManager: AIManager | null = null
 let conversationManager: ConversationManager | null = null
 let embeddingService: EmbeddingService | null = null
 let indexingQueue: IndexingQueue | null = null
+let rerankerService: RerankerService | null = null
 
 // Per-space VectorDBManager instances
 const vectorDBManagers: Map<string, VectorDBManager> = new Map()
@@ -102,6 +105,28 @@ function getEmbeddingService(): EmbeddingService {
     embeddingService = new EmbeddingService(getAIManager())
   }
   return embeddingService
+}
+
+/**
+ * Get the RerankerService singleton (lazy, returns null if reranker model not downloaded)
+ */
+async function getRerankerServiceIfAvailable(): Promise<RerankerService | null> {
+  try {
+    const dl = await getDownloader()
+    const rerankerModels = ModelRegistry.getRerankerModels()
+    if (rerankerModels.length === 0) return null
+
+    const rerankerModelId = rerankerModels[0].id
+    const isDownloaded = await dl.isModelDownloaded(rerankerModelId)
+    if (!isDownloaded) return null
+
+    if (!rerankerService) {
+      rerankerService = RerankerService.getInstance(getAIManager(), rerankerModelId)
+    }
+    return rerankerService
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -930,7 +955,11 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
   })
 
   /**
-   * Search notes using hybrid search (vector KNN + BM25 with RRF)
+   * Search notes using hybrid search (vector KNN + BM25 with RRF),
+   * optional query expansion for improved recall,
+   * and optional cross-encoder reranking for improved precision.
+   *
+   * Pipeline: Query → [Expand] → Multi-query Hybrid Search → RRF Merge → [Rerank] → Results
    */
   ipcMain.handle(
     'ai:searchNotes',
@@ -950,17 +979,129 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
         if (!vectorDB.isInitialized()) await vectorDB.initialize()
 
         const service = getEmbeddingService()
-        const queryEmbeddingArray = await service.embedQuery(query)
-        const queryEmbedding = new Float32Array(queryEmbeddingArray)
+        const retrievalLimit = limit ?? 10
 
-        const results = vectorDB.hybridSearch({
-          query,
-          queryEmbedding,
-          limit: limit ?? 10,
-          noteIds
-        })
+        // --- Step 1: Query Expansion ---
+        // If a chat model is loaded, expand the query for better recall
+        let queries = [query]
+        const loadedModels = manager.getLoadedModels()
+        const chatModels = ModelRegistry.getChatModels()
+        const loadedChatModel = loadedModels.find((lm) => chatModels.some((cm) => cm.id === lm.id))
 
-        return results
+        if (loadedChatModel) {
+          try {
+            const expander = new QueryExpander(manager)
+            queries = await expander.expandQuery(query, loadedChatModel.id)
+            if (queries.length > 1) {
+              console.log(`[RAG] Query expanded: ${queries.length} variants`)
+            }
+          } catch {
+            queries = [query]
+          }
+        }
+
+        // --- Step 2: Multi-query Hybrid Search ---
+        // Retrieve more candidates when reranking or multi-query is active
+        const candidateLimit = retrievalLimit * 3
+
+        let allResults: ExpandedResult[]
+
+        if (queries.length === 1) {
+          // Single query — standard path
+          const queryEmbeddingArray = await service.embedQuery(queries[0])
+          const queryEmbedding = new Float32Array(queryEmbeddingArray)
+          allResults = vectorDB.hybridSearch({
+            query: queries[0],
+            queryEmbedding,
+            limit: candidateLimit,
+            noteIds
+          })
+        } else {
+          // Multi-query — search each variant and merge via deduplication
+          const allEmbeddings = await Promise.all(queries.map((q) => service.embedQuery(q)))
+
+          const resultSets = queries.map((q, i) =>
+            vectorDB.hybridSearch({
+              query: q,
+              queryEmbedding: new Float32Array(allEmbeddings[i]),
+              limit: candidateLimit,
+              noteIds
+            })
+          )
+
+          // Merge results: RRF across query variants (deduplicate by chunk ID)
+          const mergedMap = new Map<string, ExpandedResult>()
+          for (const resultSet of resultSets) {
+            for (const result of resultSet) {
+              const existing = mergedMap.get(result.id)
+              if (existing) {
+                // Accumulate RRF scores from multiple queries
+                existing.rrfScore += result.rrfScore
+              } else {
+                mergedMap.set(result.id, { ...result })
+              }
+            }
+          }
+
+          allResults = Array.from(mergedMap.values()).sort((a, b) => b.rrfScore - a.rrfScore)
+        }
+
+        if (allResults.length === 0) return allResults
+
+        // --- Step 3: Cross-encoder Reranking ---
+        const reranker = await getRerankerServiceIfAvailable()
+        if (reranker) {
+          try {
+            // Build enriched content for reranking (include folder path and title metadata)
+            const rerankDocs = allResults.map((r) => {
+              const meta = r.metadata as Record<string, unknown>
+              const folderPath = meta?.folderPath as string | undefined
+              const noteTitle = meta?.noteTitle as string | undefined
+              const parts: string[] = []
+              if (folderPath) parts.push(`Path: "${folderPath}"`)
+              if (noteTitle) parts.push(`Note: "${noteTitle}"`)
+              if (r.sectionHeader) parts.push(`Section: "${r.sectionHeader}"`)
+              parts.push(r.expandedContent || r.content)
+              return { id: r.id, content: parts.join(' | ') }
+            })
+
+            const reranked = await reranker.rerank(query, rerankDocs)
+
+            // Build a score map from reranker results
+            const rerankerScoreMap = new Map(reranked.map((r) => [r.id, r.score]))
+
+            // Blend scores: 30% RRF (normalized) + 70% reranker
+            const maxRRF = Math.max(...allResults.map((r) => r.rrfScore))
+            const blended = allResults.map((r) => {
+              const rerankerScore = rerankerScoreMap.get(r.id) ?? 0
+              const rrfNorm = maxRRF > 0 ? r.rrfScore / maxRRF : 0
+              const finalScore = 0.3 * rrfNorm + 0.7 * rerankerScore
+              return { ...r, rrfScore: finalScore, rerankerScore }
+            })
+
+            // Re-sort by blended score and apply limit
+            blended.sort((a, b) => b.rrfScore - a.rrfScore)
+            const topResults = blended.slice(0, retrievalLimit)
+
+            // Recompute relevancePercent relative to new best score
+            const maxFinal = topResults.length > 0 ? topResults[0].rrfScore : 1
+            return topResults.map((r) => ({
+              ...r,
+              relevancePercent: Math.round((r.rrfScore / maxFinal) * 100)
+            }))
+          } catch (rerankError) {
+            // Graceful degradation: if reranking fails, return original results
+            console.error('[RAG] Reranking failed, using RRF results:', rerankError)
+          }
+        }
+
+        // No reranker available — return RRF results with limit
+        const topResults = allResults.slice(0, retrievalLimit)
+        const maxRRF = topResults.length > 0 ? topResults[0].rrfScore : 1
+        return topResults.map((r) => ({
+          ...r,
+          relevancePercent: Math.round((r.rrfScore / maxRRF) * 100)
+        }))
       } catch (error) {
         console.error('[RAG] Search error:', error)
         throw new Error(`Failed to search notes: ${(error as Error).message}`)

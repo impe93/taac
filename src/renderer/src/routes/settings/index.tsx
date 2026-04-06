@@ -3,6 +3,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import {
   Bot,
   Search,
+  ArrowUpDown,
   Download,
   Trash2,
   CheckCircle2,
@@ -42,7 +43,8 @@ interface ModelRowConfig {
 
 const MODEL_ROWS: ModelRowConfig[] = [
   { id: 'qwen3-5-2b-q8', label: 'AI Chat', icon: Bot },
-  { id: 'nomic-embed-text-v2-moe', label: 'Search', icon: Search }
+  { id: 'nomic-embed-text-v2-moe', label: 'Search', icon: Search },
+  { id: 'qwen3-reranker-0.6b-q8', label: 'Reranker', icon: ArrowUpDown }
 ]
 
 const TRANSCRIPTION_MODEL_ROWS: ModelRowConfig[] = [

@@ -66,6 +66,7 @@ export interface HardwareInfo {
 export type ModelCapability =
   | 'chat'
   | 'embedding'
+  | 'reranking'
   | 'code'
   | 'reasoning'
   | 'transcription'
@@ -327,6 +328,7 @@ export interface RankedResult {
   relevancePercent: number // 0-100, relative to best result in the set
   vectorDistance: number | null // null if found only via BM25
   bm25Rank: number | null // null if found only via vector
+  rerankerScore?: number // 0-1, cross-encoder relevance score (if reranker available)
 }
 
 /**

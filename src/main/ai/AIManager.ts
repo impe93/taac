@@ -16,6 +16,7 @@ import type {
   LlamaModel,
   LlamaContext,
   LlamaEmbeddingContext,
+  LlamaRankingContext,
   LlamaChatSession,
   LlamaContextSequence
 } from 'node-llama-cpp'
@@ -101,7 +102,7 @@ export class AIManager {
   private initialized: boolean = false
 
   // Memory management constants
-  private readonly MAX_LOADED_MODELS = 2
+  private readonly MAX_LOADED_MODELS = 3
   private readonly IDLE_UNLOAD_TIMEOUT = 5 * 60 * 1000 // 5 minutes
   private cleanupInterval: NodeJS.Timeout | null = null
   private modelUnloadListeners: Array<(modelId: string) => void> = []
@@ -432,6 +433,27 @@ export class AIManager {
   }
 
   /**
+   * Create a ranking context for a reranker model
+   *
+   * Used for cross-encoder reranking of search results.
+   * The ranking context is not cached on the loaded model — callers
+   * should manage their own reference and dispose when done.
+   *
+   * @param modelId - The reranker model ID
+   * @returns The LlamaRankingContext instance
+   */
+  async createRankingContext(modelId: string): Promise<LlamaRankingContext> {
+    const loaded = this.loadedModels.get(modelId)
+    if (!loaded) {
+      await this.loadModel(modelId)
+      return this.createRankingContext(modelId)
+    }
+
+    loaded.lastUsed = Date.now()
+    return loaded.model.createRankingContext()
+  }
+
+  /**
    * Generate chat completion with streaming support
    *
    * Loads the model if not already loaded, creates a chat session,
@@ -515,9 +537,7 @@ export class AIManager {
         maxTokens: options?.maxTokens ?? 2048,
         temperature: options?.temperature ?? 0.7,
         topP: options?.topP,
-        repeatPenalty: options?.repeatPenalty
-          ? { penalty: options.repeatPenalty }
-          : undefined,
+        repeatPenalty: options?.repeatPenalty ? { penalty: options.repeatPenalty } : undefined,
         stopOnAbortSignal: true,
         signal,
         onTextChunk: (chunk: string) => {
