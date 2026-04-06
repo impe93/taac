@@ -1,4 +1,5 @@
 import { type FC, useState, useEffect } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import {
   Dialog,
   DialogContent,
@@ -36,6 +37,7 @@ export const CreateItemDialog: FC<CreateItemDialogProps> = ({
   onOpenChange
 }) => {
   const dispatch = useAppDispatch()
+  const navigate = useNavigate()
   const activeSpaceId = useAppSelector(selectActiveSpaceId)
   const loadingOperations = useAppSelector((state) => state.notesTree.loadingOperations)
   const [name, setName] = useState('')
@@ -59,7 +61,7 @@ export const CreateItemDialog: FC<CreateItemDialogProps> = ({
     if (!name.trim() || !activeSpaceId) return
 
     if (type === 'note') {
-      await dispatch(
+      const result = await dispatch(
         createNote({
           spaceId: activeSpaceId,
           folderId: parentFolderId,
@@ -68,6 +70,9 @@ export const CreateItemDialog: FC<CreateItemDialogProps> = ({
           type: noteType
         })
       )
+      if (createNote.fulfilled.match(result)) {
+        navigate({ to: '/note/$noteId', params: { noteId: result.payload.note.id } })
+      }
     } else {
       await dispatch(
         createFolder({
