@@ -30,7 +30,11 @@ asarUnpack:
   - '**/*.so'
   - '**/*.dll'
 win:
-  executableName: electron-tanstack
+  executableName: taac-notes
+  target:
+    - target: nsis
+      arch:
+        - x64
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}
