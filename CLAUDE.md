@@ -99,7 +99,7 @@ See `docs/AI_ARCHITECTURE.md` for full design. Key components in `src/main/ai/`:
 
 **Current Models:**
 
-- Chat: Qwen3-4B-Instruct-2507 Q8 (medium tier), Llama 3.1 8B Q8 (high tier)
+- Chat: Qwen3.5 2B Q8 (unico modello chat supportato in tutti i tier)
 - Embedding: nomic-embed-text-v2-moe Q8 (768 dim, multilingual)
 
 **Critical RAG Details:**
