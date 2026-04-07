@@ -244,8 +244,8 @@ export const OnboardingWizard: FC = () => {
   }
 
   return (
-    <div className="flex h-full flex-col items-center justify-center p-8">
-      <div className="w-full max-w-2xl space-y-8">
+    <div className="flex h-full flex-col overflow-y-auto">
+      <div className="mx-auto my-auto flex w-full max-w-2xl flex-col gap-8 p-8">
         <div className="flex items-center justify-center gap-2">
           {STEP_CONFIG.map(({ step, label }) => (
             <Badge key={step} variant={getStepVariant(step, state.currentStep)}>

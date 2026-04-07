@@ -9,16 +9,15 @@ import {
   AlertCircle,
   Loader2,
   Mic,
-  Zap
+  Info
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import type { DownloadProgress, ModelDefinition } from '@main/ai/types'
+import type { DownloadProgress, ModelDefinition, HardwareTier } from '@main/ai/types'
 import { Button } from '@renderer/components/ui/button'
 import { Card, CardContent } from '@renderer/components/ui/card'
 import { Progress } from '@renderer/components/ui/progress'
 import { Badge } from '@renderer/components/ui/badge'
 import { Alert, AlertDescription } from '@renderer/components/ui/alert'
-import { Separator } from '@renderer/components/ui/separator'
 import { Skeleton } from '@renderer/components/ui/skeleton'
 import { useDownloadedModels, useModelDownload } from '@renderer/hooks/useModels'
 import { useHardwareInfo, useAvailableModels } from '@renderer/hooks/useHardware'
@@ -27,38 +26,69 @@ import { formatSize, formatSpeed, formatETA } from '@renderer/lib/format'
 import type { OnboardingAction, OnboardingState } from './OnboardingWizard'
 
 // =============================================================================
-// Constants
+// Curated bundles per feature
 // =============================================================================
 
-interface ModelConfig {
-  id: string
-  name: string
-  size: string
-  purpose: string
+type FeatureKey = 'chat' | 'search' | 'meeting'
+
+interface CuratedFeature {
+  key: FeatureKey
   icon: LucideIcon
   label: string
+  description: string
+  losesIfSkipped: string
+  optional: boolean
+  resolveModelIds: (tier: HardwareTier, hasGpu: boolean) => string[]
 }
 
-const MODELS: ModelConfig[] = [
+const TIER_RANK: Record<HardwareTier, number> = { low: 0, medium: 1, high: 2, ultra: 3 }
+
+const pickWhisperId = (tier: HardwareTier, hasGpu: boolean): string => {
+  const variant = hasGpu ? 'ggml' : 'onnx'
+  if (TIER_RANK[tier] >= TIER_RANK['high']) return `whisper-large-v3-turbo-${variant}`
+  if (TIER_RANK[tier] >= TIER_RANK['medium']) return `whisper-small-${variant}`
+  return `whisper-base-${variant}`
+}
+
+const FEATURES: CuratedFeature[] = [
   {
-    id: 'qwen3-5-2b-q8',
-    name: 'Qwen3.5 2B',
-    size: '~2.0 GB',
-    purpose: 'Powers the AI assistant',
+    key: 'chat',
     icon: Bot,
-    label: 'AI Chat Model'
+    label: 'AI Chat',
+    description:
+      'Conversa in linguaggio naturale con un assistente AI che gira interamente sul tuo dispositivo.',
+    losesIfSkipped:
+      'Senza questo modello non potrai chattare con le tue note né generare contenuti con l’AI.',
+    optional: false,
+    resolveModelIds: () => ['qwen3-5-2b-q8']
   },
   {
-    id: 'nomic-embed-text-v2-moe',
-    name: 'Nomic Embed v2',
-    size: '~512 MB',
-    purpose: 'Powers semantic note search',
+    key: 'search',
     icon: Search,
-    label: 'Search Model'
+    label: 'Ricerca semantica',
+    description:
+      'Trova le tue note per significato, non solo per parole chiave. Powered by RAG locale.',
+    losesIfSkipped:
+      'Senza questi modelli la ricerca avanzata e il recupero contestuale delle note saranno disabilitati.',
+    optional: false,
+    resolveModelIds: () => ['nomic-embed-text-v2-moe', 'qwen3-reranker-0.6b-q8']
+  },
+  {
+    key: 'meeting',
+    icon: Mic,
+    label: 'Meeting Notes',
+    description:
+      'Registra riunioni, trascrivi automaticamente l’audio e identifica i diversi speaker — tutto offline.',
+    losesIfSkipped:
+      'Senza questi modelli non potrai registrare meeting né generare trascrizioni e riassunti automatici.',
+    optional: true,
+    resolveModelIds: (tier, hasGpu) => [
+      pickWhisperId(tier, hasGpu),
+      'sherpa-onnx-pyannote-segmentation',
+      'sherpa-onnx-nemo-titanet-small'
+    ]
   }
 ]
-
-const TIER_ORDER = ['low', 'medium', 'high', 'ultra'] as const
 
 // =============================================================================
 // Component
@@ -69,6 +99,11 @@ interface ModelDownloadStepProps {
   dispatch: React.Dispatch<OnboardingAction>
 }
 
+interface ResolvedFeature {
+  feature: CuratedFeature
+  models: ModelDefinition[]
+}
+
 export const ModelDownloadStep: FC<ModelDownloadStepProps> = ({ state, dispatch }) => {
   const { data: downloadedModels, isLoading: isLoadingModels } = useDownloadedModels()
   const { data: hardwareInfo, isLoading: isLoadingHardware } = useHardwareInfo()
@@ -76,93 +111,93 @@ export const ModelDownloadStep: FC<ModelDownloadStepProps> = ({ state, dispatch 
   const { progress, download, pause, resume } = useModelDownload()
   const setConfig = useSetConfig<'meeting'>()
 
-  const downloadedModelIds = useMemo(
+  const downloadedIds = useMemo(
     () => new Set(downloadedModels?.map((m) => m.id) ?? []),
     [downloadedModels]
   )
 
-  const isModelComplete = (modelId: string): boolean => {
-    return downloadedModelIds.has(modelId) || progress.get(modelId)?.status === 'completed'
-  }
-
-  const allDownloaded = MODELS.every((m) => isModelComplete(m.id))
-
-  // GPU available when Metal (macOS Apple Silicon) or CUDA (Windows/Linux) is detected
   const hasGpu = !!(hardwareInfo?.gpu.hasMetal || hardwareInfo?.gpu.hasCuda)
+  const tier: HardwareTier = hardwareInfo?.tier ?? 'low'
 
-  // Transcription models from registry — GGML (GPU) when GPU is detected, ONNX (CPU) otherwise
-  const transcriptionModels = useMemo(
-    () =>
-      (availableModels ?? [])
-        .filter((m) => m.capabilities.includes('transcription'))
-        .filter((m) => (hasGpu ? m.format === 'ggml' : m.format !== 'ggml'))
-        .sort((a, b) => TIER_ORDER.indexOf(a.hardwareTier) - TIER_ORDER.indexOf(b.hardwareTier)),
-    [availableModels, hasGpu]
-  )
+  // Resolve curated bundles into actual ModelDefinition lists
+  const resolvedFeatures = useMemo<ResolvedFeature[]>(() => {
+    if (!availableModels) return []
+    const byId = new Map(availableModels.map((m) => [m.id, m]))
+    return FEATURES.map((feature) => ({
+      feature,
+      models: feature
+        .resolveModelIds(tier, hasGpu)
+        .map((id) => byId.get(id))
+        .filter((m): m is ModelDefinition => !!m)
+    }))
+  }, [availableModels, tier, hasGpu])
 
-  // The best transcription model compatible with the user's hardware tier
-  const recommendedTranscriptionId = useMemo(() => {
-    if (!hardwareInfo || transcriptionModels.length === 0) return null
-    const userTierIndex = TIER_ORDER.indexOf(hardwareInfo.tier)
-    const compatible = transcriptionModels.filter(
-      (m) => TIER_ORDER.indexOf(m.hardwareTier) <= userTierIndex
-    )
-    if (compatible.length === 0) return transcriptionModels[0].id
-    return compatible[compatible.length - 1].id // highest compatible tier
-  }, [hardwareInfo, transcriptionModels])
+  const isModelComplete = (modelId: string): boolean =>
+    downloadedIds.has(modelId) || progress.get(modelId)?.status === 'completed'
+
+  const isFeatureComplete = (rf: ResolvedFeature): boolean =>
+    rf.models.length > 0 && rf.models.every((m) => isModelComplete(m.id))
+
+  const requiredFeatures = resolvedFeatures.filter((rf) => !rf.feature.optional)
+  const allRequiredDownloaded =
+    requiredFeatures.length > 0 && requiredFeatures.every(isFeatureComplete)
+
+  const isAnyDownloading = useMemo(() => {
+    for (const [, p] of progress) {
+      if (p.status === 'downloading' || p.status === 'pending') return true
+    }
+    return false
+  }, [progress])
 
   // Sync completion state to wizard
   useEffect(() => {
-    if (allDownloaded && !state.models.chatModelDownloaded) {
+    if (allRequiredDownloaded && !state.models.chatModelDownloaded) {
       dispatch({ type: 'SET_MODEL_STATUS', chat: true, embedding: true })
     }
-  }, [allDownloaded, state.models.chatModelDownloaded, dispatch])
+  }, [allRequiredDownloaded, state.models.chatModelDownloaded, dispatch])
 
-  // Update whisperModelId config when a transcription model download completes
+  // Persist whisperModelId when transcription model completes
   useEffect(() => {
-    const transcriptionIds = new Set(transcriptionModels.map((m) => m.id))
-    for (const [modelId, p] of progress) {
-      if (p.status === 'completed' && transcriptionIds.has(modelId)) {
-        setConfig.mutate({
-          key: 'meeting',
-          value: { whisperModelId: modelId } as Parameters<typeof setConfig.mutate>[0]['value']
-        })
-        break
-      }
+    const meeting = resolvedFeatures.find((rf) => rf.feature.key === 'meeting')
+    if (!meeting) return
+    const transcriptionModel = meeting.models.find((m) => m.capabilities.includes('transcription'))
+    if (!transcriptionModel) return
+    const p = progress.get(transcriptionModel.id)
+    if (p?.status === 'completed') {
+      setConfig.mutate({
+        key: 'meeting',
+        value: { whisperModelId: transcriptionModel.id } as Parameters<
+          typeof setConfig.mutate
+        >[0]['value']
+      })
     }
-  }, [progress, transcriptionModels, setConfig])
+  }, [progress, resolvedFeatures, setConfig])
 
   // Handlers
-  const handleDownloadAll = (): void => {
-    for (const model of MODELS) {
-      if (!isModelComplete(model.id)) {
-        download(model.id)
-      }
+  const handleDownloadMissing = (ids: string[]): void => {
+    for (const id of ids) {
+      if (!isModelComplete(id)) download(id)
     }
   }
 
-  const handlePause = (modelId: string): void => {
-    pause(modelId)
+  const handleDownloadAllRequired = (): void => {
+    const missing: string[] = []
+    for (const rf of requiredFeatures) {
+      for (const m of rf.models) {
+        if (!isModelComplete(m.id)) missing.push(m.id)
+      }
+    }
+    handleDownloadMissing(missing)
   }
 
-  const handleResume = (modelId: string): void => {
-    resume(modelId)
-  }
-
-  const handleRetry = (modelId: string): void => {
-    download(modelId)
-  }
-
-  const handleContinue = (): void => {
-    dispatch({ type: 'NEXT_STEP' })
-  }
-
-  const handleSkip = (): void => {
-    dispatch({ type: 'SKIP_MODELS' })
-  }
+  const handlePause = (modelId: string): void => pause(modelId)
+  const handleResume = (modelId: string): void => resume(modelId)
+  const handleRetry = (modelId: string): void => download(modelId)
+  const handleContinue = (): void => dispatch({ type: 'NEXT_STEP' })
+  const handleSkip = (): void => dispatch({ type: 'SKIP_MODELS' })
 
   // Loading state
-  if (isLoadingModels || isLoadingHardware) {
+  if (isLoadingModels || isLoadingHardware || resolvedFeatures.length === 0) {
     return (
       <div className="flex flex-col items-center space-y-6 text-center">
         <Skeleton className="h-16 w-16 rounded-2xl" />
@@ -170,19 +205,14 @@ export const ModelDownloadStep: FC<ModelDownloadStepProps> = ({ state, dispatch 
           <Skeleton className="mx-auto h-8 w-64" />
           <Skeleton className="mx-auto h-5 w-96" />
         </div>
-        <Skeleton className="h-8 w-48" />
         <div className="grid w-full gap-4">
+          <Skeleton className="h-32 w-full rounded-lg" />
           <Skeleton className="h-32 w-full rounded-lg" />
           <Skeleton className="h-32 w-full rounded-lg" />
         </div>
       </div>
     )
   }
-
-  const isAnyDownloading = MODELS.some((m) => {
-    const status = progress.get(m.id)?.status
-    return status === 'downloading' || status === 'pending'
-  })
 
   return (
     <div className="flex flex-col items-center space-y-6 text-center">
@@ -191,30 +221,23 @@ export const ModelDownloadStep: FC<ModelDownloadStepProps> = ({ state, dispatch 
       </div>
 
       <div className="space-y-2">
-        <h1 className="text-3xl font-bold tracking-tight">Set Up AI Models</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Configura i modelli AI</h1>
         <p className="text-lg text-muted-foreground">
-          TaacNotes uses local AI models for chat and semantic search. Download them now to unlock
-          the full experience.
+          TaacNotes funziona con modelli AI eseguiti localmente sul tuo dispositivo. Abbiamo
+          selezionato i migliori per il tuo hardware.
         </p>
       </div>
 
-      {/* Hardware info */}
-      {hardwareInfo && (
-        <Badge variant="secondary">
-          {hardwareInfo.tier.charAt(0).toUpperCase() + hardwareInfo.tier.slice(1)} tier
-          <Separator orientation="vertical" className="mx-2 h-3" />
-          {formatSize(hardwareInfo.memory.totalBytes)} RAM
-        </Badge>
-      )}
-
-      {/* Required model cards */}
+      {/* Feature cards */}
       <div className="grid w-full gap-4">
-        {MODELS.map((model) => (
-          <ModelCard
-            key={model.id}
-            model={model}
-            isDownloaded={isModelComplete(model.id)}
-            progress={progress.get(model.id)}
+        {resolvedFeatures.map((rf) => (
+          <FeatureCard
+            key={rf.feature.key}
+            resolved={rf}
+            isComplete={isFeatureComplete(rf)}
+            isModelComplete={isModelComplete}
+            progressMap={progress}
+            onDownload={handleDownloadMissing}
             onPause={handlePause}
             onResume={handleResume}
             onRetry={handleRetry}
@@ -222,73 +245,30 @@ export const ModelDownloadStep: FC<ModelDownloadStepProps> = ({ state, dispatch 
         ))}
       </div>
 
-      {/* Total size note */}
-      <p className="text-sm text-muted-foreground">
-        Required download: ~4.8 GB (chat &amp; search models)
-      </p>
-
-      {/* Transcription models section */}
-      {transcriptionModels.length > 0 && (
-        <div className="w-full space-y-4">
-          <div className="flex items-center gap-3">
-            <Separator className="flex-1" />
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              {hasGpu ? <Zap className="size-4 text-yellow-500" /> : <Mic className="size-4" />}
-              <span>Transcription Model</span>
-              {hasGpu && (
-                <Badge
-                  variant="outline"
-                  className="gap-1 text-xs text-yellow-600 border-yellow-400/60"
-                >
-                  <Zap className="size-2.5" />
-                  GPU
-                </Badge>
-              )}
-              <Badge variant="outline" className="text-xs">
-                Optional
-              </Badge>
-            </div>
-            <Separator className="flex-1" />
-          </div>
-
-          <p className="text-sm text-muted-foreground">
-            Required for Meeting Notes — transcribes speech to text locally.{' '}
-            {hasGpu
-              ? 'GPU-accelerated models are shown for your hardware. You can download this later from Settings.'
-              : 'You can download this later from Settings.'}
-          </p>
-
-          <div className="grid w-full gap-3">
-            {transcriptionModels.map((model) => (
-              <TranscriptionModelCard
-                key={model.id}
-                model={model}
-                isDownloaded={isModelComplete(model.id)}
-                isRecommended={model.id === recommendedTranscriptionId}
-                progress={progress.get(model.id)}
-                onDownload={download}
-                onPause={handlePause}
-                onResume={handleResume}
-                onRetry={handleRetry}
-              />
-            ))}
-          </div>
-        </div>
+      {/* Warning durante download */}
+      {isAnyDownloading && (
+        <Alert className="text-left">
+          <Info className="size-4" />
+          <AlertDescription>
+            Non chiudere l’applicazione durante il download. I modelli verranno salvati localmente e
+            usati offline.
+          </AlertDescription>
+        </Alert>
       )}
 
       {/* Action buttons */}
       <div className="flex items-center gap-3">
         <Button variant="ghost" onClick={handleSkip}>
-          Skip for now
+          Salta per ora
         </Button>
-        {allDownloaded ? (
+        {allRequiredDownloaded ? (
           <Button size="lg" onClick={handleContinue}>
-            Continue
+            Continua
           </Button>
         ) : (
-          <Button size="lg" onClick={handleDownloadAll} disabled={isAnyDownloading}>
+          <Button size="lg" onClick={handleDownloadAllRequired} disabled={isAnyDownloading}>
             {isAnyDownloading && <Loader2 className="size-4 animate-spin" />}
-            Download All
+            Scarica i modelli richiesti
           </Button>
         )}
       </div>
@@ -297,248 +277,218 @@ export const ModelDownloadStep: FC<ModelDownloadStepProps> = ({ state, dispatch 
 }
 
 // =============================================================================
-// Model Card (internal)
+// Feature Card (internal)
 // =============================================================================
 
-interface ModelCardProps {
-  model: ModelConfig
-  isDownloaded: boolean
-  progress: DownloadProgress | undefined
-  onPause: (modelId: string) => void
-  onResume: (modelId: string) => void
-  onRetry: (modelId: string) => void
+interface FeatureCardProps {
+  resolved: ResolvedFeature
+  isComplete: boolean
+  isModelComplete: (id: string) => boolean
+  progressMap: Map<string, DownloadProgress>
+  onDownload: (ids: string[]) => void
+  onPause: (id: string) => void
+  onResume: (id: string) => void
+  onRetry: (id: string) => void
 }
 
-const ModelCard: FC<ModelCardProps> = ({
-  model,
-  isDownloaded,
-  progress,
-  onPause,
-  onResume,
-  onRetry
-}) => {
-  const Icon = model.icon
-  const status = progress?.status
-
-  return (
-    <Card className="text-left">
-      <CardContent className="space-y-3 pt-6">
-        {/* Header row */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex size-10 items-center justify-center rounded-lg bg-primary/10">
-              <Icon className="size-5 text-primary" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <p className="font-semibold">{model.name}</p>
-                <Badge variant="outline" className="text-xs">
-                  {model.label}
-                </Badge>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                {model.size} &middot; {model.purpose}
-              </p>
-            </div>
-          </div>
-
-          {/* Status indicator */}
-          {isDownloaded && (
-            <Badge variant="secondary" className="gap-1">
-              <CheckCircle2 className="size-3" />
-              Downloaded
-            </Badge>
-          )}
-        </div>
-
-        {/* Download progress */}
-        {!isDownloaded && (status === 'downloading' || status === 'paused') && progress && (
-          <div className="space-y-2">
-            <Progress value={progress.percentage} />
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>
-                {formatSize(progress.bytesDownloaded)} / {formatSize(progress.totalBytes)}
-                {status === 'downloading' && (
-                  <>
-                    {' '}
-                    &middot; {formatSpeed(progress.speed)} &middot; ~{formatETA(progress.eta)} left
-                  </>
-                )}
-                {status === 'paused' && ' · Paused'}
-              </span>
-              <span>{Math.round(progress.percentage)}%</span>
-            </div>
-            <div className="flex justify-end">
-              {status === 'downloading' ? (
-                <Button variant="ghost" size="sm" onClick={() => onPause(model.id)}>
-                  <Pause className="size-3.5" />
-                  Pause
-                </Button>
-              ) : (
-                <Button variant="ghost" size="sm" onClick={() => onResume(model.id)}>
-                  <Play className="size-3.5" />
-                  Resume
-                </Button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Pending state (download triggered but not started) */}
-        {!isDownloaded && status === 'pending' && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="size-4 animate-spin" />
-            Preparing download...
-          </div>
-        )}
-
-        {/* Error state */}
-        {!isDownloaded && status === 'error' && progress && (
-          <Alert variant="destructive">
-            <AlertCircle className="size-4" />
-            <AlertDescription className="flex items-center justify-between">
-              <span>{progress.error ?? 'Download failed'}</span>
-              <Button variant="ghost" size="sm" onClick={() => onRetry(model.id)}>
-                Retry
-              </Button>
-            </AlertDescription>
-          </Alert>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-
-// =============================================================================
-// Transcription Model Card (internal)
-// =============================================================================
-
-interface TranscriptionModelCardProps {
-  model: ModelDefinition
-  isDownloaded: boolean
-  isRecommended: boolean
-  progress: DownloadProgress | undefined
-  onDownload: (modelId: string) => void
-  onPause: (modelId: string) => void
-  onResume: (modelId: string) => void
-  onRetry: (modelId: string) => void
-}
-
-const TranscriptionModelCard: FC<TranscriptionModelCardProps> = ({
-  model,
-  isDownloaded,
-  isRecommended,
-  progress,
+const FeatureCard: FC<FeatureCardProps> = ({
+  resolved,
+  isComplete,
+  isModelComplete,
+  progressMap,
   onDownload,
   onPause,
   onResume,
   onRetry
 }) => {
-  const status = progress?.status
+  const { feature, models } = resolved
+  const Icon = feature.icon
+
+  const totalSize = models.reduce((acc, m) => acc + m.sizeBytes, 0)
+
+  // Aggregated progress for any model in this bundle currently downloading/paused
+  const activeProgress = useMemo(() => {
+    let bytesDownloaded = 0
+    let totalBytes = 0
+    let activeModelId: string | null = null
+    let activeStatus: DownloadProgress['status'] | null = null
+    let activeSpeed = 0
+    let activeEta = 0
+    let lastError: string | null = null
+
+    for (const m of models) {
+      const p = progressMap.get(m.id)
+      if (!p) {
+        if (isModelComplete(m.id)) {
+          bytesDownloaded += m.sizeBytes
+          totalBytes += m.sizeBytes
+        } else {
+          totalBytes += m.sizeBytes
+        }
+        continue
+      }
+      bytesDownloaded += p.bytesDownloaded || (p.status === 'completed' ? m.sizeBytes : 0)
+      totalBytes += p.totalBytes || m.sizeBytes
+      if (p.status === 'downloading' || p.status === 'pending' || p.status === 'paused') {
+        activeModelId = m.id
+        activeStatus = p.status
+        activeSpeed = p.speed
+        activeEta = p.eta
+      }
+      if (p.status === 'error' && p.error) lastError = p.error
+    }
+
+    const percentage = totalBytes > 0 ? (bytesDownloaded / totalBytes) * 100 : 0
+
+    return {
+      bytesDownloaded,
+      totalBytes,
+      percentage,
+      activeModelId,
+      activeStatus,
+      activeSpeed,
+      activeEta,
+      lastError
+    }
+  }, [models, progressMap, isModelComplete])
+
+  const isDownloading = activeProgress.activeStatus !== null
+  const showError = !!activeProgress.lastError && !isDownloading && !isComplete
+
+  const missingIds = models.filter((m) => !isModelComplete(m.id)).map((m) => m.id)
 
   return (
-    <Card className={isRecommended ? 'border-primary/40 text-left' : 'text-left'}>
-      <CardContent className="space-y-3 pt-4 pb-4">
-        {/* Header row */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex size-9 items-center justify-center rounded-lg bg-primary/10">
-              <Mic className="size-4 text-primary" />
+    <Card className="text-left">
+      <CardContent className="space-y-3 pt-6">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+              <Icon className="size-5 text-primary" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-semibold">{model.name}</p>
-                {isRecommended && (
-                  <Badge variant="default" className="text-xs">
-                    Recommended
-                  </Badge>
-                )}
-                {model.format === 'ggml' && (
-                  <Badge
-                    variant="outline"
-                    className="gap-1 text-xs text-yellow-600 border-yellow-400/60"
-                  >
-                    <Zap className="size-2.5" />
-                    GPU
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="font-semibold">{feature.label}</p>
+                {feature.optional && (
+                  <Badge variant="outline" className="text-xs">
+                    Opzionale
                   </Badge>
                 )}
               </div>
-              <p className="text-xs text-muted-foreground">
-                ~{formatSize(model.sizeBytes)} &middot;{' '}
-                {model.hardwareTier.charAt(0).toUpperCase() + model.hardwareTier.slice(1)} tier
-              </p>
+              <p className="text-sm text-muted-foreground">{feature.description}</p>
             </div>
           </div>
 
-          {/* Status / download button */}
           <div className="shrink-0">
-            {isDownloaded ? (
+            {isComplete ? (
               <Badge variant="secondary" className="gap-1">
                 <CheckCircle2 className="size-3" />
-                Downloaded
+                Pronto
               </Badge>
-            ) : !status || status === 'error' ? (
+            ) : !isDownloading ? (
               <Button
-                variant={isRecommended ? 'default' : 'outline'}
                 size="sm"
-                onClick={() => onDownload(model.id)}
+                variant={feature.optional ? 'outline' : 'default'}
+                onClick={() => onDownload(missingIds)}
               >
                 <Download className="size-3.5" />
-                Download
+                Scarica
               </Button>
             ) : null}
           </div>
         </div>
 
-        {/* Download progress */}
-        {!isDownloaded && (status === 'downloading' || status === 'paused') && progress && (
-          <div className="space-y-2">
-            <Progress value={progress.percentage} />
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>
-                {formatSize(progress.bytesDownloaded)} / {formatSize(progress.totalBytes)}
-                {status === 'downloading' && (
-                  <>
-                    {' '}
-                    &middot; {formatSpeed(progress.speed)} &middot; ~{formatETA(progress.eta)} left
-                  </>
-                )}
-                {status === 'paused' && ' · Paused'}
-              </span>
-              <span>{Math.round(progress.percentage)}%</span>
-            </div>
-            <div className="flex justify-end">
-              {status === 'downloading' ? (
-                <Button variant="ghost" size="sm" onClick={() => onPause(model.id)}>
-                  <Pause className="size-3.5" />
-                  Pause
-                </Button>
-              ) : (
-                <Button variant="ghost" size="sm" onClick={() => onResume(model.id)}>
-                  <Play className="size-3.5" />
-                  Resume
-                </Button>
-              )}
-            </div>
+        {/* Loses if skipped — only when not complete and not downloading */}
+        {!isComplete && !isDownloading && (
+          <div className="flex items-start gap-2 rounded-md bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-400">
+            <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
+            <span>{feature.losesIfSkipped}</span>
           </div>
         )}
 
-        {/* Pending state */}
-        {!isDownloaded && status === 'pending' && (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Loader2 className="size-3.5 animate-spin" />
-            Preparing download...
+        {/* Bundle model list */}
+        <div className="space-y-1 rounded-md border border-border/50 bg-muted/30 p-2">
+          {models.map((m) => {
+            const done = isModelComplete(m.id)
+            return (
+              <div
+                key={m.id}
+                className="flex items-center justify-between text-xs text-muted-foreground"
+              >
+                <div className="flex items-center gap-1.5">
+                  {done ? (
+                    <CheckCircle2 className="size-3 text-green-600" />
+                  ) : (
+                    <div className="size-3 rounded-full border border-muted-foreground/40" />
+                  )}
+                  <span>{m.name}</span>
+                </div>
+                <span>{formatSize(m.sizeBytes)}</span>
+              </div>
+            )
+          })}
+          <div className="flex items-center justify-between border-t border-border/50 pt-1 text-xs font-medium">
+            <span className="text-muted-foreground">Totale</span>
+            <span>{formatSize(totalSize)}</span>
+          </div>
+        </div>
+
+        {/* Aggregated progress */}
+        {isDownloading && (
+          <div className="space-y-2">
+            <Progress value={activeProgress.percentage} />
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>
+                {formatSize(activeProgress.bytesDownloaded)} /{' '}
+                {formatSize(activeProgress.totalBytes)}
+                {activeProgress.activeStatus === 'downloading' && activeProgress.activeSpeed > 0 && (
+                  <>
+                    {' '}
+                    &middot; {formatSpeed(activeProgress.activeSpeed)} &middot; ~
+                    {formatETA(activeProgress.activeEta)}
+                  </>
+                )}
+                {activeProgress.activeStatus === 'paused' && ' · In pausa'}
+                {activeProgress.activeStatus === 'pending' && ' · Preparazione...'}
+              </span>
+              <span>{Math.round(activeProgress.percentage)}%</span>
+            </div>
+            {activeProgress.activeModelId &&
+              (activeProgress.activeStatus === 'downloading' ||
+                activeProgress.activeStatus === 'paused') && (
+                <div className="flex justify-end">
+                  {activeProgress.activeStatus === 'downloading' ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onPause(activeProgress.activeModelId!)}
+                    >
+                      <Pause className="size-3.5" />
+                      Pausa
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onResume(activeProgress.activeModelId!)}
+                    >
+                      <Play className="size-3.5" />
+                      Riprendi
+                    </Button>
+                  )}
+                </div>
+              )}
           </div>
         )}
 
         {/* Error state */}
-        {!isDownloaded && status === 'error' && progress && (
+        {showError && (
           <Alert variant="destructive">
             <AlertCircle className="size-4" />
             <AlertDescription className="flex items-center justify-between">
-              <span>{progress.error ?? 'Download failed'}</span>
-              <Button variant="ghost" size="sm" onClick={() => onRetry(model.id)}>
-                Retry
+              <span>{activeProgress.lastError}</span>
+              <Button variant="ghost" size="sm" onClick={() => onRetry(missingIds[0])}>
+                Riprova
               </Button>
             </AlertDescription>
           </Alert>
