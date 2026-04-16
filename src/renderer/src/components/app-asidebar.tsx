@@ -9,6 +9,7 @@ import { SpaceHeader } from './spaces/space-header'
 import { SpaceSelector } from './spaces/space-selector'
 import { NotesTree } from './notes-tree/NotesTree'
 import { DndProvider } from './dnd/DndProvider'
+import { MeetingRecordingSidebarPanel } from './meeting/MeetingRecordingSidebarPanel'
 
 export function AppSidebar(): ReactElement {
   return (
@@ -20,6 +21,7 @@ export function AppSidebar(): ReactElement {
         <SidebarContent>
           <NotesTree />
         </SidebarContent>
+        <MeetingRecordingSidebarPanel />
         <SidebarFooter>
           <SpaceSelector />
         </SidebarFooter>

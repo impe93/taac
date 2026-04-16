@@ -1,10 +1,10 @@
-import { type FC, useState, useCallback } from 'react'
+import { type FC, useState, useCallback, useMemo } from 'react'
 import { Mic, Pause, Play, Square, Wifi, Users } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { Card, CardContent } from '@renderer/components/ui/card'
 import { ToggleGroup, ToggleGroupItem } from '@renderer/components/ui/toggle-group'
 import { cn } from '@renderer/lib/utils'
-import { useMeetingRecorder } from '@renderer/hooks/useMeetingRecorder'
+import { useMeetingLifecycle } from '@renderer/hooks/useMeetingLifecycle'
 import { useConfig } from '@renderer/hooks/useConfig'
 
 type RecordingMode = 'remote' | 'in-person'
@@ -12,7 +12,7 @@ type RecordingMode = 'remote' | 'in-person'
 interface MeetingRecorderProps {
   noteId: string
   spaceId: string
-  onRecordingComplete: () => void
+  folderId: string
 }
 
 function formatDuration(seconds: number): string {
@@ -22,36 +22,59 @@ function formatDuration(seconds: number): string {
   return [h, m, s].map((v) => String(v).padStart(2, '0')).join(':')
 }
 
-export const MeetingRecorder: FC<MeetingRecorderProps> = ({
-  noteId,
-  spaceId,
-  onRecordingComplete
-}) => {
+export const MeetingRecorder: FC<MeetingRecorderProps> = ({ noteId, spaceId, folderId }) => {
   const { data: meetingConfig } = useConfig('meeting')
   const [mode, setMode] = useState<RecordingMode>(meetingConfig?.defaultRecordingMode ?? 'remote')
-  const { state, startRecording, pauseRecording, resumeRecording, stopRecording, duration, error } =
-    useMeetingRecorder(noteId)
+  const {
+    recordingSession,
+    isRecordingBusy,
+    startRecording,
+    pauseRecording,
+    resumeRecording,
+    stopRecording,
+    recordingStartFailure,
+    clearRecordingStartFailure
+  } = useMeetingLifecycle()
+
+  const isThisNoteRecording =
+    recordingSession !== null &&
+    recordingSession.noteId === noteId &&
+    (recordingSession.state === 'recording' || recordingSession.state === 'paused')
+
+  const isBlockedByOtherRecording =
+    isRecordingBusy && recordingSession !== null && recordingSession.noteId !== noteId
 
   const handleStart = useCallback(async (): Promise<void> => {
-    await startRecording(mode)
-  }, [mode, startRecording])
+    if (!spaceId) return
+    await startRecording({ noteId, spaceId, folderId, mode })
+  }, [noteId, spaceId, folderId, mode, startRecording])
 
   const handleStop = useCallback(async (): Promise<void> => {
-    await stopRecording(spaceId)
-    onRecordingComplete()
-  }, [stopRecording, spaceId, onRecordingComplete])
+    await stopRecording()
+  }, [stopRecording])
 
-  const isRecording = state === 'recording'
-  const isPaused = state === 'paused'
+  const isRecording = isThisNoteRecording && recordingSession?.state === 'recording'
+  const isPaused = isThisNoteRecording && recordingSession?.state === 'paused'
   const isActive = isRecording || isPaused
+
+  const duration = useMemo(
+    () => (isThisNoteRecording && recordingSession ? recordingSession.duration : 0),
+    [isThisNoteRecording, recordingSession]
+  )
+
+  const startError = recordingStartFailure?.noteId === noteId ? recordingStartFailure.message : null
 
   return (
     <div className="flex items-center justify-center flex-1 p-6">
       <Card className="w-full max-w-md">
         <CardContent className="pt-8 pb-8 px-8 flex flex-col items-center gap-6">
-          {!isActive ? (
+          {isBlockedByOtherRecording ? (
+            <p className="text-sm text-muted-foreground text-center">
+              Another meeting recording is in progress. Stop or finish it before starting a new one
+              here.
+            </p>
+          ) : !isActive ? (
             <>
-              {/* Pre-recording state */}
               <div className="flex flex-col items-center gap-2">
                 <div className="size-16 rounded-full bg-muted flex items-center justify-center">
                   <Mic className="size-8 text-muted-foreground" />
@@ -90,10 +113,20 @@ export const MeetingRecorder: FC<MeetingRecorderProps> = ({
                 </p>
               </div>
 
-              {error && (
-                <p className="text-sm text-destructive text-center bg-destructive/10 rounded-md px-3 py-2 w-full">
-                  {error}
-                </p>
+              {startError && (
+                <div className="flex w-full flex-col gap-2">
+                  <p className="text-sm text-destructive text-center bg-destructive/10 rounded-md px-3 py-2 w-full">
+                    {startError}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={clearRecordingStartFailure}
+                  >
+                    Dismiss
+                  </Button>
+                </div>
               )}
 
               <Button size="lg" className="w-full gap-2" onClick={handleStart}>
@@ -103,7 +136,6 @@ export const MeetingRecorder: FC<MeetingRecorderProps> = ({
             </>
           ) : (
             <>
-              {/* Recording / paused state */}
               <div className="flex flex-col items-center gap-3">
                 <div className="relative size-16 rounded-full bg-destructive/10 flex items-center justify-center">
                   <div

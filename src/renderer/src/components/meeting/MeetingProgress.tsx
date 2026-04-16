@@ -1,9 +1,9 @@
-import { type FC, useEffect, useRef } from 'react'
+import { type FC } from 'react'
 import { Check, Loader2, Circle } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@renderer/components/ui/card'
 import { Progress } from '@renderer/components/ui/progress'
 import { cn } from '@renderer/lib/utils'
-import { useMeetingProcessing, type ProcessingResult } from '@renderer/hooks/useMeetingProcessing'
+import { useMeetingLifecycle } from '@renderer/hooks/useMeetingLifecycle'
 
 type StageKey = 'converting' | 'transcribing' | 'diarizing' | 'summarizing'
 
@@ -22,26 +22,12 @@ const STAGES: Stage[] = [
 
 interface MeetingProgressProps {
   noteId: string
-  spaceId: string
-  onComplete: (result: ProcessingResult) => void
 }
 
-export const MeetingProgress: FC<MeetingProgressProps> = ({ noteId, spaceId, onComplete }) => {
-  const { progress, startProcessing, error } = useMeetingProcessing(noteId)
-  const startedRef = useRef(false)
-  const onCompleteRef = useRef(onComplete)
-  onCompleteRef.current = onComplete
+export const MeetingProgress: FC<MeetingProgressProps> = ({ noteId }) => {
+  const { activeProcessingJob, processingProgress } = useMeetingLifecycle()
 
-  useEffect(() => {
-    if (startedRef.current) return
-    startedRef.current = true
-
-    startProcessing(spaceId).then((result) => {
-      if (result) {
-        onCompleteRef.current(result)
-      }
-    })
-  }, [spaceId, startProcessing])
+  const progress = activeProcessingJob?.noteId === noteId ? processingProgress : null
 
   const currentStageIndex = progress?.currentStage ?? 0
   const overallPercentage = progress
@@ -105,12 +91,6 @@ export const MeetingProgress: FC<MeetingProgressProps> = ({ noteId, spaceId, onC
               {overallPercentage}%
             </p>
           </div>
-
-          {error && (
-            <p className="text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2">
-              {error}
-            </p>
-          )}
         </CardContent>
       </Card>
     </div>

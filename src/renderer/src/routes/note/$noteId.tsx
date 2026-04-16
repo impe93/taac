@@ -1,4 +1,4 @@
-import { type ReactElement, useState, useCallback, useEffect } from 'react'
+import { type ReactElement, useState, useCallback, useEffect, useMemo } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useAppSelector, useAppDispatch } from '@renderer/store/hooks'
 import {
@@ -9,10 +9,10 @@ import {
 import { MDXNoteEditor } from '@renderer/components/editor/MDXNoteEditor'
 import { RawMarkdownEditor } from '@renderer/components/editor/RawMarkdownEditor'
 import { NoteTitle } from '@renderer/components/editor/NoteTitle'
-// import { NoteAIActions } from '@renderer/components/editor/NoteAIActions'
 import { useAutoSave } from '@renderer/hooks/useAutoSave'
 import { useEditorMode } from '@renderer/hooks/useEditorMode'
 import { Button } from '@renderer/components/ui/button'
+import { Card, CardContent } from '@renderer/components/ui/card'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip'
 import { Code, Eye } from 'lucide-react'
 import { cn } from '@renderer/lib/utils'
@@ -20,52 +20,57 @@ import { toast } from 'sonner'
 import { MeetingRecorder } from '@renderer/components/meeting/MeetingRecorder'
 import { MeetingProgress } from '@renderer/components/meeting/MeetingProgress'
 import { MeetingMetadataBar } from '@renderer/components/meeting/MeetingMetadataBar'
-import type { ProcessingResult } from '@renderer/hooks/useMeetingProcessing'
+import { useMeetingLifecycle } from '@renderer/hooks/useMeetingLifecycle'
 
 export const Route = createFileRoute('/note/$noteId')({
   component: NoteView
 })
-
-type MeetingViewState = 'pre-recording' | 'processing' | 'completed'
 
 function NoteView(): ReactElement {
   const { noteId } = Route.useParams()
   const dispatch = useAppDispatch()
   const note = useAppSelector(selectNoteById(noteId))
   const activeSpaceId = useAppSelector(selectActiveSpaceId)
+  const { processingQueue, activeProcessingJob, processingFailure, clearProcessingFailure } =
+    useMeetingLifecycle()
 
-  // Local state for optimistic updates
   const [title, setTitle] = useState(note?.title ?? '')
   const [content, setContent] = useState(note?.content ?? '')
   const [isSaving, setIsSaving] = useState(false)
 
-  // Meeting-specific view state
-  const [meetingViewState, setMeetingViewState] = useState<MeetingViewState>(() => {
-    if (!note || note.type !== 'meeting') return 'completed'
-    if (note.meetingMetadata) return 'completed'
-    return 'pre-recording'
-  })
+  const myProcessingJob = useMemo(
+    () => (note ? processingQueue.find((j) => j.noteId === note.id) : undefined),
+    [processingQueue, note]
+  )
+  const isActiveProcessingHere = note ? activeProcessingJob?.noteId === note.id : false
+  const isHeadOfQueue = note ? processingQueue[0]?.noteId === note.id : false
+  const inProcessingPipeline = myProcessingJob !== undefined
+  const showProcessingUi =
+    inProcessingPipeline &&
+    (isActiveProcessingHere || (isHeadOfQueue && activeProcessingJob === null))
+  const isQueuedProcessingHere = inProcessingPipeline && !showProcessingUi
 
-  // Sync local state when note changes (e.g., navigating to different note)
+  const queuePosition = useMemo(() => {
+    if (!note || !myProcessingJob) return 0
+    const i = processingQueue.findIndex((j) => j.noteId === note.id)
+    return i >= 0 ? i + 1 : 0
+  }, [note, myProcessingJob, processingQueue])
+
   useEffect(() => {
     if (note) {
       setTitle(note.title)
-      // Ensure content is a string (for backward compatibility with old Lexical format)
       setContent(typeof note.content === 'string' ? note.content : '')
-
-      // Sync meeting view state
-      if (note.type === 'meeting') {
-        if (note.meetingMetadata && meetingViewState !== 'processing') {
-          setMeetingViewState('completed')
-        } else if (!note.meetingMetadata && meetingViewState === 'completed') {
-          setMeetingViewState('pre-recording')
-        }
-      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: only re-sync on note ID change
   }, [note?.id])
 
-  // Auto-save handler
+  useEffect(() => {
+    if (note?.type === 'meeting' && note.meetingMetadata) {
+      setContent(typeof note.content === 'string' ? note.content : '')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only refresh local body when metadata appears (post-processing), not on every content edit
+  }, [note?.id, note?.type, note?.meetingMetadata])
+
   const handleSave = useCallback(async (): Promise<void> => {
     if (!note || !activeSpaceId) return
 
@@ -87,21 +92,18 @@ function NoteView(): ReactElement {
     }
   }, [dispatch, note, activeSpaceId, title, content])
 
-  // Auto-save with 1.5s debounce
   const { triggerSave, saveNow } = useAutoSave({
     onSave: handleSave,
     delay: 1500,
     enabled: !!note && !!activeSpaceId
   })
 
-  // Save on unmount
   useEffect(() => {
     return (): void => {
       saveNow()
     }
   }, [saveNow])
 
-  // Handle title change
   const handleTitleChange = useCallback(
     (newTitle: string): void => {
       setTitle(newTitle)
@@ -110,7 +112,6 @@ function NoteView(): ReactElement {
     [triggerSave]
   )
 
-  // Handle content change
   const handleContentChange = useCallback(
     (newContent: string): void => {
       setContent(newContent)
@@ -119,42 +120,8 @@ function NoteView(): ReactElement {
     [triggerSave]
   )
 
-  // Handle processing complete — persist metadata + content to note
-  const handleProcessingComplete = useCallback(
-    async (result: ProcessingResult): Promise<void> => {
-      if (!note || !activeSpaceId) return
-
-      try {
-        await dispatch(
-          updateNote({
-            spaceId: activeSpaceId,
-            folderId: note.folderId,
-            noteId: note.id,
-            updates: {
-              content: result.content,
-              meetingMetadata: result.metadata
-            }
-          })
-        ).unwrap()
-
-        // Update local state with the generated content
-        setContent(result.content)
-        setMeetingViewState('completed')
-      } catch (error) {
-        console.error('Failed to save meeting processing result:', error)
-        toast.error('Failed to save meeting result')
-        // Still transition to completed so the user can see whatever content was generated
-        setContent(result.content)
-        setMeetingViewState('completed')
-      }
-    },
-    [dispatch, note, activeSpaceId]
-  )
-
-  // Editor mode toggle
   const { isSourceMode, toggle: toggleEditorMode } = useEditorMode()
 
-  // Loading/not found state
   if (!note) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -163,54 +130,81 @@ function NoteView(): ReactElement {
     )
   }
 
-  // --- Meeting note: pre-recording ---
-  if (note.type === 'meeting' && meetingViewState === 'pre-recording') {
+  if (note.type === 'meeting' && !note.meetingMetadata) {
+    if (processingFailure?.noteId === note.id) {
+      return (
+        <div className="flex flex-col h-full w-full max-w-4xl mx-auto">
+          <div className="px-6 py-4 border-b border-border">
+            <NoteTitle title={title} onChange={handleTitleChange} placeholder="Meeting Title" />
+          </div>
+          <div className="flex items-center justify-center flex-1 p-6">
+            <Card className="w-full max-w-md">
+              <CardContent className="pt-8 pb-8 px-8 flex flex-col items-center gap-4 text-center">
+                <p className="text-base font-medium">Processing failed</p>
+                <p className="text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2 w-full">
+                  {processingFailure.message}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  You can try recording again or check your meeting settings and models.
+                </p>
+                <Button type="button" onClick={clearProcessingFailure}>
+                  Dismiss
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      )
+    }
+
+    if (showProcessingUi) {
+      return (
+        <div className="flex flex-col h-full w-full max-w-4xl mx-auto">
+          <div className="px-6 py-4 border-b border-border">
+            <NoteTitle title={title} onChange={handleTitleChange} placeholder="Meeting Title" />
+          </div>
+          <MeetingProgress noteId={note.id} />
+        </div>
+      )
+    }
+
+    if (isQueuedProcessingHere) {
+      return (
+        <div className="flex flex-col h-full w-full max-w-4xl mx-auto">
+          <div className="px-6 py-4 border-b border-border">
+            <NoteTitle title={title} onChange={handleTitleChange} placeholder="Meeting Title" />
+          </div>
+          <div className="flex items-center justify-center flex-1 p-6">
+            <Card className="w-full max-w-md">
+              <CardContent className="pt-8 pb-8 px-8 flex flex-col items-center gap-3 text-center">
+                <p className="text-base font-medium">Processing queued</p>
+                <p className="text-sm text-muted-foreground">
+                  This meeting is waiting in the processing queue (position {queuePosition}). You
+                  can browse other notes; progress appears in the sidebar when processing starts.
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      )
+    }
+
     return (
       <div className="flex flex-col h-full w-full max-w-4xl mx-auto">
         <div className="px-6 py-4 border-b border-border">
           <NoteTitle title={title} onChange={handleTitleChange} placeholder="Meeting Title" />
         </div>
-        <MeetingRecorder
-          noteId={note.id}
-          spaceId={activeSpaceId ?? ''}
-          onRecordingComplete={() => setMeetingViewState('processing')}
-        />
+        <MeetingRecorder noteId={note.id} spaceId={activeSpaceId ?? ''} folderId={note.folderId} />
       </div>
     )
   }
 
-  // --- Meeting note: processing ---
-  if (note.type === 'meeting' && meetingViewState === 'processing') {
-    return (
-      <div className="flex flex-col h-full w-full max-w-4xl mx-auto">
-        <div className="px-6 py-4 border-b border-border">
-          <NoteTitle title={title} onChange={handleTitleChange} placeholder="Meeting Title" />
-        </div>
-        <MeetingProgress
-          noteId={note.id}
-          spaceId={activeSpaceId ?? ''}
-          onComplete={handleProcessingComplete}
-        />
-      </div>
-    )
-  }
-
-  // --- Regular note or completed meeting note ---
   return (
     <div className="flex flex-col h-full w-full max-w-4xl mx-auto">
-      {/* Header with title */}
       <div className="px-6 py-4 border-b border-border">
         <div className="flex items-start justify-between gap-4">
           <NoteTitle title={title} onChange={handleTitleChange} placeholder="Untitled" />
           <div className="flex items-center gap-2 shrink-0">
-            {/* {activeSpaceId && (
-              <NoteAIActions
-                noteId={note.id}
-                spaceId={activeSpaceId}
-                title={title}
-                content={content}
-              />
-            )} */}
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -229,7 +223,6 @@ function NoteView(): ReactElement {
           </div>
         </div>
 
-        {/* Meeting metadata bar for completed meeting notes */}
         {note.type === 'meeting' && note.meetingMetadata && (
           <div className="mt-2">
             <MeetingMetadataBar metadata={note.meetingMetadata} />
@@ -244,7 +237,6 @@ function NoteView(): ReactElement {
         )}
       </div>
 
-      {/* Editor */}
       <div className="flex-1 overflow-auto p-6">
         {isSourceMode ? (
           <RawMarkdownEditor markdown={content} onChange={handleContentChange} />
