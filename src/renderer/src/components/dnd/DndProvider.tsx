@@ -6,24 +6,31 @@ import {
   closestCorners,
   MouseSensor,
   TouchSensor,
+  KeyboardSensor,
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragOverEvent,
   type DragStartEvent
 } from '@dnd-kit/core'
+import { sortableKeyboardCoordinates } from '@dnd-kit/sortable'
 import { useAppDispatch, useAppSelector } from '@renderer/store/hooks'
 import {
   selectActiveSpaceId,
+  selectOrderedItems,
   moveNote,
   moveFolder,
+  reorderItems,
   moveNoteToSpace,
   moveFolderToSpace,
   loadTree
 } from '@renderer/store/slices/notesTreeSlice'
+import { store } from '@renderer/store'
+import type { OrderedItem } from '@preload/types'
 import { Folder, FileText } from 'lucide-react'
 import { toast } from 'sonner'
 
-// Types for drag items
+// Types for drag items. `folderId` is the parent/container of the dragged item.
 export interface DragItem {
   type: 'note' | 'folder'
   id: string
@@ -37,9 +44,19 @@ export interface DropTarget {
   spaceId?: string
 }
 
-// Context for sharing drag state
+// Where the drop will land relative to the item currently hovered.
+export type DropZone = 'before' | 'after' | 'inside'
+
+export interface DropIndicator {
+  // Drag-and-drop id of the hovered item, e.g. `note-<id>` / `folder-<id>`.
+  overId: string
+  zone: DropZone
+}
+
+// Context for sharing drag state with tree items (overlay + drop indicators)
 interface DndContextValue {
   activeItem: DragItem | null
+  dropIndicator: DropIndicator | null
 }
 
 const DndStateContext = createContext<DndContextValue | null>(null)
@@ -52,6 +69,28 @@ export const useDndState = (): DndContextValue => {
   return context
 }
 
+// Compute whether the drop is a reorder (before/after) or a nest (inside a
+// folder), based on the pointer's vertical position within the hovered row.
+function computeZone(
+  active: DragEndEvent['active'],
+  over: NonNullable<DragEndEvent['over']>,
+  overType: 'note' | 'folder'
+): DropZone {
+  const overRect = over.rect
+  const activeRect = active.rect.current.translated
+  const pointerY = activeRect
+    ? activeRect.top + activeRect.height / 2
+    : overRect.top + overRect.height / 2
+  const ratio = overRect.height > 0 ? (pointerY - overRect.top) / overRect.height : 0.5
+
+  if (overType === 'folder') {
+    if (ratio < 0.25) return 'before'
+    if (ratio > 0.75) return 'after'
+    return 'inside'
+  }
+  return ratio < 0.5 ? 'before' : 'after'
+}
+
 interface DndProviderProps {
   children: ReactNode
 }
@@ -62,6 +101,7 @@ export const DndProvider: FC<DndProviderProps> = ({ children }) => {
 
   // Drag state
   const [activeItem, setActiveItem] = useState<DragItem | null>(null)
+  const [dropIndicator, setDropIndicator] = useState<DropIndicator | null>(null)
 
   // Configure sensors with activation constraints
   const sensors = useSensors(
@@ -75,6 +115,9 @@ export const DndProvider: FC<DndProviderProps> = ({ children }) => {
         delay: 250,
         tolerance: 5
       }
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates
     })
   )
 
@@ -87,10 +130,38 @@ export const DndProvider: FC<DndProviderProps> = ({ children }) => {
     }
   }
 
+  const handleDragOver = (event: DragOverEvent): void => {
+    const { active, over } = event
+
+    if (!over) {
+      setDropIndicator(null)
+      return
+    }
+
+    const dropTarget = over.data.current as DropTarget | undefined
+    const overItem = over.data.current as DragItem | undefined
+
+    // Special droppables (space tabs, root drop zone) have no reorder indicator
+    if (!overItem || dropTarget?.type === 'space' || over.id === 'folder-drop-root') {
+      setDropIndicator(null)
+      return
+    }
+
+    // Don't show an indicator on the item being dragged itself
+    if (overItem.id === (active.data.current as DragItem)?.id) {
+      setDropIndicator(null)
+      return
+    }
+
+    const zone = computeZone(active, over, overItem.type)
+    setDropIndicator({ overId: String(over.id), zone })
+  }
+
   const handleDragEnd = (event: DragEndEvent): void => {
     const { active, over } = event
 
     setActiveItem(null)
+    setDropIndicator(null)
 
     if (!over || !activeSpaceId) return
 
@@ -99,14 +170,37 @@ export const DndProvider: FC<DndProviderProps> = ({ children }) => {
 
     if (!draggedItem || !dropTarget) return
 
-    // Handle drop based on target type
+    // Cross-space move (dropped on a space tab)
     if (dropTarget.type === 'space') {
-      // Cross-space move
       handleCrossSpaceDrop(draggedItem, dropTarget)
-    } else if (dropTarget.type === 'folder') {
-      // Within-space move
-      handleWithinSpaceDrop(draggedItem, dropTarget)
+      return
     }
+
+    // Move to root level (dedicated drop zone)
+    if (over.id === 'folder-drop-root') {
+      handleMoveInto(draggedItem, 'root')
+      return
+    }
+
+    // Otherwise we dropped over another tree item (sortable)
+    const overItem = over.data.current as DragItem
+    if (!overItem) return
+
+    // Dropped on itself: nothing to do
+    if (overItem.id === draggedItem.id) return
+
+    const zone = computeZone(active, over, overItem.type)
+
+    // Nest inside a folder (drop on the middle band of a folder row)
+    if (zone === 'inside' && overItem.type === 'folder') {
+      if (overItem.id === draggedItem.id) return
+      handleMoveInto(draggedItem, overItem.id)
+      return
+    }
+
+    // Reorder (before/after the hovered item) within its container
+    const containerId = overItem.folderId
+    handleReorder(draggedItem, overItem, zone, containerId)
   }
 
   const handleCrossSpaceDrop = (draggedItem: DragItem, dropTarget: DropTarget): void => {
@@ -158,62 +252,123 @@ export const DndProvider: FC<DndProviderProps> = ({ children }) => {
     }
   }
 
-  const handleWithinSpaceDrop = (draggedItem: DragItem, dropTarget: DropTarget): void => {
-    if (!activeSpaceId || !dropTarget.folderId) return
+  // Move an item INTO a folder (append). Preserves the original move-into gesture.
+  const handleMoveInto = (draggedItem: DragItem, targetFolderId: string): void => {
+    if (!activeSpaceId) return
+    if (draggedItem.folderId === targetFolderId) return // already there
 
     if (draggedItem.type === 'note') {
-      // Move note within space
-      if (draggedItem.folderId !== dropTarget.folderId) {
-        dispatch(
-          moveNote({
-            spaceId: activeSpaceId,
-            noteId: draggedItem.id,
-            sourceFolderId: draggedItem.folderId,
-            targetFolderId: dropTarget.folderId
-          })
-        )
-          .unwrap()
-          .then(() => {
-            toast.success('Note moved successfully')
-          })
-          .catch((error) => {
-            toast.error((error as Error).message || 'Failed to move note')
-          })
+      dispatch(
+        moveNote({
+          spaceId: activeSpaceId,
+          noteId: draggedItem.id,
+          sourceFolderId: draggedItem.folderId,
+          targetFolderId
+        })
+      )
+        .unwrap()
+        .then(() => toast.success('Note moved successfully'))
+        .catch((error) => toast.error((error as Error).message || 'Failed to move note'))
+    } else {
+      if (draggedItem.id === targetFolderId) {
+        toast.error('Cannot move folder into itself')
+        return
       }
-    } else if (draggedItem.type === 'folder') {
-      // Move folder within space
-      if (draggedItem.folderId !== dropTarget.folderId) {
-        // Validate not dropping into itself
-        if (draggedItem.id === dropTarget.folderId) {
-          toast.error('Cannot move folder into itself')
-          return
-        }
+      dispatch(
+        moveFolder({
+          spaceId: activeSpaceId,
+          folderId: draggedItem.id,
+          currentParentId: draggedItem.folderId,
+          targetParentId: targetFolderId
+        })
+      )
+        .unwrap()
+        .then(() => toast.success('Folder moved successfully'))
+        .catch((error) => toast.error((error as Error).message || 'Failed to move folder'))
+    }
+  }
 
-        dispatch(
-          moveFolder({
-            spaceId: activeSpaceId,
-            folderId: draggedItem.id,
-            currentParentId: draggedItem.folderId,
-            targetParentId: dropTarget.folderId
-          })
-        )
-          .unwrap()
-          .then(() => {
-            toast.success('Folder moved successfully')
-          })
-          .catch((error) => {
-            toast.error((error as Error).message || 'Failed to move folder')
-          })
+  // Reorder within a container, or move into a different container at a position.
+  const handleReorder = (
+    draggedItem: DragItem,
+    overItem: DragItem,
+    zone: DropZone,
+    containerId: string
+  ): void => {
+    if (!activeSpaceId) return
+
+    const state = store.getState()
+    const list = selectOrderedItems(containerId)(state)
+    const overIndex = list.findIndex((item) => item.id === overItem.id)
+    if (overIndex === -1) return
+
+    if (draggedItem.folderId === containerId) {
+      // Same container: pure reorder
+      const without = list.filter((item) => item.id !== draggedItem.id)
+      const overIndexWithout = without.findIndex((item) => item.id === overItem.id)
+      const target = zone === 'before' ? overIndexWithout : overIndexWithout + 1
+      const moved: OrderedItem = { type: draggedItem.type, id: draggedItem.id }
+      const newOrder = [...without.slice(0, target), moved, ...without.slice(target)]
+
+      // No-op if order is unchanged
+      if (newOrder.every((item, idx) => item.id === list[idx]?.id)) return
+
+      dispatch(
+        reorderItems({
+          spaceId: activeSpaceId,
+          parentFolderId: containerId,
+          orderedItems: newOrder,
+          previousItems: list
+        })
+      )
+        .unwrap()
+        .catch((error) => toast.error((error as Error).message || 'Failed to reorder items'))
+      return
+    }
+
+    // Different container: move into it at the computed index
+    const targetIndex = zone === 'before' ? overIndex : overIndex + 1
+
+    if (draggedItem.type === 'note') {
+      dispatch(
+        moveNote({
+          spaceId: activeSpaceId,
+          noteId: draggedItem.id,
+          sourceFolderId: draggedItem.folderId,
+          targetFolderId: containerId,
+          targetIndex
+        })
+      )
+        .unwrap()
+        .then(() => toast.success('Note moved successfully'))
+        .catch((error) => toast.error((error as Error).message || 'Failed to move note'))
+    } else {
+      if (draggedItem.id === containerId) {
+        toast.error('Cannot move folder into itself')
+        return
       }
+      dispatch(
+        moveFolder({
+          spaceId: activeSpaceId,
+          folderId: draggedItem.id,
+          currentParentId: draggedItem.folderId,
+          targetParentId: containerId,
+          targetIndex
+        })
+      )
+        .unwrap()
+        .then(() => toast.success('Folder moved successfully'))
+        .catch((error) => toast.error((error as Error).message || 'Failed to move folder'))
     }
   }
 
   return (
-    <DndStateContext.Provider value={{ activeItem }}>
+    <DndStateContext.Provider value={{ activeItem, dropIndicator }}>
       <DndContext
         sensors={sensors}
         collisionDetection={closestCorners}
         onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
       >
         {children}

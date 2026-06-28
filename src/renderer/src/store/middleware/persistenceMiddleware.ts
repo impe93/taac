@@ -48,6 +48,7 @@ const PERSISTABLE_TREE_CACHE_ACTIONS = [
   'notesTree/deleteFolder/fulfilled',
   'notesTree/moveNote/fulfilled',
   'notesTree/moveFolder/fulfilled',
+  'notesTree/reorderItems/fulfilled',
   'notesTree/hydrateAllSpacesFromCache'
 ] as const
 

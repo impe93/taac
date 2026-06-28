@@ -47,6 +47,12 @@ export interface ActionItem {
   completed: boolean
 }
 
+// Single ordered entry mixing notes and subfolders within a folder.
+export interface OrderedItem {
+  type: 'note' | 'folder'
+  id: string
+}
+
 export interface FolderMetadata {
   id: string
   name: string
@@ -55,6 +61,54 @@ export interface FolderMetadata {
   createdAt: string
   updatedAt: string
   noteIds: string[]
+  // Canonical interleaved order of children (notes + subfolders).
+  // Kept consistent with `noteIds`/`children` via `reconcileItems`.
+  items: OrderedItem[]
+}
+
+/**
+ * Derive the canonical interleaved order for a folder.
+ *
+ * Keeps the existing `items` order for ids still present, drops stale ids, and
+ * appends new ids (notes first in `noteIds` order, then folders in `children`
+ * order). When `items` is missing/empty the result is "notes then folders",
+ * i.e. the legacy display order — so existing data needs no explicit migration.
+ */
+export function reconcileItems(folder: {
+  items?: OrderedItem[]
+  noteIds: string[]
+  children: string[]
+}): OrderedItem[] {
+  const noteSet = new Set(folder.noteIds)
+  const childSet = new Set(folder.children)
+  const seen = new Set<string>()
+  const result: OrderedItem[] = []
+
+  for (const item of folder.items ?? []) {
+    const present =
+      (item.type === 'note' && noteSet.has(item.id)) ||
+      (item.type === 'folder' && childSet.has(item.id))
+    if (present && !seen.has(item.id)) {
+      result.push({ type: item.type, id: item.id })
+      seen.add(item.id)
+    }
+  }
+
+  for (const id of folder.noteIds) {
+    if (!seen.has(id)) {
+      result.push({ type: 'note', id })
+      seen.add(id)
+    }
+  }
+
+  for (const id of folder.children) {
+    if (!seen.has(id)) {
+      result.push({ type: 'folder', id })
+      seen.add(id)
+    }
+  }
+
+  return result
 }
 
 export interface Asset {
@@ -170,7 +224,8 @@ export class FileSystemManager {
         children: [],
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        noteIds: []
+        noteIds: [],
+        items: []
       }
       await fs.writeFile(rootMetaPath, JSON.stringify(rootMeta, null, 2), 'utf-8')
     }
@@ -287,7 +342,8 @@ export class FileSystemManager {
       children: [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      noteIds: []
+      noteIds: [],
+      items: []
     }
 
     const folderPath = join(this.getBasePath('notes'), folderId)
@@ -326,7 +382,10 @@ export class FileSystemManager {
     )
 
     const data = await fs.readFile(metaPath, 'utf-8')
-    return JSON.parse(data) as FolderMetadata
+    const meta = JSON.parse(data) as FolderMetadata
+    // Backfill/realign the interleaved order (lazy migration for legacy data).
+    meta.items = reconcileItems(meta)
+    return meta
   }
 
   async updateFolderMetadata(
@@ -339,6 +398,11 @@ export class FileSystemManager {
       ...updates,
       updatedAt: new Date().toISOString()
     }
+
+    // Keep the interleaved order consistent with noteIds/children. Callers that
+    // pass `items` (reorder) keep their order; callers that only touch
+    // noteIds/children (create/move/delete) get new ids appended automatically.
+    updated.items = reconcileItems(updated)
 
     const metaPath = this.validatePath(
       join(this.getBasePath('notes'), folderId, 'metadata.json'),
@@ -381,7 +445,12 @@ export class FileSystemManager {
   }
 
   // Move operations
-  async moveNote(noteId: string, sourceFolderId: string, targetFolderId: string): Promise<Note> {
+  async moveNote(
+    noteId: string,
+    sourceFolderId: string,
+    targetFolderId: string,
+    targetIndex?: number
+  ): Promise<Note> {
     // 1. VALIDATION
     if (sourceFolderId === targetFolderId) {
       throw new Error('Source and target folders are the same')
@@ -425,6 +494,11 @@ export class FileSystemManager {
       // 7. UPDATE TARGET FOLDER METADATA (add noteId)
       await this.addNoteToFolder(targetFolderId, noteId)
 
+      // 8. OPTIONAL: position the note at a specific index in the target order
+      if (typeof targetIndex === 'number') {
+        await this.setItemPosition(targetFolderId, { type: 'note', id: noteId }, targetIndex)
+      }
+
       return updatedNote
     } catch (error) {
       // ROLLBACK: If any step fails, attempt to restore
@@ -440,7 +514,11 @@ export class FileSystemManager {
     }
   }
 
-  async moveFolder(folderId: string, targetParentId: string): Promise<FolderMetadata> {
+  async moveFolder(
+    folderId: string,
+    targetParentId: string,
+    targetIndex?: number
+  ): Promise<FolderMetadata> {
     // 1. VALIDATION
     if (folderId === 'root') {
       throw new Error('Cannot move root folder')
@@ -484,6 +562,11 @@ export class FileSystemManager {
       // 7. UPDATE NEW PARENT (add to children)
       await this.addChildToFolder(targetParentId, folderId)
 
+      // 8. OPTIONAL: position the folder at a specific index in the target order
+      if (typeof targetIndex === 'number') {
+        await this.setItemPosition(targetParentId, { type: 'folder', id: folderId }, targetIndex)
+      }
+
       return updatedFolder
     } catch (error) {
       // ROLLBACK: Restore original metadata
@@ -505,6 +588,38 @@ export class FileSystemManager {
 
       throw new Error(`Failed to move folder: ${(error as Error).message}`)
     }
+  }
+
+  /**
+   * Reorder the interleaved children (notes + subfolders) of a folder.
+   * `orderedItems` must contain exactly the folder's current members.
+   * Only the order changes; membership is unaffected.
+   */
+  async reorderItems(parentFolderId: string, orderedItems: OrderedItem[]): Promise<FolderMetadata> {
+    const meta = await this.readFolderMetadata(parentFolderId)
+
+    const currentIds = new Set<string>([...meta.noteIds, ...meta.children])
+    const providedIds = new Set(orderedItems.map((item) => item.id))
+
+    if (
+      currentIds.size !== providedIds.size ||
+      ![...currentIds].every((id) => providedIds.has(id))
+    ) {
+      throw new Error('Cannot reorder: provided items do not match the folder contents')
+    }
+
+    return this.updateFolderMetadata(parentFolderId, { items: orderedItems })
+  }
+
+  /**
+   * Move a single entry to a specific index within a folder's interleaved order.
+   */
+  private async setItemPosition(folderId: string, item: OrderedItem, index: number): Promise<void> {
+    const meta = await this.readFolderMetadata(folderId)
+    const items = meta.items.filter((existing) => existing.id !== item.id)
+    const clampedIndex = Math.max(0, Math.min(index, items.length))
+    items.splice(clampedIndex, 0, item)
+    await this.updateFolderMetadata(folderId, { items })
   }
 
   private async validateNoCircularDependency(

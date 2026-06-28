@@ -1,5 +1,25 @@
 import { createSlice, createAsyncThunk, type PayloadAction } from '@reduxjs/toolkit'
-import type { Note, FolderMetadata } from '@preload/types'
+import type { Note, FolderMetadata, OrderedItem } from '@preload/types'
+import { reconcileItems } from '@renderer/lib/treeOrder'
+
+// ----------------------------------------------------------------------------
+// Helpers per mantenere `folder.items` (ordine interlacciato) negli optimistic
+// update. Speculari al backend; il rendering usa comunque reconcileItems.
+// ----------------------------------------------------------------------------
+
+function insertOrderedItem(folder: FolderMetadata, item: OrderedItem, index?: number): void {
+  const items = (folder.items ?? []).filter((existing) => existing.id !== item.id)
+  if (typeof index === 'number') {
+    items.splice(Math.max(0, Math.min(index, items.length)), 0, item)
+  } else {
+    items.push(item)
+  }
+  folder.items = items
+}
+
+function removeOrderedItem(folder: FolderMetadata, id: string): void {
+  folder.items = (folder.items ?? []).filter((existing) => existing.id !== id)
+}
 
 // ============================================================================
 // STATE INTERFACE
@@ -182,7 +202,7 @@ export const deleteFolder = createAsyncThunk(
   }
 )
 
-// Sposta nota tra cartelle
+// Sposta nota tra cartelle (targetIndex opzionale = drop posizionale)
 export const moveNote = createAsyncThunk(
   'notesTree/moveNote',
   async (payload: {
@@ -190,21 +210,23 @@ export const moveNote = createAsyncThunk(
     noteId: string
     sourceFolderId: string
     targetFolderId: string
+    targetIndex?: number
   }) => {
-    const { spaceId, noteId, sourceFolderId, targetFolderId } = payload
+    const { spaceId, noteId, sourceFolderId, targetFolderId, targetIndex } = payload
 
     const updatedNote = await window.fileSystem.moveNote(
       spaceId,
       noteId,
       sourceFolderId,
-      targetFolderId
+      targetFolderId,
+      targetIndex
     )
 
     return { spaceId, noteId, sourceFolderId, targetFolderId, updatedNote }
   }
 )
 
-// Sposta cartella
+// Sposta cartella (targetIndex opzionale = drop posizionale)
 export const moveFolder = createAsyncThunk(
   'notesTree/moveFolder',
   async (payload: {
@@ -212,12 +234,40 @@ export const moveFolder = createAsyncThunk(
     folderId: string
     currentParentId: string | null
     targetParentId: string
+    targetIndex?: number
   }) => {
-    const { spaceId, folderId, currentParentId, targetParentId } = payload
+    const { spaceId, folderId, currentParentId, targetParentId, targetIndex } = payload
 
-    const updatedFolder = await window.fileSystem.moveFolder(spaceId, folderId, targetParentId)
+    const updatedFolder = await window.fileSystem.moveFolder(
+      spaceId,
+      folderId,
+      targetParentId,
+      targetIndex
+    )
 
     return { spaceId, folderId, currentParentId, targetParentId, updatedFolder }
+  }
+)
+
+// Riordina gli elementi (note + sottocartelle) dentro una cartella.
+// `previousItems` serve solo al rollback in caso di errore IPC.
+export const reorderItems = createAsyncThunk(
+  'notesTree/reorderItems',
+  async (payload: {
+    spaceId: string
+    parentFolderId: string
+    orderedItems: OrderedItem[]
+    previousItems: OrderedItem[]
+  }) => {
+    const { spaceId, parentFolderId, orderedItems } = payload
+
+    const updatedFolder = await window.fileSystem.reorderItems(
+      spaceId,
+      parentFolderId,
+      orderedItems
+    )
+
+    return { spaceId, parentFolderId, updatedFolder }
   }
 )
 
@@ -637,6 +687,7 @@ const notesTreeSlice = createSlice({
           space.folders[sourceFolderId].noteIds = space.folders[sourceFolderId].noteIds.filter(
             (id) => id !== noteId
           )
+          removeOrderedItem(space.folders[sourceFolderId], noteId)
         }
 
         // Add to target folder
@@ -644,6 +695,12 @@ const notesTreeSlice = createSlice({
           if (!space.folders[targetFolderId].noteIds.includes(noteId)) {
             space.folders[targetFolderId].noteIds.push(noteId)
           }
+          // Posiziona nell'ordine interlacciato (in coda se targetIndex assente)
+          insertOrderedItem(
+            space.folders[targetFolderId],
+            { type: 'note', id: noteId },
+            action.meta.arg.targetIndex
+          )
         }
 
         // Update selection if moved note is selected
@@ -678,6 +735,7 @@ const notesTreeSlice = createSlice({
           space.folders[targetFolderId].noteIds = space.folders[targetFolderId].noteIds.filter(
             (id) => id !== noteId
           )
+          removeOrderedItem(space.folders[targetFolderId], noteId)
         }
 
         // Re-add to source folder
@@ -686,6 +744,7 @@ const notesTreeSlice = createSlice({
           !space.folders[sourceFolderId].noteIds.includes(noteId)
         ) {
           space.folders[sourceFolderId].noteIds.push(noteId)
+          insertOrderedItem(space.folders[sourceFolderId], { type: 'note', id: noteId })
         }
 
         // Restore selection
@@ -717,14 +776,20 @@ const notesTreeSlice = createSlice({
           space.folders[currentParentId].children = space.folders[currentParentId].children.filter(
             (id) => id !== folderId
           )
+          removeOrderedItem(space.folders[currentParentId], folderId)
         }
 
         // Add to target parent's children
-        if (
-          space.folders[targetParentId] &&
-          !space.folders[targetParentId].children.includes(folderId)
-        ) {
-          space.folders[targetParentId].children.push(folderId)
+        if (space.folders[targetParentId]) {
+          if (!space.folders[targetParentId].children.includes(folderId)) {
+            space.folders[targetParentId].children.push(folderId)
+          }
+          // Posiziona nell'ordine interlacciato (in coda se targetIndex assente)
+          insertOrderedItem(
+            space.folders[targetParentId],
+            { type: 'folder', id: folderId },
+            action.meta.arg.targetIndex
+          )
         }
 
         // Auto-expand target parent
@@ -759,6 +824,7 @@ const notesTreeSlice = createSlice({
           space.folders[targetParentId].children = space.folders[targetParentId].children.filter(
             (id) => id !== folderId
           )
+          removeOrderedItem(space.folders[targetParentId], folderId)
         }
 
         // Re-add to current parent's children
@@ -768,10 +834,41 @@ const notesTreeSlice = createSlice({
           !space.folders[currentParentId].children.includes(folderId)
         ) {
           space.folders[currentParentId].children.push(folderId)
+          insertOrderedItem(space.folders[currentParentId], { type: 'folder', id: folderId })
         }
 
         // Set error message
         state.error = action.error.message || 'Failed to move folder'
+      })
+
+    // REORDER ITEMS - Optimistic update (riordino interlacciato in una cartella)
+    builder
+      .addCase(reorderItems.pending, (state, action) => {
+        const { spaceId, parentFolderId, orderedItems } = action.meta.arg
+
+        if (!state.spaces[spaceId]) return
+        const folder = state.spaces[spaceId].folders[parentFolderId]
+        if (!folder) return
+
+        folder.items = orderedItems
+      })
+      .addCase(reorderItems.fulfilled, (state, action) => {
+        const { spaceId, updatedFolder } = action.payload
+
+        if (!state.spaces[spaceId]) return
+        state.spaces[spaceId].folders[updatedFolder.id] = updatedFolder
+      })
+      .addCase(reorderItems.rejected, (state, action) => {
+        const { spaceId, parentFolderId, previousItems } = action.meta.arg
+
+        if (!state.spaces[spaceId]) return
+        const folder = state.spaces[spaceId].folders[parentFolderId]
+        if (folder) {
+          // ROLLBACK all'ordine precedente
+          folder.items = previousItems
+        }
+
+        state.error = action.error.message || 'Failed to reorder items'
       })
 
     // MOVE NOTE TO SPACE - Cross-space move
@@ -992,6 +1089,21 @@ export const selectNotesInFolder =
     if (!folder) return []
 
     return folder.noteIds.map((id) => activeSpace.notes[id]).filter(Boolean)
+  }
+
+// Ordine interlacciato (note + sottocartelle) di una cartella dello spazio attivo.
+// Riconcilia `items` con `noteIds`/`children`: i nuovi id vengono accodati,
+// quelli rimossi scartati, l'ordine personalizzato preservato.
+export const selectOrderedItems =
+  (folderId: string) =>
+  (state: { notesTree: NotesTreeState }): OrderedItem[] => {
+    const activeSpace = selectActiveSpaceState(state)
+    if (!activeSpace) return []
+
+    const folder = activeSpace.folders[folderId]
+    if (!folder) return []
+
+    return reconcileItems(folder)
   }
 
 // Cartelle espanse dello spazio attivo

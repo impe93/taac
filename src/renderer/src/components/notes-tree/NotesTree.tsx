@@ -2,12 +2,15 @@ import { type FC, useState } from 'react'
 import { useAppDispatch, useAppSelector } from '@renderer/store/hooks'
 import {
   selectRootFolder,
+  selectOrderedItems,
   selectIsLoading,
   selectError,
   selectIsFullyHydrated,
   selectActiveSpaceId,
   loadTree
 } from '@renderer/store/slices/notesTreeSlice'
+import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import { orderedItemDndId } from '@renderer/lib/treeOrder'
 import { TreeFolder } from './TreeFolder'
 import { TreeNote } from './TreeNote'
 import { EmptyTreeArea } from './EmptyTreeArea'
@@ -21,6 +24,7 @@ import { Button } from '@renderer/components/ui/button'
 export const NotesTree: FC = () => {
   const dispatch = useAppDispatch()
   const rootFolder = useAppSelector(selectRootFolder)
+  const rootItems = useAppSelector(selectOrderedItems('root'))
   const isLoading = useAppSelector(selectIsLoading)
   const error = useAppSelector(selectError)
   const isFullyHydrated = useAppSelector(selectIsFullyHydrated)
@@ -143,30 +147,34 @@ export const NotesTree: FC = () => {
           onCreateFolder={() => handleCreateFolder('root')}
         >
           <div className="p-2 space-y-1">
-            {/* Note root level */}
-            {rootFolder.noteIds.map((noteId) => (
-              <TreeNote
-                key={noteId}
-                noteId={noteId}
-                folderId="root"
-                level={0}
-                onDelete={handleDeleteNote}
-              />
-            ))}
-
-            {/* Cartelle root level */}
-            {rootFolder.children.map((childId) => (
-              <TreeFolder
-                key={childId}
-                folderId={childId}
-                level={0}
-                onCreateNote={handleCreateNote}
-                onCreateFolder={handleCreateFolder}
-                onRenameFolder={handleRenameFolder}
-                onDeleteFolder={handleDeleteFolder}
-                onDeleteNote={handleDeleteNote}
-              />
-            ))}
+            {/* Note e cartelle root, interlacciate nell'ordine personalizzato */}
+            <SortableContext
+              items={rootItems.map(orderedItemDndId)}
+              strategy={verticalListSortingStrategy}
+            >
+              {rootItems.map((item) =>
+                item.type === 'note' ? (
+                  <TreeNote
+                    key={item.id}
+                    noteId={item.id}
+                    folderId="root"
+                    level={0}
+                    onDelete={handleDeleteNote}
+                  />
+                ) : (
+                  <TreeFolder
+                    key={item.id}
+                    folderId={item.id}
+                    level={0}
+                    onCreateNote={handleCreateNote}
+                    onCreateFolder={handleCreateFolder}
+                    onRenameFolder={handleRenameFolder}
+                    onDeleteFolder={handleDeleteFolder}
+                    onDeleteNote={handleDeleteNote}
+                  />
+                )
+              )}
+            </SortableContext>
           </div>
           <RootDropZone />
         </EmptyTreeArea>

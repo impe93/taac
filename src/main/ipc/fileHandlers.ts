@@ -1,5 +1,5 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
-import type { FileSystemManager, Note, FolderMetadata } from '../utils/fileSystem'
+import type { FileSystemManager, Note, FolderMetadata, OrderedItem } from '../utils/fileSystem'
 import type { SerializedEditorState } from 'lexical'
 
 type GetFsManager = (spaceId: string) => FileSystemManager
@@ -200,11 +200,17 @@ export function registerFileHandlers(
       spaceId: string,
       noteId: string,
       sourceFolderId: string,
-      targetFolderId: string
+      targetFolderId: string,
+      targetIndex?: number
     ) => {
       try {
         const fsManager = getOrCreateFsManager(spaceId)
-        const movedNote = await fsManager.moveNote(noteId, sourceFolderId, targetFolderId)
+        const movedNote = await fsManager.moveNote(
+          noteId,
+          sourceFolderId,
+          targetFolderId,
+          targetIndex
+        )
 
         // Re-index with the updated folder path (non-blocking)
         let folderPath: string | undefined
@@ -235,11 +241,12 @@ export function registerFileHandlers(
       _event: IpcMainInvokeEvent,
       spaceId: string,
       folderId: string,
-      targetParentId: string
+      targetParentId: string,
+      targetIndex?: number
     ) => {
       try {
         const fsManager = getOrCreateFsManager(spaceId)
-        const result = await fsManager.moveFolder(folderId, targetParentId)
+        const result = await fsManager.moveFolder(folderId, targetParentId, targetIndex)
 
         // Re-index all notes in the moved subtree with updated folder paths (non-blocking)
         onFolderMoved?.(spaceId, folderId).catch(console.error)
@@ -247,6 +254,25 @@ export function registerFileHandlers(
         return result
       } catch (error) {
         throw new Error(`Failed to move folder: ${(error as Error).message}`)
+      }
+    }
+  )
+
+  // Reorder the interleaved children (notes + subfolders) of a folder.
+  // Order-only: no note files move on disk, so no re-indexing is required.
+  ipcMain.handle(
+    'fs:reorderItems',
+    async (
+      _event: IpcMainInvokeEvent,
+      spaceId: string,
+      parentFolderId: string,
+      orderedItems: OrderedItem[]
+    ) => {
+      try {
+        const fsManager = getOrCreateFsManager(spaceId)
+        return await fsManager.reorderItems(parentFolderId, orderedItems)
+      } catch (error) {
+        throw new Error(`Failed to reorder items: ${(error as Error).message}`)
       }
     }
   )

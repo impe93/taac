@@ -41,6 +41,12 @@ export interface ActionItem {
   completed: boolean
 }
 
+// Single ordered entry mixing notes and subfolders within a folder.
+export interface OrderedItem {
+  type: 'note' | 'folder'
+  id: string
+}
+
 export interface FolderMetadata {
   id: string
   name: string
@@ -49,6 +55,9 @@ export interface FolderMetadata {
   createdAt: string
   updatedAt: string
   noteIds: string[]
+  // Canonical interleaved order of children (notes + subfolders).
+  // Kept consistent with `noteIds`/`children` via `reconcileItems`.
+  items: OrderedItem[]
 }
 
 export interface Asset {

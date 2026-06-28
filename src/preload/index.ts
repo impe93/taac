@@ -40,11 +40,21 @@ const fileSystemAPI = {
   getFolderTree: (spaceId: string) => ipcRenderer.invoke('fs:getFolderTree', spaceId),
 
   // Move operations
-  moveNote: (spaceId: string, noteId: string, sourceFolderId: string, targetFolderId: string) =>
-    ipcRenderer.invoke('fs:moveNote', spaceId, noteId, sourceFolderId, targetFolderId),
+  moveNote: (
+    spaceId: string,
+    noteId: string,
+    sourceFolderId: string,
+    targetFolderId: string,
+    targetIndex?: number
+  ) =>
+    ipcRenderer.invoke('fs:moveNote', spaceId, noteId, sourceFolderId, targetFolderId, targetIndex),
 
-  moveFolder: (spaceId: string, folderId: string, targetParentId: string) =>
-    ipcRenderer.invoke('fs:moveFolder', spaceId, folderId, targetParentId),
+  moveFolder: (spaceId: string, folderId: string, targetParentId: string, targetIndex?: number) =>
+    ipcRenderer.invoke('fs:moveFolder', spaceId, folderId, targetParentId, targetIndex),
+
+  // Reorder interleaved children (notes + subfolders) of a folder
+  reorderItems: (spaceId: string, parentFolderId: string, orderedItems: unknown) =>
+    ipcRenderer.invoke('fs:reorderItems', spaceId, parentFolderId, orderedItems),
 
   // Cross-space move operations
   moveNoteToSpace: (

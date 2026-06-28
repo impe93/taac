@@ -6,11 +6,13 @@ import {
   selectNote,
   selectSelectedNote
 } from '@renderer/store/slices/notesTreeSlice'
-import { useDraggable } from '@dnd-kit/core'
+import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { FileText, Mic } from 'lucide-react'
 import { cn } from '@renderer/lib/utils'
 import { NoteContextMenu } from './NoteContextMenu'
+import { DropIndicator } from './DropIndicator'
+import { useDndState } from '@renderer/components/dnd/DndProvider'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip'
 
 interface TreeNoteProps {
@@ -25,11 +27,13 @@ export const TreeNote: FC<TreeNoteProps> = ({ noteId, folderId, level, onDelete 
   const navigate = useNavigate()
   const note = useAppSelector(selectNoteById(noteId))
   const { noteId: selectedNoteId } = useAppSelector(selectSelectedNote)
+  const { dropIndicator } = useDndState()
 
   // HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
-  // Setup draggable
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id: `note-${noteId}`,
+  // Setup sortable (draggable + droppable for reordering)
+  const dndId = `note-${noteId}`
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: dndId,
     data: {
       type: 'note',
       id: noteId,
@@ -51,10 +55,14 @@ export const TreeNote: FC<TreeNoteProps> = ({ noteId, folderId, level, onDelete 
   const paddingLeft = level * 12 + 32
 
   const style = {
-    transform: CSS.Translate.toString(transform),
+    transform: CSS.Transform.toString(transform),
+    transition,
     opacity: isDragging ? 0.5 : 1,
     paddingLeft: `${paddingLeft}px`
   }
+
+  const showTop = dropIndicator?.overId === dndId && dropIndicator.zone === 'before'
+  const showBottom = dropIndicator?.overId === dndId && dropIndicator.zone === 'after'
 
   return (
     <NoteContextMenu
@@ -70,10 +78,12 @@ export const TreeNote: FC<TreeNoteProps> = ({ noteId, folderId, level, onDelete 
         {...listeners}
         onClick={handleClick}
         className={cn(
-          'w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm transition-colors min-w-0',
+          'relative w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm transition-colors min-w-0',
           isSelected ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
         )}
       >
+        {showTop && <DropIndicator position="top" />}
+        {showBottom && <DropIndicator position="bottom" />}
         {note.type === 'meeting' ? (
           <Mic className="size-4 text-muted-foreground shrink-0" />
         ) : (

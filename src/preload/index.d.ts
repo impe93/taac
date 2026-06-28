@@ -2,6 +2,7 @@ import { ElectronAPI } from '@electron-toolkit/preload'
 import type {
   Note,
   FolderMetadata,
+  OrderedItem,
   Asset,
   AppConfig,
   Space,
@@ -32,7 +33,7 @@ import type {
 } from '../main/import/types'
 
 // Re-export types from types.ts for convenience
-export type { Note, FolderMetadata, Asset, AppConfig, Space, MoveFolderToSpaceResult }
+export type { Note, FolderMetadata, OrderedItem, Asset, AppConfig, Space, MoveFolderToSpaceResult }
 
 // Re-export AI types for convenience
 export type {
@@ -111,9 +112,22 @@ export interface FileSystemAPI {
     spaceId: string,
     noteId: string,
     sourceFolderId: string,
-    targetFolderId: string
+    targetFolderId: string,
+    targetIndex?: number
   ) => Promise<Note>
-  moveFolder: (spaceId: string, folderId: string, targetParentId: string) => Promise<FolderMetadata>
+  moveFolder: (
+    spaceId: string,
+    folderId: string,
+    targetParentId: string,
+    targetIndex?: number
+  ) => Promise<FolderMetadata>
+
+  // Reorder interleaved children (notes + subfolders) of a folder
+  reorderItems: (
+    spaceId: string,
+    parentFolderId: string,
+    orderedItems: OrderedItem[]
+  ) => Promise<FolderMetadata>
 
   // Cross-space move operations
   moveNoteToSpace: (
