@@ -21,6 +21,8 @@ export interface AppConfig {
   // AI Chat Panel state
   aiChatPanelOpen: boolean
   aiChatPanelSize: number
+  // Sidebar (folder structure) width in pixels
+  sidebarWidth: number
   // Editor mode preference
   editorMode: 'wysiwyg' | 'source'
   // Redux persistence (new multi-space structure)
@@ -130,6 +132,12 @@ const schema = {
     minimum: 20,
     maximum: 50,
     default: 35
+  },
+  sidebarWidth: {
+    type: 'number',
+    minimum: 220,
+    maximum: 400,
+    default: 256
   },
   editorMode: {
     type: 'string',

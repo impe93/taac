@@ -4,6 +4,7 @@ import { ThemeProvider } from 'next-themes'
 import { Toaster } from './ui/sonner'
 import React, { useEffect } from 'react'
 import { SidebarProvider } from './ui/sidebar'
+import { useSidebarWidth } from '@renderer/hooks/useSidebarWidth'
 import { Provider as ReduxProvider } from 'react-redux'
 import { store } from '@renderer/store'
 import { useAppDispatch } from '@renderer/store/hooks'
@@ -193,15 +194,31 @@ function ReduxInitializer({ children }: { children: React.ReactNode }): React.Re
   return <>{children}</>
 }
 
+// Wraps the Shadcn SidebarProvider with width persisted to electron-store.
+// Must live inside QueryClientProvider because useSidebarWidth uses TanStack Query.
+function PersistentSidebarProvider({
+  children
+}: {
+  children: React.ReactNode
+}): React.ReactElement {
+  const { width, setWidth } = useSidebarWidth()
+
+  return (
+    <SidebarProvider defaultWidth={width} onWidthChange={setWidth}>
+      {children}
+    </SidebarProvider>
+  )
+}
+
 export function Providers({ children }: { children: React.ReactNode }): React.ReactElement {
   return (
     <ReduxProvider store={store}>
       <ReduxInitializer>
         <QueryClientProvider client={queryClient}>
           <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-            <SidebarProvider>
+            <PersistentSidebarProvider>
               <MeetingLifecycleProvider>{children}</MeetingLifecycleProvider>
-            </SidebarProvider>
+            </PersistentSidebarProvider>
             <Toaster
               toastOptions={{
                 classNames: {

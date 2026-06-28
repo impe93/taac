@@ -116,6 +116,8 @@ export interface AppConfig {
   // AI Chat Panel state
   aiChatPanelOpen: boolean
   aiChatPanelSize: number
+  // Sidebar (folder structure) width in pixels
+  sidebarWidth: number
   // Editor mode preference
   editorMode: 'wysiwyg' | 'source'
   // Redux persistence (new multi-space structure)
