@@ -3,75 +3,123 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Typography — bundled locally via @fontsource (imported in __root.tsx) */
+@theme {
+  --font-sans: 'Hanken Grotesk Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-serif: 'Instrument Serif', ui-serif, Georgia, Cambria, 'Times New Roman', serif;
+  --font-mono:
+    'JetBrains Mono Variable', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+/* ===========================================================================
+   LIGHT THEME — warm cream / sage green ("Calm/Focused")
+   =========================================================================== */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --background: #e9e6dc;
+  --foreground: #23271f;
+  --card: #ffffff;
+  --card-foreground: #23271f;
+  --popover: #ffffff;
+  --popover-foreground: #23271f;
+  --primary: #2e7d5b;
+  --primary-foreground: #ffffff;
+  --primary-press: #266b4d;
+  --secondary: #f1eee4;
+  --secondary-foreground: #23271f;
+  --muted: #f1eee4;
+  --muted-foreground: #5f6357;
+  --accent: #f1eee4;
+  --accent-foreground: #23271f;
+  --destructive: #b4442c;
+  --destructive-foreground: #ffffff;
+  --border: #e2ddcf;
+  --input: #d2ccba;
+  --ring: #2e7d5b;
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --radius: 0.75rem;
+  --sidebar: #eeebe1;
+  --sidebar-foreground: #5f6357;
+  --sidebar-primary: #2e7d5b;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: rgba(46, 125, 91, 0.1);
+  --sidebar-accent-foreground: #23271f;
+  --sidebar-border: #e2ddcf;
+  --sidebar-ring: #2e7d5b;
+
+  /* New tokens (TaacNotes redesign) */
+  --ai: #9a7a2e;
+  --ai-foreground: #ffffff;
+  --ai-soft: rgba(154, 122, 46, 0.12);
+  --success: #2e7d5b;
+  --warning: #8c6a1f;
+  --warning-soft: rgba(140, 106, 31, 0.1);
+  --editor: #f8f6ef;
+
+  /* Toast backgrounds (text uses --foreground) */
+  --toast-success: #d6ebdf;
+  --toast-error: #f4ddd5;
+  --toast-warning: #efe6cd;
+  --toast-info: #e7e3d6;
+  --toast-loading: #e7e3d6;
 }
 
+/* ===========================================================================
+   DARK THEME — deep olive / sage green ("Calm/Focused", dark-first)
+   =========================================================================== */
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.145 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.145 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.985 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.396 0.141 25.723);
-  --destructive-foreground: oklch(0.637 0.237 25.331);
-  --border: oklch(0.269 0 0);
-  --input: oklch(0.269 0 0);
-  --ring: oklch(0.439 0 0);
+  --background: #14160f;
+  --foreground: #eef0ea;
+  --card: #1f231a;
+  --card-foreground: #eef0ea;
+  --popover: #1f231a;
+  --popover-foreground: #eef0ea;
+  --primary: #4aa473;
+  --primary-foreground: #0c160f;
+  --primary-press: #3c8a5f;
+  --secondary: #262b20;
+  --secondary-foreground: #eef0ea;
+  --muted: #262b20;
+  --muted-foreground: #a8b0a3;
+  --accent: #2d3326;
+  --accent-foreground: #eef0ea;
+  --destructive: #cf6048;
+  --destructive-foreground: #ffffff;
+  --border: #2c3125;
+  --input: #3a4031;
+  --ring: #4aa473;
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(0.269 0 0);
-  --sidebar-ring: oklch(0.439 0 0);
+  --sidebar: #191c13;
+  --sidebar-foreground: #a8b0a3;
+  --sidebar-primary: #4aa473;
+  --sidebar-primary-foreground: #0c160f;
+  --sidebar-accent: rgba(74, 164, 115, 0.15);
+  --sidebar-accent-foreground: #eef0ea;
+  --sidebar-border: #2c3125;
+  --sidebar-ring: #4aa473;
+
+  /* New tokens (TaacNotes redesign) */
+  --ai: #c9a24f;
+  --ai-foreground: #0c160f;
+  --ai-soft: rgba(201, 162, 79, 0.15);
+  --success: #4aa473;
+  --warning: #d8a85e;
+  --warning-soft: rgba(216, 168, 94, 0.13);
+  --editor: #15170f;
+
+  /* Toast backgrounds (text uses --foreground) */
+  --toast-success: #1e3a2b;
+  --toast-error: #3a241d;
+  --toast-warning: #3a311d;
+  --toast-info: #262b20;
+  --toast-loading: #262b20;
 }
 
 @theme inline {
@@ -83,6 +131,7 @@
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  --color-primary-press: var(--primary-press);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
@@ -111,6 +160,20 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+
+  /* New tokens exposed as utilities (bg-ai, text-ai, bg-ai-soft, bg-success, …) */
+  --color-ai: var(--ai);
+  --color-ai-foreground: var(--ai-foreground);
+  --color-ai-soft: var(--ai-soft);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-editor: var(--editor);
+  --color-toast-success: var(--toast-success);
+  --color-toast-error: var(--toast-error);
+  --color-toast-warning: var(--toast-warning);
+  --color-toast-info: var(--toast-info);
+  --color-toast-loading: var(--toast-loading);
 }
 
 @layer base {
@@ -118,7 +181,22 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans;
+  }
+}
+
+/* Pulse ring used by the meeting recorder mic (mockup: @keyframes tnpulse) */
+@keyframes tnpulse {
+  0% {
+    transform: scale(0.85);
+    opacity: 0.5;
+  }
+  70% {
+    transform: scale(1.7);
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
   }
 }
 

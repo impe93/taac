@@ -199,7 +199,7 @@ export const ImportStep: FC<ImportStepProps> = ({ state, dispatch }) => {
             </div>
 
             <div className="space-y-2">
-              <h1 className="text-3xl font-bold tracking-tight">
+              <h1 className="font-serif text-4xl font-normal tracking-tight">
                 {isChecking ? 'Checking Access' : 'Permission Required'}
               </h1>
               <p className="text-lg text-muted-foreground">
@@ -247,7 +247,7 @@ export const ImportStep: FC<ImportStepProps> = ({ state, dispatch }) => {
             </div>
 
             <div className="space-y-2">
-              <h1 className="text-3xl font-bold tracking-tight">Select Folder</h1>
+              <h1 className="font-serif text-4xl font-normal tracking-tight">Select Folder</h1>
               <p className="text-lg text-muted-foreground">
                 {isSelectingFolder && scanImport.isPending
                   ? 'Scanning files...'

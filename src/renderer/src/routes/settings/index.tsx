@@ -1,5 +1,6 @@
-import { type FC, type ReactNode, useMemo } from 'react'
+import { type FC, type ReactNode, useEffect, useMemo, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
+import { useTheme } from 'next-themes'
 import {
   Bot,
   Search,
@@ -11,13 +12,18 @@ import {
   Play,
   X,
   Mic,
-  Users
+  Users,
+  Palette,
+  Monitor,
+  Sun,
+  Moon
 } from 'lucide-react'
 import { Card, CardContent } from '@renderer/components/ui/card'
 import { Badge } from '@renderer/components/ui/badge'
 import { Button } from '@renderer/components/ui/button'
 import { Progress } from '@renderer/components/ui/progress'
 import { Switch } from '@renderer/components/ui/switch'
+import { ToggleGroup, ToggleGroupItem } from '@renderer/components/ui/toggle-group'
 import {
   Select,
   SelectContent,
@@ -82,11 +88,13 @@ function SettingsPage(): ReactNode {
   return (
     <div className="flex w-full max-w-2xl flex-col mx-auto">
       <div className="mb-6">
-        <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
+        <h1 className="font-serif text-4xl font-normal tracking-tight">Settings</h1>
         <p className="text-muted-foreground">
-          Manage your AI models for local chat and semantic search.
+          Customize appearance and manage your local AI models.
         </p>
       </div>
+
+      <AppearanceSettings />
 
       <div className="space-y-3">
         {MODEL_ROWS.map((row) => {
@@ -122,6 +130,68 @@ function SettingsPage(): ReactNode {
       />
 
       <MeetingNotesSettings downloadedModels={downloadedModels ?? []} />
+    </div>
+  )
+}
+
+const THEME_OPTIONS = [
+  { value: 'system', label: 'System', icon: Monitor },
+  { value: 'light', label: 'Light', icon: Sun },
+  { value: 'dark', label: 'Dark', icon: Moon }
+] as const
+
+const AppearanceSettings: FC = () => {
+  const { theme, setTheme } = useTheme()
+  const [mounted, setMounted] = useState(false)
+
+  // next-themes resolves the theme only on the client; avoid a flash/mismatch
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  const currentTheme = mounted ? (theme ?? 'system') : 'system'
+
+  return (
+    <div className="mb-8">
+      <div className="mb-4 flex items-center gap-2">
+        <Palette className="size-5 text-muted-foreground" />
+        <div>
+          <h2 className="text-lg font-semibold">Appearance</h2>
+          <p className="text-xs text-muted-foreground">
+            Choose how TaacNotes looks on your device.
+          </p>
+        </div>
+      </div>
+
+      <Card>
+        <CardContent className="flex items-center justify-between gap-4 py-4">
+          <div>
+            <p className="text-sm font-medium">Theme</p>
+            <p className="text-xs text-muted-foreground">
+              System matches your operating system appearance.
+            </p>
+          </div>
+          <ToggleGroup
+            type="single"
+            value={currentTheme}
+            onValueChange={(value) => value && setTheme(value)}
+            variant="outline"
+            size="sm"
+          >
+            {THEME_OPTIONS.map(({ value, label, icon: Icon }) => (
+              <ToggleGroupItem
+                key={value}
+                value={value}
+                aria-label={`${label} theme`}
+                className="gap-1.5 px-3 data-[state=on]:text-primary"
+              >
+                <Icon className="size-4" />
+                <span className="text-xs">{label}</span>
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+        </CardContent>
+      </Card>
     </div>
   )
 }

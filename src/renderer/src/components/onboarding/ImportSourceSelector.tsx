@@ -22,7 +22,7 @@ export const ImportSourceSelector: FC<ImportSourceSelectorProps> = ({
       </div>
 
       <div className="space-y-2">
-        <h1 className="text-3xl font-bold tracking-tight">Import Your Notes</h1>
+        <h1 className="font-serif text-4xl font-normal tracking-tight">Import Your Notes</h1>
         <p className="text-lg text-muted-foreground">
           Bring your existing notes into TaacNotes. Choose a source to get started.
         </p>

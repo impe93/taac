@@ -287,21 +287,25 @@
   opacity: 0.8;
 }
 
-/* Heading styling */
+/* Heading styling — display headings use the serif identity font */
 .mdx-note-editor h1 {
-  font-size: 2rem;
-  font-weight: 700;
+  font-family: var(--font-serif);
+  font-size: 2.25rem;
+  font-weight: 400;
+  letter-spacing: -0.01em;
   margin-top: 2rem;
   margin-bottom: 1rem;
-  line-height: 1.2;
+  line-height: 1.15;
 }
 
 .mdx-note-editor h2 {
-  font-size: 1.5rem;
-  font-weight: 600;
+  font-family: var(--font-serif);
+  font-size: 1.65rem;
+  font-weight: 400;
+  letter-spacing: -0.01em;
   margin-top: 1.75rem;
   margin-bottom: 0.75rem;
-  line-height: 1.3;
+  line-height: 1.25;
 }
 
 .mdx-note-editor h3 {

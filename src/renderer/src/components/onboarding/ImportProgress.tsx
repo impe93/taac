@@ -47,7 +47,7 @@ export const ImportProgress: FC<ImportProgressProps> = ({ progress, importResult
         </div>
 
         <div className="space-y-2">
-          <h1 className="text-3xl font-bold tracking-tight">Import Complete</h1>
+          <h1 className="font-serif text-4xl font-normal tracking-tight">Import Complete</h1>
           <p className="text-lg text-muted-foreground">
             Your notes have been successfully imported.
           </p>
@@ -124,7 +124,7 @@ export const ImportProgress: FC<ImportProgressProps> = ({ progress, importResult
       </div>
 
       <div className="space-y-2">
-        <h1 className="text-3xl font-bold tracking-tight">Importing Notes</h1>
+        <h1 className="font-serif text-4xl font-normal tracking-tight">Importing Notes</h1>
         <p className="text-lg text-muted-foreground">
           {progress ? PHASE_LABELS[progress.phase] : 'Preparing import...'}
         </p>

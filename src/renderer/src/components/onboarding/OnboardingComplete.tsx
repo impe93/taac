@@ -64,7 +64,7 @@ export const OnboardingComplete: FC<OnboardingCompleteProps> = ({ state }) => {
       </div>
 
       <div className="space-y-2">
-        <h1 className="text-3xl font-bold tracking-tight">You&apos;re all set!</h1>
+        <h1 className="font-serif text-4xl font-normal tracking-tight">You&apos;re all set!</h1>
         <p className="text-muted-foreground">
           Your notes are ready and AI is set up. Start writing, searching, and exploring.
         </p>

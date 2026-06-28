@@ -15,7 +15,6 @@ import { Button } from '@renderer/components/ui/button'
 import { Card, CardContent } from '@renderer/components/ui/card'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip'
 import { Code, Eye } from 'lucide-react'
-import { cn } from '@renderer/lib/utils'
 import { toast } from 'sonner'
 import { MeetingRecorder } from '@renderer/components/meeting/MeetingRecorder'
 import { MeetingProgress } from '@renderer/components/meeting/MeetingProgress'
@@ -210,7 +209,7 @@ function NoteView(): ReactElement {
                 <Button
                   variant={isSourceMode ? 'default' : 'ghost'}
                   size="icon"
-                  className={cn('size-8', isSourceMode && 'bg-primary text-primary-foreground')}
+                  className="size-8"
                   onClick={toggleEditorMode}
                 >
                   {isSourceMode ? <Eye className="size-4" /> : <Code className="size-4" />}
@@ -230,7 +229,7 @@ function NoteView(): ReactElement {
         )}
 
         {note.type !== 'meeting' && (
-          <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
+          <div className="flex items-center gap-2 mt-2 font-mono text-xs text-muted-foreground">
             <span>Last updated: {new Date(note.updatedAt).toLocaleString()}</span>
             {isSaving && <span className="text-primary animate-pulse">Saving...</span>}
           </div>

@@ -45,7 +45,7 @@ export const ImportPreview: FC<ImportPreviewProps> = ({
       </div>
 
       <div className="space-y-2">
-        <h1 className="text-3xl font-bold tracking-tight">Review Import</h1>
+        <h1 className="font-serif text-4xl font-normal tracking-tight">Review Import</h1>
         <p className="text-lg text-muted-foreground">
           Here&#39;s what will be imported from {sourceLabel}.
         </p>

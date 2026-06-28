@@ -43,7 +43,7 @@ export const TutorialStep: FC<TutorialStepProps> = ({ dispatch }) => {
   return (
     <div className="flex flex-col items-center space-y-6">
       <div className="space-y-2 text-center">
-        <h1 className="text-3xl font-bold tracking-tight">Get to Know TaacNotes</h1>
+        <h1 className="font-serif text-4xl font-normal tracking-tight">Get to Know TaacNotes</h1>
       </div>
 
       <div className="grid w-full grid-cols-2 gap-4">

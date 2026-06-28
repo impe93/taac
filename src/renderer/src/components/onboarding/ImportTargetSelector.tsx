@@ -65,7 +65,7 @@ export const ImportTargetSelector: FC<ImportTargetSelectorProps> = ({
       </div>
 
       <div className="space-y-2">
-        <h1 className="text-3xl font-bold tracking-tight">Choose Destination</h1>
+        <h1 className="font-serif text-4xl font-normal tracking-tight">Choose Destination</h1>
         <p className="text-lg text-muted-foreground">
           Where should your {sourceLabel} notes be imported?
         </p>

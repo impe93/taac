@@ -39,17 +39,17 @@ const roleConfig = {
   user: {
     label: 'You',
     icon: User,
-    avatarClass: 'bg-primary text-primary-foreground'
+    avatarClass: 'bg-secondary text-foreground'
   },
   assistant: {
     label: 'Assistant',
     icon: Bot,
-    avatarClass: 'bg-muted text-muted-foreground'
+    avatarClass: 'bg-ai-soft text-ai'
   },
   system: {
     label: 'System',
     icon: Bot,
-    avatarClass: 'bg-muted text-muted-foreground'
+    avatarClass: 'bg-ai-soft text-ai'
   }
 } as const
 
@@ -110,10 +110,10 @@ export const ChatMessage: FC<ChatMessageProps> = ({
         {/* Message Bubble */}
         <div
           className={cn(
-            'rounded-2xl px-4 py-2.5 text-sm',
+            'px-4 py-2.5 text-sm',
             isUser
-              ? 'bg-primary text-primary-foreground rounded-tr-sm'
-              : 'bg-muted text-foreground rounded-tl-sm'
+              ? 'bg-linear-to-b from-primary to-primary-press text-primary-foreground rounded-[16px_16px_4px_16px]'
+              : 'bg-card text-foreground border border-border rounded-[4px_16px_16px_16px]'
           )}
         >
           {/* Content rendering: plain text for user, markdown for assistant */}
@@ -131,7 +131,7 @@ export const ChatMessage: FC<ChatMessageProps> = ({
                 [&_li]:my-0.5
                 [&_code]:bg-black/10 dark:[&_code]:bg-white/10 [&_code]:rounded [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-[0.85em]
                 [&_pre]:bg-black/10 dark:[&_pre]:bg-white/10 [&_pre]:rounded-md [&_pre]:p-2 [&_pre]:my-1 [&_pre_code]:bg-transparent [&_pre_code]:p-0
-                [&_blockquote]:border-l-2 [&_blockquote]:pl-3 [&_blockquote]:italic [&_blockquote]:opacity-75
+                [&_blockquote]:border-l-2 [&_blockquote]:border-primary [&_blockquote]:pl-3 [&_blockquote]:italic [&_blockquote]:opacity-75
                 [&_strong]:font-semibold [&_em]:italic"
             >
               <ReactMarkdown>{content}</ReactMarkdown>

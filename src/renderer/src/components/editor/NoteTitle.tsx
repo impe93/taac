@@ -54,7 +54,7 @@ export const NoteTitle: FC<NoteTitleProps> = ({
       placeholder={placeholder}
       className={cn(
         'w-full bg-transparent border-none outline-none',
-        'text-2xl font-semibold',
+        'font-serif text-3xl font-normal tracking-tight',
         'text-foreground placeholder:text-muted-foreground',
         'focus:outline-none focus:ring-0',
         className

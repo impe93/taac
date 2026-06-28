@@ -53,11 +53,11 @@ export const MainContentWithAIPanel: FC<MainContentWithAIPanelProps> = ({
               collapsedSize={0}
               onCollapse={() => close()}
             >
-              <div className="relative flex h-full flex-col border-l bg-background">
+              <div className="relative flex h-full flex-col border-l bg-sidebar">
                 {/* Header with close button */}
                 <div className="flex h-12 shrink-0 items-center justify-between border-b px-3">
                   <div className="flex items-center gap-2 text-sm font-medium">
-                    <Bot className="size-4 text-primary" />
+                    <Bot className="size-4 text-ai" />
                     <span>AI Assistant</span>
                   </div>
                   <Button
@@ -85,11 +85,11 @@ export const MainContentWithAIPanel: FC<MainContentWithAIPanelProps> = ({
       {/* Mobile layout - simple toggle, no resizable */}
       <div className="flex h-full w-full flex-col md:hidden">
         {isOpen ? (
-          <div className="relative flex h-full flex-col bg-background">
+          <div className="relative flex h-full flex-col bg-sidebar">
             {/* Mobile header */}
             <div className="flex h-12 shrink-0 items-center justify-between border-b px-3">
               <div className="flex items-center gap-2 text-sm font-medium">
-                <Bot className="size-4 text-primary" />
+                <Bot className="size-4 text-ai" />
                 <span>AI Assistant</span>
               </div>
               <Button variant="ghost" size="icon" className="size-7" onClick={close}>

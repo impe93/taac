@@ -221,7 +221,7 @@ export const ModelDownloadStep: FC<ModelDownloadStepProps> = ({ state, dispatch 
       </div>
 
       <div className="space-y-2">
-        <h1 className="text-3xl font-bold tracking-tight">Configura i modelli AI</h1>
+        <h1 className="font-serif text-4xl font-normal tracking-tight">Configura i modelli AI</h1>
         <p className="text-lg text-muted-foreground">
           TaacNotes funziona con modelli AI eseguiti localmente sul tuo dispositivo. Abbiamo
           selezionato i migliori per il tuo hardware.
@@ -363,8 +363,8 @@ const FeatureCard: FC<FeatureCardProps> = ({
         {/* Header */}
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-3">
-            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-              <Icon className="size-5 text-primary" />
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-ai-soft">
+              <Icon className="size-5 text-ai" />
             </div>
             <div>
               <div className="flex flex-wrap items-center gap-2">
@@ -441,13 +441,14 @@ const FeatureCard: FC<FeatureCardProps> = ({
               <span>
                 {formatSize(activeProgress.bytesDownloaded)} /{' '}
                 {formatSize(activeProgress.totalBytes)}
-                {activeProgress.activeStatus === 'downloading' && activeProgress.activeSpeed > 0 && (
-                  <>
-                    {' '}
-                    &middot; {formatSpeed(activeProgress.activeSpeed)} &middot; ~
-                    {formatETA(activeProgress.activeEta)}
-                  </>
-                )}
+                {activeProgress.activeStatus === 'downloading' &&
+                  activeProgress.activeSpeed > 0 && (
+                    <>
+                      {' '}
+                      &middot; {formatSpeed(activeProgress.activeSpeed)} &middot; ~
+                      {formatETA(activeProgress.activeEta)}
+                    </>
+                  )}
                 {activeProgress.activeStatus === 'paused' && ' · In pausa'}
                 {activeProgress.activeStatus === 'pending' && ' · Preparazione...'}
               </span>

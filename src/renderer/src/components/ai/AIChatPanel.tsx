@@ -244,7 +244,7 @@ export const AIChatPanel: FC<AIChatPanelProps> = ({ className, defaultModelId })
               {/* RAG toggle */}
               <div className="flex items-center justify-between">
                 <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Sparkles className="size-3.5" />
+                  <Sparkles className="size-3.5 text-ai" />
                   Contextual search
                 </span>
                 <Button
@@ -261,11 +261,11 @@ export const AIChatPanel: FC<AIChatPanelProps> = ({ className, defaultModelId })
               {enableRAG && (
                 <div className="flex items-center justify-between">
                   <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <Sparkles className="size-3.5" />
+                    <Sparkles className="size-3.5 text-ai" />
                     Embedding model
                   </span>
                   {isEmbeddingAvailable ? (
-                    <Badge variant="outline" className="h-5 px-1.5 text-[10px] text-green-600">
+                    <Badge variant="success" className="h-5 px-1.5 text-[10px]">
                       Ready
                     </Badge>
                   ) : (

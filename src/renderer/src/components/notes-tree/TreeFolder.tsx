@@ -124,7 +124,7 @@ export const TreeFolder: FC<TreeFolderProps> = ({
             <button
               {...attributes}
               {...listeners}
-              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-accent text-sm transition-colors min-w-0"
+              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-sidebar-accent/60 text-sm transition-colors min-w-0"
               style={{ paddingLeft: `${paddingLeft + 8}px` }}
             >
               <ChevronRight

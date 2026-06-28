@@ -79,15 +79,21 @@ export const TreeNote: FC<TreeNoteProps> = ({ noteId, folderId, level, onDelete 
         onClick={handleClick}
         className={cn(
           'relative w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm transition-colors min-w-0',
-          isSelected ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
+          isSelected
+            ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[3px] before:rounded-full before:bg-primary before:content-['']"
+            : 'hover:bg-sidebar-accent/60'
         )}
       >
         {showTop && <DropIndicator position="top" />}
         {showBottom && <DropIndicator position="bottom" />}
         {note.type === 'meeting' ? (
-          <Mic className="size-4 text-muted-foreground shrink-0" />
+          <Mic
+            className={cn('size-4 shrink-0', isSelected ? 'text-primary' : 'text-muted-foreground')}
+          />
         ) : (
-          <FileText className="size-4 text-muted-foreground shrink-0" />
+          <FileText
+            className={cn('size-4 shrink-0', isSelected ? 'text-primary' : 'text-muted-foreground')}
+          />
         )}
         <Tooltip>
           <TooltipTrigger asChild>

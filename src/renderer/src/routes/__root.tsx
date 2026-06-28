@@ -1,3 +1,7 @@
+import '@fontsource-variable/hanken-grotesk'
+import '@fontsource/instrument-serif'
+import '@fontsource/instrument-serif/400-italic.css'
+import '@fontsource-variable/jetbrains-mono'
 import '../assets/global.css'
 import { type FC } from 'react'
 import { createRootRoute, Outlet, useNavigate } from '@tanstack/react-router'
@@ -59,7 +63,7 @@ const RootLayout: FC = () => {
         {/* Inner container with rounded corners - clips all content */}
         <div className="flex h-full overflow-hidden rounded-xl">
           <AppSidebar />
-          <SidebarInset>
+          <SidebarInset className="bg-editor">
             <header className="flex h-16 shrink-0 items-center justify-between gap-2 border-b transition-[width,height] ease-linear group-has-[[data-collapsible=icon]]/sidebar-wrapper:h-12">
               <div className="flex items-center gap-2 px-4">
                 <SidebarTrigger className="-ml-1" />
@@ -85,9 +89,13 @@ const RootLayout: FC = () => {
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
-                      variant={isOpen ? 'default' : 'ghost'}
+                      variant="ghost"
                       size="icon"
-                      className={cn('size-8', isOpen && 'bg-primary text-primary-foreground')}
+                      className={cn(
+                        'size-8 text-muted-foreground',
+                        isOpen &&
+                          'border border-ai/30 bg-ai-soft text-ai hover:bg-ai-soft hover:text-ai'
+                      )}
                       onClick={toggle}
                     >
                       <Bot className="size-4" />

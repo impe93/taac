@@ -75,9 +75,12 @@ export const MeetingRecorder: FC<MeetingRecorderProps> = ({ noteId, spaceId, fol
             </p>
           ) : !isActive ? (
             <>
-              <div className="flex flex-col items-center gap-2">
-                <div className="size-16 rounded-full bg-muted flex items-center justify-center">
-                  <Mic className="size-8 text-muted-foreground" />
+              <div className="flex flex-col items-center gap-3">
+                <div className="relative flex size-20 items-center justify-center">
+                  <span className="absolute inset-0 rounded-full border-2 border-primary/50 animate-[tnpulse_2.4s_ease-out_infinite]" />
+                  <div className="relative flex size-20 items-center justify-center rounded-full border border-primary/30 bg-primary/10">
+                    <Mic className="size-8 text-primary" />
+                  </div>
                 </div>
                 <p className="text-lg font-semibold">Ready to Record</p>
                 <p className="text-sm text-muted-foreground text-center">
