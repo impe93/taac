@@ -71,7 +71,7 @@ const FEATURES: CuratedFeature[] = [
     losesIfSkipped:
       'Senza questi modelli la ricerca avanzata e il recupero contestuale delle note saranno disabilitati.',
     optional: false,
-    resolveModelIds: () => ['nomic-embed-text-v2-moe', 'qwen3-reranker-0.6b-q8']
+    resolveModelIds: () => ['embeddinggemma-300m-q8', 'qwen3-reranker-0.6b-q8']
   },
   {
     key: 'meeting',

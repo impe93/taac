@@ -111,6 +111,18 @@ export interface ModelDefinition {
   format?: ModelFormat
   /** Additional files required by multi-file models (e.g. Whisper ONNX encoder/decoder/tokens) */
   files?: ModelFile[]
+  /**
+   * Task-prompt template for QUERY embeddings (asymmetric search). `%s` is the
+   * placeholder for the query text. Model-specific — e.g. `'task: search result | query: %s'`
+   * for EmbeddingGemma, `'search_query: %s'` for nomic-embed-text-v2-moe.
+   */
+  embeddingQueryPrompt?: string
+  /**
+   * Task-prompt template for DOCUMENT/chunk embeddings. `%s` is the placeholder
+   * for the chunk text — e.g. `'title: none | text: %s'` for EmbeddingGemma,
+   * `'search_document: %s'` for nomic-embed-text-v2-moe.
+   */
+  embeddingDocumentPrompt?: string
 }
 
 /**
@@ -265,6 +277,12 @@ export interface VectorDocument {
   embeddingModel?: string
   sectionId?: string
   sectionHeader?: string
+  /**
+   * Optional contextual-retrieval text (LLM-generated context situating this
+   * chunk within its note). Stored separately from `content` so it can be
+   * indexed by FTS5 (BM25) without polluting the excerpt shown to the user/LLM.
+   */
+  contextText?: string
   metadata?: Record<string, unknown>
 }
 

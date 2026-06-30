@@ -6,6 +6,8 @@ export interface AppConfig {
   autoSave: boolean
   autoSaveInterval: number
   autoIndexNotes: boolean
+  /** Opt-in: enrich each chunk with LLM-generated context at index time (Anthropic-style). */
+  contextualRetrievalEnabled: boolean
   lastOpenedFolderId: string | null
   windowBounds: {
     width: number
@@ -87,6 +89,10 @@ const schema = {
   autoIndexNotes: {
     type: 'boolean',
     default: true
+  },
+  contextualRetrievalEnabled: {
+    type: 'boolean',
+    default: false
   },
   lastOpenedFolderId: {
     type: ['string', 'null'],

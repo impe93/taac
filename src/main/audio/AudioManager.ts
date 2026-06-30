@@ -588,7 +588,9 @@ export class AudioManager {
    */
   private getActiveChatModelId(): string {
     const loaded = AIManager.getInstance().getLoadedModels()
-    const chatModel = loaded.find((m) => m.id !== 'nomic-embed-text-v2-moe')
+    const chatModel = loaded.find((m) =>
+      ModelRegistry.getModel(m.id)?.capabilities.includes('chat')
+    )
     return chatModel?.id ?? DEFAULT_CHAT_MODEL_ID
   }
 

@@ -55,7 +55,28 @@ const CURATED_MODELS: ModelDefinition[] = [
     hardwareTier: 'low',
     downloadUrl:
       'https://huggingface.co/ggml-org/Nomic-Embed-Text-V2-GGUF/resolve/main/nomic-embed-text-v2-moe-q8_0.gguf',
+    embeddingQueryPrompt: 'search_query: %s',
+    embeddingDocumentPrompt: 'search_document: %s',
     license: 'Apache 2.0'
+  },
+  {
+    id: 'embeddinggemma-300m-q8',
+    name: 'EmbeddingGemma 300M (Q8_0)',
+    description:
+      'Google EmbeddingGemma — state-of-the-art multilingual embedding model under 500M params, 100+ languages (~320MB)',
+    filename: 'embeddinggemma-300M-Q8_0.gguf',
+    sizeBytes: 320 * 1024 * 1024, // ~320MB
+    layers: 24,
+    quantization: 'Q8_0',
+    contextLength: 2048,
+    capabilities: ['embedding'],
+    hardwareTier: 'low',
+    downloadUrl:
+      'https://huggingface.co/ggml-org/embeddinggemma-300m-GGUF/resolve/main/embeddinggemma-300M-Q8_0.gguf',
+    // EmbeddingGemma requires these exact task prompts for good retrieval quality
+    embeddingQueryPrompt: 'task: search result | query: %s',
+    embeddingDocumentPrompt: 'title: none | text: %s',
+    license: 'Gemma Terms of Use'
   },
 
   // ============================================================================

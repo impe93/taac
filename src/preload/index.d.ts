@@ -182,7 +182,7 @@ export interface ConfigAPI {
   onChange: <K extends keyof AppConfig>(
     key: K,
     callback: (newValue: AppConfig[K], oldValue: AppConfig[K]) => void
-  ) => void
+  ) => () => void
 }
 
 // Chat message type for inference

@@ -18,7 +18,8 @@ import type {
   LlamaEmbeddingContext,
   LlamaRankingContext,
   LlamaChatSession,
-  LlamaContextSequence
+  LlamaContextSequence,
+  ChatHistoryItem
 } from 'node-llama-cpp'
 import { app } from 'electron'
 import { join } from 'path'
@@ -519,10 +520,14 @@ export class AIManager {
       session = loaded.chatSession
     }
 
-    // Convert messages to llama.cpp chat history format
-    // Filter out system messages for both session types (handled via systemPrompt in constructor)
-    const filteredMessages = messages.filter((m) => m.role !== 'system')
-    const chatHistory = this.convertToChatHistory(filteredMessages)
+    // The renderer sends the FULL conversation on every call (the model is used
+    // statelessly). Replace the session's chat history with exactly these prior
+    // turns before prompting — otherwise the persistent session keeps the KV
+    // cache of a previous conversation and leaks it across chats/spaces.
+    const priorMessages = messages.slice(0, -1)
+    const lastMessage = messages[messages.length - 1]
+    const lastUserText = lastMessage?.role === 'user' ? lastMessage.content : ''
+    session.setChatHistory(this.buildChatHistoryItems(priorMessages))
 
     // Set up real-time streaming with async queue pattern
     let fullResponse = ''
@@ -533,7 +538,7 @@ export class AIManager {
 
     // Start generation without awaiting - this allows chunks to be yielded in real-time
     const generationPromise = session
-      .prompt(chatHistory.length > 0 ? chatHistory[chatHistory.length - 1].text : '', {
+      .prompt(lastUserText, {
         maxTokens: options?.maxTokens ?? 2048,
         temperature: options?.temperature ?? 0.7,
         topP: options?.topP,
@@ -637,11 +642,24 @@ export class AIManager {
    * @param messages - Array of ChatMessage objects
    * @returns Array of objects with role and text properties
    */
-  private convertToChatHistory(messages: ChatMessage[]): Array<{ role: string; text: string }> {
-    return messages.map((msg) => ({
-      role: msg.role,
-      text: msg.content
-    }))
+  /**
+   * Convert our ChatMessage[] into node-llama-cpp ChatHistoryItem[] so the full
+   * conversation can be set on the session before each prompt (stateless use).
+   * This guarantees each generation reflects exactly the provided messages and
+   * never inherits state from a previous conversation/space.
+   */
+  private buildChatHistoryItems(messages: ChatMessage[]): ChatHistoryItem[] {
+    const items: ChatHistoryItem[] = []
+    for (const msg of messages) {
+      if (msg.role === 'system') {
+        items.push({ type: 'system', text: msg.content })
+      } else if (msg.role === 'user') {
+        items.push({ type: 'user', text: msg.content })
+      } else {
+        items.push({ type: 'model', response: [msg.content] })
+      }
+    }
+    return items
   }
 
   /**

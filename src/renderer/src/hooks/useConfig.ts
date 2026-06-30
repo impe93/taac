@@ -13,9 +13,10 @@ export const useConfig = <K extends keyof AppConfig>(key: K) => {
   })
 
   useEffect(() => {
-    window.config.onChange(key, (newValue) => {
+    const unsubscribe = window.config.onChange(key, (newValue) => {
       queryClient.setQueryData(['config', key], newValue)
     })
+    return unsubscribe
   }, [key, queryClient])
 
   return query

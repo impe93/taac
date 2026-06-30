@@ -73,13 +73,17 @@ export class ConversationManager {
 
       for (const file of files) {
         if (file.endsWith('.json')) {
+          const filePath = join(this.conversationsDir, file)
           try {
-            const filePath = join(this.conversationsDir, file)
             const content = await fs.readFile(filePath, 'utf-8')
             const conversation = JSON.parse(content) as Conversation
+            if (!conversation?.id) throw new Error('conversation file missing id')
             this.conversations.set(conversation.id, conversation)
           } catch (error) {
-            console.error(`Failed to load conversation file ${file}:`, error)
+            // Quarantine corrupt/truncated files (e.g. from an interrupted write)
+            // so they don't break startup or get re-read on every launch.
+            console.error(`Failed to load conversation file ${file}, quarantining:`, error)
+            await fs.rename(filePath, `${filePath}.corrupt`).catch(() => {})
           }
         }
       }
@@ -93,7 +97,11 @@ export class ConversationManager {
    */
   private async saveConversation(conversation: Conversation): Promise<void> {
     const filePath = join(this.conversationsDir, `${conversation.id}.json`)
-    await fs.writeFile(filePath, JSON.stringify(conversation, null, 2), 'utf-8')
+    // Atomic write: write to a temp file then rename, so an interrupted write
+    // can never leave a truncated/empty JSON file that breaks the next startup.
+    const tmpPath = `${filePath}.${uuidv4()}.tmp`
+    await fs.writeFile(tmpPath, JSON.stringify(conversation, null, 2), 'utf-8')
+    await fs.rename(tmpPath, filePath)
   }
 
   /**

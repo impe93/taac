@@ -101,7 +101,9 @@ const EmptyState: FC = () => (
   </div>
 )
 
-const DEFAULT_RAG_SEARCH_LIMIT = 4
+// Reranked results are high-precision, so we can surface a few more without
+// drowning the small chat model in noise.
+const DEFAULT_RAG_SEARCH_LIMIT = 6
 
 const DEFAULT_SYSTEM_PROMPT = `You are a personal knowledge assistant. You have access to the user's personal knowledge base.
 

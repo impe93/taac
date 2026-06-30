@@ -49,7 +49,7 @@ interface ModelRowConfig {
 
 const MODEL_ROWS: ModelRowConfig[] = [
   { id: 'qwen3-5-2b-q8', label: 'AI Chat', icon: Bot },
-  { id: 'nomic-embed-text-v2-moe', label: 'Search', icon: Search },
+  { id: 'embeddinggemma-300m-q8', label: 'Search', icon: Search },
   { id: 'qwen3-reranker-0.6b-q8', label: 'Reranker', icon: ArrowUpDown }
 ]
 
@@ -118,6 +118,8 @@ function SettingsPage(): ReactNode {
         })}
       </div>
 
+      <SearchSettings />
+
       <MeetingModelsSection
         modelsMap={modelsMap}
         downloadedModelIds={downloadedModelIds}
@@ -130,6 +132,42 @@ function SettingsPage(): ReactNode {
       />
 
       <MeetingNotesSettings downloadedModels={downloadedModels ?? []} />
+    </div>
+  )
+}
+
+/**
+ * Search & Retrieval settings — toggle for opt-in contextual retrieval.
+ */
+const SearchSettings: FC = () => {
+  const { data: contextualEnabled } = useConfig('contextualRetrievalEnabled')
+  const setConfig = useSetConfig<'contextualRetrievalEnabled'>()
+
+  const handleContextualChange = (checked: boolean): void => {
+    setConfig.mutate({ key: 'contextualRetrievalEnabled', value: checked })
+  }
+
+  return (
+    <div className="mt-8">
+      <div className="mb-4 flex items-center gap-2">
+        <Search className="size-5 text-muted-foreground" />
+        <h2 className="text-lg font-semibold">Search &amp; Retrieval</h2>
+      </div>
+      <Card>
+        <CardContent className="divide-y py-0">
+          <div className="flex items-center justify-between py-4">
+            <div className="flex-1 pr-4">
+              <p className="text-sm font-medium">Contextual retrieval</p>
+              <p className="text-xs text-muted-foreground">
+                Use the local AI to add a short context to each note chunk for sharper search
+                results. Improves accuracy on longer notes but makes indexing noticeably slower.
+                Changing this re-indexes your notes.
+              </p>
+            </div>
+            <Switch checked={contextualEnabled ?? false} onCheckedChange={handleContextualChange} />
+          </div>
+        </CardContent>
+      </Card>
     </div>
   )
 }

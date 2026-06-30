@@ -159,10 +159,14 @@ export function deduplicateOverlaps(expanded: ExpandedResult[]): ExpandedResult[
 }
 
 /**
- * Increment when the embedding text format changes (e.g. adding folder context).
+ * Increment when the embedding text format changes (e.g. adding folder context),
+ * or when the default embedding model changes (different vector space).
  * Forces re-indexing of all notes on the next "Index All" run.
+ *
+ * v4: switched default embedding model to EmbeddingGemma-300M + added contextual
+ *     retrieval text to the embedded/indexed content.
  */
-export const EMBEDDING_SCHEMA_VERSION = 3
+export const EMBEDDING_SCHEMA_VERSION = 4
 
 export class VectorDBManager {
   private static instances: Map<string, VectorDBManager> = new Map()
@@ -226,6 +230,7 @@ export class VectorDBManager {
           content TEXT NOT NULL,
           metadata TEXT,
           embedding_model TEXT,
+          context_text TEXT,
           created_at TEXT DEFAULT (datetime('now')),
           UNIQUE(note_id, chunk_index)
         );
@@ -246,6 +251,13 @@ export class VectorDBManager {
       // Migration: add embedding_model column if missing (existing databases)
       try {
         this.db.exec('ALTER TABLE embeddings ADD COLUMN embedding_model TEXT')
+      } catch {
+        // Column already exists, ignore
+      }
+
+      // Migration: add context_text column (contextual retrieval text, FTS5-indexed)
+      try {
+        this.db.exec('ALTER TABLE embeddings ADD COLUMN context_text TEXT')
       } catch {
         // Column already exists, ignore
       }
@@ -277,6 +289,10 @@ export class VectorDBManager {
       // Migration: create FTS5 table and sync triggers for hybrid search
       await this.migrateFTS5()
 
+      // Migration: rebuild FTS5 as a standalone table (diacritics-insensitive +
+      // context_text), fixing the broken external-content schema.
+      await this.migrateFtsV3()
+
       this.initialized = true
       console.log(`[VectorDBManager] Initialized at ${this._config.dbPath}`)
     } catch (error) {
@@ -302,8 +318,8 @@ export class VectorDBManager {
         // Insert metadata into embeddings table
         this.db!.prepare(
           `
-          INSERT OR REPLACE INTO embeddings (id, note_id, chunk_index, content, metadata, embedding_model, section_id, section_header)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT OR REPLACE INTO embeddings (id, note_id, chunk_index, content, metadata, embedding_model, section_id, section_header, context_text)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
         ).run(
           id,
@@ -313,7 +329,8 @@ export class VectorDBManager {
           JSON.stringify(doc.metadata || {}),
           doc.embeddingModel || null,
           doc.sectionId || null,
-          doc.sectionHeader || null
+          doc.sectionHeader || null,
+          doc.contextText || null
         )
 
         // Insert vector into vec_embeddings virtual table if embedding is provided
@@ -1394,70 +1411,145 @@ export class VectorDBManager {
     if (meta?.value === 'done') return
 
     try {
-      // Create FTS5 virtual table (content-sync with embeddings)
-      this.db.exec(`
-        CREATE VIRTUAL TABLE IF NOT EXISTS embeddings_fts USING fts5(
-          content,
-          note_title,
-          content='embeddings',
-          content_rowid='rowid',
-          tokenize='unicode61'
-        );
-      `)
+      this.createFtsTableAndTriggers()
+      this.repopulateFtsFromEmbeddings()
 
-      // Sync trigger: INSERT — index new chunk into FTS5
-      this.db.exec(`
-        CREATE TRIGGER IF NOT EXISTS embeddings_ai AFTER INSERT ON embeddings BEGIN
-          INSERT INTO embeddings_fts(rowid, content, note_title)
-          VALUES (new.rowid, new.content, json_extract(new.metadata, '$.noteTitle'));
-        END;
-      `)
-
-      // Sync trigger: DELETE — remove chunk from FTS5
-      this.db.exec(`
-        CREATE TRIGGER IF NOT EXISTS embeddings_ad AFTER DELETE ON embeddings BEGIN
-          INSERT INTO embeddings_fts(embeddings_fts, rowid, content, note_title)
-          VALUES ('delete', old.rowid, old.content, json_extract(old.metadata, '$.noteTitle'));
-        END;
-      `)
-
-      // Sync trigger: UPDATE — delete old entry + insert updated entry
-      this.db.exec(`
-        CREATE TRIGGER IF NOT EXISTS embeddings_au AFTER UPDATE ON embeddings BEGIN
-          INSERT INTO embeddings_fts(embeddings_fts, rowid, content, note_title)
-          VALUES ('delete', old.rowid, old.content, json_extract(old.metadata, '$.noteTitle'));
-          INSERT INTO embeddings_fts(rowid, content, note_title)
-          VALUES (new.rowid, new.content, json_extract(new.metadata, '$.noteTitle'));
-        END;
-      `)
-
-      // If embeddings has data but FTS5 is empty, rebuild the FTS index
-      const embeddingsCount = this.db.prepare('SELECT COUNT(*) as count FROM embeddings').get() as {
-        count: number
+      // Fresh tables already use the final standalone schema, so mark every FTS
+      // migration as done (no later rebuild needed).
+      for (const key of ['migration_fts5', 'migration_fts_v2', 'migration_fts_v3']) {
+        this.db
+          .prepare('INSERT OR REPLACE INTO db_meta (key, value) VALUES (?, ?)')
+          .run(key, 'done')
       }
-
-      if (embeddingsCount.count > 0) {
-        const ftsCount = this.db.prepare('SELECT COUNT(*) as count FROM embeddings_fts').get() as {
-          count: number
-        }
-
-        if (ftsCount.count === 0) {
-          console.log(
-            '[VectorDBManager] FTS5 table empty with existing embeddings, rebuilding index...'
-          )
-          this.db.exec("INSERT INTO embeddings_fts(embeddings_fts) VALUES('rebuild')")
-        }
-      }
-
-      // Record migration
-      this.db
-        .prepare("INSERT OR REPLACE INTO db_meta (key, value) VALUES ('migration_fts5', 'done')")
-        .run()
 
       console.log('[VectorDBManager] Migration: created FTS5 table and sync triggers')
     } catch (error) {
       console.error('[VectorDBManager] FTS5 migration failed:', error)
     }
+  }
+
+  /**
+   * Migration v3: rebuild `embeddings_fts` as a STANDALONE FTS5 table.
+   *
+   * Earlier versions used an external-content table (`content='embeddings'`) that
+   * declared a `note_title` column with no matching real column in `embeddings`
+   * (the title comes from the metadata JSON). That breaks every content-table
+   * read path: "no such column: T.note_title" on rebuild/repopulate, and
+   * "database disk image is malformed" on the external-content delete command.
+   *
+   * A standalone table stores its own copy of content/note_title/context_text and
+   * uses ordinary DELETEs, so none of those failure modes exist. We drop and
+   * recreate, which also recovers databases already left in a broken state.
+   */
+  private async migrateFtsV3(): Promise<void> {
+    if (!this.db) return
+
+    const meta = this.db
+      .prepare("SELECT value FROM db_meta WHERE key = 'migration_fts_v3'")
+      .get() as { value: string } | undefined
+
+    if (meta?.value === 'done') return
+
+    try {
+      this.db.exec('DROP TRIGGER IF EXISTS embeddings_ai;')
+      this.db.exec('DROP TRIGGER IF EXISTS embeddings_ad;')
+      this.db.exec('DROP TRIGGER IF EXISTS embeddings_au;')
+      try {
+        this.db.exec('DROP TABLE IF EXISTS embeddings_fts;')
+      } catch (dropError) {
+        console.error('[VectorDBManager] Could not drop old FTS5 table:', dropError)
+      }
+
+      this.createFtsTableAndTriggers()
+
+      // Best-effort backfill. If it fails, the schema-v4 full re-index repopulates
+      // the index via the INSERT triggers, so keyword search recovers either way.
+      try {
+        this.repopulateFtsFromEmbeddings()
+      } catch (repopError) {
+        console.error('[VectorDBManager] FTS5 repopulate skipped:', repopError)
+      }
+
+      for (const key of ['migration_fts_v2', 'migration_fts_v3']) {
+        this.db
+          .prepare('INSERT OR REPLACE INTO db_meta (key, value) VALUES (?, ?)')
+          .run(key, 'done')
+      }
+
+      console.log('[VectorDBManager] Migration v3: rebuilt FTS5 as a standalone table')
+    } catch (error) {
+      console.error('[VectorDBManager] FTS5 v3 migration failed:', error)
+    }
+  }
+
+  /**
+   * Create the STANDALONE FTS5 virtual table and the INSERT/DELETE/UPDATE sync
+   * triggers. Indexes `content`, `note_title` (from the metadata JSON) and
+   * `context_text` with a diacritics-insensitive tokenizer for robust
+   * multilingual keyword matching.
+   *
+   * The table owns its content (NOT an external-content table); rows are linked
+   * to `embeddings` by rowid so hybrid search can still JOIN on it.
+   */
+  private createFtsTableAndTriggers(): void {
+    if (!this.db) return
+
+    this.db.exec(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS embeddings_fts USING fts5(
+        content,
+        note_title,
+        context_text,
+        tokenize="unicode61 remove_diacritics 2"
+      );
+    `)
+
+    // INSERT — index the new chunk (rowid mirrors embeddings.rowid)
+    this.db.exec(`
+      CREATE TRIGGER IF NOT EXISTS embeddings_ai AFTER INSERT ON embeddings BEGIN
+        INSERT INTO embeddings_fts(rowid, content, note_title, context_text)
+        VALUES (new.rowid, new.content, json_extract(new.metadata, '$.noteTitle'), new.context_text);
+      END;
+    `)
+
+    // DELETE — remove the chunk's FTS row by rowid (standalone: plain DELETE)
+    this.db.exec(`
+      CREATE TRIGGER IF NOT EXISTS embeddings_ad AFTER DELETE ON embeddings BEGIN
+        DELETE FROM embeddings_fts WHERE rowid = old.rowid;
+      END;
+    `)
+
+    // UPDATE — replace the chunk's FTS row
+    this.db.exec(`
+      CREATE TRIGGER IF NOT EXISTS embeddings_au AFTER UPDATE ON embeddings BEGIN
+        DELETE FROM embeddings_fts WHERE rowid = old.rowid;
+        INSERT INTO embeddings_fts(rowid, content, note_title, context_text)
+        VALUES (new.rowid, new.content, json_extract(new.metadata, '$.noteTitle'), new.context_text);
+      END;
+    `)
+  }
+
+  /**
+   * Repopulate the FTS5 index from existing `embeddings` rows when the index is
+   * empty but embeddings exist (e.g. right after creating/recreating the table).
+   */
+  private repopulateFtsFromEmbeddings(): void {
+    if (!this.db) return
+
+    const embeddingsCount = this.db.prepare('SELECT COUNT(*) as count FROM embeddings').get() as {
+      count: number
+    }
+    if (embeddingsCount.count === 0) return
+
+    const ftsCount = this.db.prepare('SELECT COUNT(*) as count FROM embeddings_fts').get() as {
+      count: number
+    }
+    if (ftsCount.count > 0) return
+
+    this.db.exec(`
+      INSERT INTO embeddings_fts(rowid, content, note_title, context_text)
+      SELECT rowid, content, json_extract(metadata, '$.noteTitle'), context_text FROM embeddings;
+    `)
+    console.log('[VectorDBManager] Repopulated FTS5 index from existing embeddings')
   }
 
   /**

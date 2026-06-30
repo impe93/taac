@@ -20,6 +20,9 @@ import type {
   StructureAwareChunkingOptions
 } from './types'
 import { DEFAULT_CHUNKING_OPTIONS, DEFAULT_STRUCTURE_AWARE_OPTIONS } from './types'
+import { ModelRegistry } from './ModelRegistry'
+import { ContextualizerService } from './ContextualizerService'
+import { configStore } from '../utils/configStore'
 import { EmbeddingFailedError, AINotInitializedError } from './errors'
 import { v4 as uuidv4 } from 'uuid'
 import { createHash } from 'crypto'
@@ -82,7 +85,7 @@ const DEFAULT_EXTENDED_OPTIONS: ExtendedChunkingOptions = {
  */
 export class EmbeddingService {
   private aiManager: AIManager
-  private embeddingModelId: string = 'nomic-embed-text-v2-moe'
+  private embeddingModelId: string = 'embeddinggemma-300m-q8'
   private embeddingContext: LlamaEmbeddingContext | null = null
   private cachedModelId: string | null = null
 
@@ -162,24 +165,47 @@ export class EmbeddingService {
   }
 
   /**
-   * Generate embedding with a task-specific prefix
-   * nomic-embed-text-v2-moe requires 'search_document' / 'search_query' prefixes
-   * for proper asymmetric search quality
+   * Apply the embedding model's task-prompt template to a text.
+   *
+   * Modern embedding models need asymmetric task prefixes for good retrieval
+   * quality, but the exact format is model-specific:
+   * - nomic-embed-text-v2-moe: `search_document: <text>` / `search_query: <text>`
+   * - EmbeddingGemma:          `title: none | text: <text>` / `task: search result | query: <text>`
+   *
+   * The template comes from the model definition (`embeddingDocumentPrompt` /
+   * `embeddingQueryPrompt`, with `%s` as the placeholder). Falls back to the
+   * legacy `"<prefix>: <text>"` form when no template is defined.
    */
-  private async embedWithPrefix(prefix: string, text: string): Promise<number[]> {
+  private applyEmbeddingPrompt(
+    template: string | undefined,
+    legacyPrefix: string,
+    text: string
+  ): string {
+    if (template && template.includes('%s')) {
+      return template.replace('%s', text)
+    }
+    return `${legacyPrefix}: ${text}`
+  }
+
+  /**
+   * Generate a raw embedding for an already-prompted text.
+   */
+  private async embedPrompted(text: string): Promise<number[]> {
     const context = await this.getOrCreateContext()
-    const prefixedText = `${prefix}: ${text}`
-    const embedding = await context.getEmbeddingFor(prefixedText)
+    const embedding = await context.getEmbeddingFor(text)
     return [...embedding.vector]
   }
 
   /**
-   * Generate embedding for a document chunk (uses 'search_document' prefix)
+   * Generate embedding for a document chunk (uses the model's document prompt)
    * @param text - The document text to embed
    * @returns The embedding vector
    */
   async embedDocument(text: string): Promise<number[]> {
-    return this.embedWithPrefix('search_document', text)
+    const def = ModelRegistry.getModel(this.embeddingModelId)
+    return this.embedPrompted(
+      this.applyEmbeddingPrompt(def?.embeddingDocumentPrompt, 'search_document', text)
+    )
   }
 
   /**
@@ -202,22 +228,26 @@ export class EmbeddingService {
   /**
    * Build the contextual header text used for embedding generation.
    *
-   * Prepends note title (and optionally section header) to the chunk text
-   * so the embedding model has context about provenance. The original chunk
-   * text is still stored in the database for display / LLM context.
+   * Prepends provenance (folder path, note title, section header) and, when
+   * available, an LLM-generated context that situates the chunk within its note
+   * (Anthropic-style contextual retrieval). The original chunk text is still
+   * stored separately in the database for display / LLM context.
    *
-   * Format: Note: "{noteTitle}" | Section: "{sectionHeader}" | {chunkText}
+   * Format: Path: "…" | Note: "…" | Section: "…" | Context: … | {chunkText}
    *
    * @param chunkText - The raw chunk text
    * @param noteTitle - Title of the parent note
    * @param sectionHeader - Optional Markdown section header
+   * @param folderPath - Optional folder path of the note
+   * @param contextText - Optional LLM-generated situating context
    * @returns The enriched text to pass to embedDocument()
    */
   buildEmbeddingText(
     chunkText: string,
     noteTitle: string,
     sectionHeader?: string,
-    folderPath?: string
+    folderPath?: string,
+    contextText?: string
   ): string {
     const parts: string[] = []
 
@@ -231,8 +261,47 @@ export class EmbeddingService {
       parts.push(`Section: "${sectionHeader}"`)
     }
 
+    if (contextText) {
+      parts.push(`Context: ${contextText}`)
+    }
+
     parts.push(chunkText)
     return parts.join(' | ')
+  }
+
+  /**
+   * Returns a ContextualizerService when contextual retrieval is enabled in
+   * config and AIManager is ready; otherwise null (plain embeddings).
+   */
+  private getContextualizerIfEnabled(): ContextualizerService | null {
+    const enabled = configStore.get('contextualRetrievalEnabled') === true
+    if (!enabled || !this.aiManager.isInitialized()) return null
+    return ContextualizerService.getInstance(this.aiManager, this.resolveChatModelId())
+  }
+
+  /**
+   * Resolve the chat model id used for contextual generation: prefer a chat
+   * model already loaded in memory, otherwise the first curated chat model.
+   */
+  private resolveChatModelId(): string {
+    const loaded = this.aiManager.getLoadedModels()
+    const chatModels = ModelRegistry.getChatModels()
+    const loadedChat = loaded.find((m) => chatModels.some((cm) => cm.id === m.id))
+    return loadedChat?.id ?? chatModels[0]?.id ?? 'qwen3-5-2b-q8'
+  }
+
+  /**
+   * Build the staleness-hash input for a note.
+   *
+   * Includes the contextual-retrieval flag so that toggling that setting
+   * invalidates the existing index and forces a re-index (the embeddings change
+   * when contextualization is on/off). MUST stay byte-identical to the input
+   * used by the `ai:indexAllNotes` staleness check, or notes would re-index on
+   * every pass.
+   */
+  static buildStaleHashInput(content: string, folderPath: string | undefined): string {
+    const ctx = configStore.get('contextualRetrievalEnabled') === true ? '1' : '0'
+    return content + '||' + (folderPath ?? '') + '||ctx=' + ctx
   }
 
   /**
@@ -257,8 +326,16 @@ export class EmbeddingService {
     _options: ExtendedChunkingOptions = DEFAULT_EXTENDED_OPTIONS
   ): Promise<boolean> {
     try {
-      // Check if note content or folder path has changed since last indexing
-      const hashInput = note.content + '||' + (note.folderPath ?? '')
+      // Ensure the per-space vector DB is initialized. The background indexing
+      // queue can reach a note before any search/indexAll initialized this space,
+      // which would otherwise fail with "Database not initialized".
+      if (!vectorDB.isInitialized()) {
+        await vectorDB.initialize()
+      }
+
+      // Check if note content, folder path, or contextual setting changed since
+      // last indexing (the hash includes the contextual-retrieval flag).
+      const hashInput = EmbeddingService.buildStaleHashInput(note.content, note.folderPath)
       if (!vectorDB.isNoteStale(note.id, hashInput)) {
         console.log(`[EmbeddingService] Note ${note.id} is unchanged, skipping`)
         return false
@@ -287,15 +364,29 @@ export class EmbeddingService {
         return true
       }
 
+      // Optional contextual retrieval: generate a short LLM context per chunk
+      // (Anthropic-style) when enabled and the note is long enough to benefit.
+      const contextualizer = this.getContextualizerIfEnabled()
+      const useContext = contextualizer !== null && contextualizer.shouldContextualize(textContent)
+
       // Generate embeddings and store each chunk
       for (let i = 0; i < chunks.length; i++) {
         const chunk = chunks[i]
-        // Use contextual header for embedding, but store original text in DB
+
+        const contextText =
+          useContext && contextualizer
+            ? await contextualizer.generateContext(textContent, chunk.text)
+            : ''
+
+        // Use the contextual header (+ optional LLM context) for embedding, but
+        // store the original chunk text in DB for display; context is stored
+        // separately so FTS5/BM25 can index it without polluting the excerpt.
         const textToEmbed = this.buildEmbeddingText(
           chunk.text,
           note.title,
           chunk.sectionHeader,
-          note.folderPath
+          note.folderPath,
+          contextText || undefined
         )
         const embedding = await this.embedDocument(textToEmbed)
 
@@ -308,6 +399,7 @@ export class EmbeddingService {
           embeddingModel: this.embeddingModelId,
           sectionId: chunk.sectionId,
           sectionHeader: chunk.sectionHeader,
+          contextText: contextText || undefined,
           metadata: {
             noteTitle: note.title,
             folderId: note.folderId,
@@ -421,7 +513,10 @@ export class EmbeddingService {
    * @returns The embedding vector for similarity search
    */
   async embedQuery(query: string): Promise<number[]> {
-    return this.embedWithPrefix('search_query', query)
+    const def = ModelRegistry.getModel(this.embeddingModelId)
+    return this.embedPrompted(
+      this.applyEmbeddingPrompt(def?.embeddingQueryPrompt, 'search_query', query)
+    )
   }
 
   /**

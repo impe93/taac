@@ -102,6 +102,8 @@ export interface AppConfig {
   autoSave: boolean
   autoSaveInterval: number
   autoIndexNotes: boolean
+  /** Opt-in: enrich each chunk with LLM-generated context at index time (Anthropic-style). */
+  contextualRetrievalEnabled: boolean
   lastOpenedFolderId: string | null
   windowBounds: {
     width: number

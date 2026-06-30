@@ -843,9 +843,9 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
         try {
           const textContent = extractTextFromLexicalContent(note.content)
           if (textContent.trim()) {
-            // Include folder path in hash to detect moves (path changes require re-embedding)
+            // Include folder path + contextual flag in hash (must match indexNote)
             const folderPath = await fsManager.getFullFolderPath(folderId).catch(() => undefined)
-            const hashInput = textContent + '||' + (folderPath ?? '')
+            const hashInput = EmbeddingService.buildStaleHashInput(textContent, folderPath)
             if (vectorDB.isNoteStale(note.id, hashInput)) {
               staleNotes.push({ note, folderId, textContent })
             }
@@ -1001,8 +1001,9 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
         }
 
         // --- Step 2: Multi-query Hybrid Search ---
-        // Retrieve more candidates when reranking or multi-query is active
-        const candidateLimit = retrievalLimit * 3
+        // Retrieve a wide candidate pool so the cross-encoder reranker has enough
+        // to work with — the reranker is the authority on final precision.
+        const candidateLimit = Math.max(retrievalLimit * 6, 40)
 
         let allResults: ExpandedResult[]
 
@@ -1067,27 +1068,27 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
 
             const reranked = await reranker.rerank(query, rerankDocs)
 
-            // Build a score map from reranker results
+            // Build a score map from reranker results (scores are calibrated 0..1)
             const rerankerScoreMap = new Map(reranked.map((r) => [r.id, r.score]))
 
-            // Blend scores: 30% RRF (normalized) + 70% reranker
-            const maxRRF = Math.max(...allResults.map((r) => r.rrfScore))
-            const blended = allResults.map((r) => {
+            // The cross-encoder is the authority on final ordering. RRF is kept
+            // only as a tiny tiebreak so equal reranker scores fall back to the
+            // first-stage hybrid ranking.
+            const maxRRF = Math.max(...allResults.map((r) => r.rrfScore), 1e-9)
+            const scored = allResults.map((r) => {
               const rerankerScore = rerankerScoreMap.get(r.id) ?? 0
-              const rrfNorm = maxRRF > 0 ? r.rrfScore / maxRRF : 0
-              const finalScore = 0.3 * rrfNorm + 0.7 * rerankerScore
-              return { ...r, rrfScore: finalScore, rerankerScore }
+              const finalScore = rerankerScore + 0.001 * (r.rrfScore / maxRRF)
+              return { result: r, rerankerScore, finalScore }
             })
 
-            // Re-sort by blended score and apply limit
-            blended.sort((a, b) => b.rrfScore - a.rrfScore)
-            const topResults = blended.slice(0, retrievalLimit)
+            scored.sort((a, b) => b.finalScore - a.finalScore)
 
-            // Recompute relevancePercent relative to new best score
-            const maxFinal = topResults.length > 0 ? topResults[0].rrfScore : 1
-            return topResults.map((r) => ({
-              ...r,
-              relevancePercent: Math.round((r.rrfScore / maxFinal) * 100)
+            // Calibrated relevance: the reranker score is an absolute 0..1
+            // probability — far more meaningful than "% of the best in the set".
+            return scored.slice(0, retrievalLimit).map(({ result, rerankerScore }) => ({
+              ...result,
+              rerankerScore,
+              relevancePercent: Math.round(rerankerScore * 100)
             }))
           } catch (rerankError) {
             // Graceful degradation: if reranking fails, return original results

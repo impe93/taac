@@ -111,11 +111,20 @@ const configAPI = {
   reset: () => ipcRenderer.invoke('config:reset'),
 
   onChange: (key: string, callback: (newValue: unknown, oldValue: unknown) => void) => {
-    ipcRenderer.on('config:changed', (_event, { key: changedKey, newValue, oldValue }) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      { key: changedKey, newValue, oldValue }: { key: string; newValue: unknown; oldValue: unknown }
+    ): void => {
       if (changedKey === key) {
         callback(newValue, oldValue)
       }
-    })
+    }
+    ipcRenderer.on('config:changed', handler)
+    // Return a disposer so callers (e.g. the useConfig hook) can remove the
+    // listener on unmount — otherwise listeners accumulate (MaxListeners warning).
+    return () => {
+      ipcRenderer.removeListener('config:changed', handler)
+    }
   }
 }
 

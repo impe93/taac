@@ -34,9 +34,10 @@ export const useActiveSpace = () => {
   })
 
   useEffect(() => {
-    window.config.onChange('activeSpaceId', (newValue) => {
+    const unsubscribe = window.config.onChange('activeSpaceId', (newValue) => {
       queryClient.setQueryData(['config', 'activeSpaceId'], newValue)
     })
+    return unsubscribe
   }, [queryClient])
 
   const { data: spaces } = useSpaces()

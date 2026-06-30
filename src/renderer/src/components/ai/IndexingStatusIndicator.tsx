@@ -13,7 +13,7 @@ import { cn } from '@renderer/lib/utils'
  * - Nothing when idle (hidden)
  */
 export const IndexingStatusIndicator: FC = () => {
-  const { isIndexing, currentNoteTitle, queueSize, embeddingModelNeeded } = useAutoIndexStatus()
+  const { isIndexing, currentNoteTitle, queueSize } = useAutoIndexStatus()
   const {
     isAvailable: isModelAvailable,
     downloadEmbeddingModel,
@@ -22,8 +22,11 @@ export const IndexingStatusIndicator: FC = () => {
     isLoading: isCheckingModel
   } = useEnsureEmbeddingModel()
 
-  // Show download prompt: model needed via IPC event OR status query says unavailable
-  const showModelNeeded = !isCheckingModel && (embeddingModelNeeded || !isModelAvailable)
+  // Show download prompt based on the authoritative download-status query, which
+  // refetches when a download completes. (We intentionally don't use the sticky
+  // `embeddingModelNeeded` IPC flag here — it never resets, so the button would
+  // linger after the model is downloaded.)
+  const showModelNeeded = !isCheckingModel && !isModelAvailable
 
   // When downloading, show progress
   if (isDownloading && downloadProgress) {
