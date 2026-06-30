@@ -102,7 +102,7 @@ const RootLayout: FC = () => {
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent side="bottom">
-                    <p>{isOpen ? 'Chiudi' : 'Apri'} AI Assistant</p>
+                    <p>{isOpen ? 'Close' : 'Open'} AI Assistant</p>
                     <p className="text-xs text-muted-foreground">⌘⇧A</p>
                   </TooltipContent>
                 </Tooltip>

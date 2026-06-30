@@ -55,21 +55,19 @@ const FEATURES: CuratedFeature[] = [
     key: 'chat',
     icon: Bot,
     label: 'AI Chat',
-    description:
-      'Conversa in linguaggio naturale con un assistente AI che gira interamente sul tuo dispositivo.',
+    description: 'Converse naturally with an AI assistant that runs entirely on your device.',
     losesIfSkipped:
-      'Senza questo modello non potrai chattare con le tue note né generare contenuti con l’AI.',
+      'Without this model you won’t be able to chat with your notes or generate AI content.',
     optional: false,
     resolveModelIds: () => ['qwen3-5-2b-q8']
   },
   {
     key: 'search',
     icon: Search,
-    label: 'Ricerca semantica',
-    description:
-      'Trova le tue note per significato, non solo per parole chiave. Powered by RAG locale.',
+    label: 'Semantic Search',
+    description: 'Find your notes by meaning, not just keywords. Powered by local RAG.',
     losesIfSkipped:
-      'Senza questi modelli la ricerca avanzata e il recupero contestuale delle note saranno disabilitati.',
+      'Without these models, advanced search and contextual note retrieval will be disabled.',
     optional: false,
     resolveModelIds: () => ['embeddinggemma-300m-q8', 'qwen3-reranker-0.6b-q8']
   },
@@ -78,9 +76,9 @@ const FEATURES: CuratedFeature[] = [
     icon: Mic,
     label: 'Meeting Notes',
     description:
-      'Registra riunioni, trascrivi automaticamente l’audio e identifica i diversi speaker — tutto offline.',
+      'Record meetings, automatically transcribe audio, and identify different speakers — all offline.',
     losesIfSkipped:
-      'Senza questi modelli non potrai registrare meeting né generare trascrizioni e riassunti automatici.',
+      'Without these models you won’t be able to record meetings or generate automatic transcriptions and summaries.',
     optional: true,
     resolveModelIds: (tier, hasGpu) => [
       pickWhisperId(tier, hasGpu),
@@ -221,10 +219,10 @@ export const ModelDownloadStep: FC<ModelDownloadStepProps> = ({ state, dispatch 
       </div>
 
       <div className="space-y-2">
-        <h1 className="font-serif text-4xl font-normal tracking-tight">Configura i modelli AI</h1>
+        <h1 className="font-serif text-4xl font-normal tracking-tight">Configure AI Models</h1>
         <p className="text-lg text-muted-foreground">
-          TaacNotes funziona con modelli AI eseguiti localmente sul tuo dispositivo. Abbiamo
-          selezionato i migliori per il tuo hardware.
+          TaacNotes runs AI models locally on your device. We’ve selected the best ones for your
+          hardware.
         </p>
       </div>
 
@@ -245,13 +243,12 @@ export const ModelDownloadStep: FC<ModelDownloadStepProps> = ({ state, dispatch 
         ))}
       </div>
 
-      {/* Warning durante download */}
+      {/* Warning during download */}
       {isAnyDownloading && (
         <Alert className="text-left">
           <Info className="size-4" />
           <AlertDescription>
-            Non chiudere l’applicazione durante il download. I modelli verranno salvati localmente e
-            usati offline.
+            Don’t close the application during download. Models are saved locally and used offline.
           </AlertDescription>
         </Alert>
       )}
@@ -259,16 +256,16 @@ export const ModelDownloadStep: FC<ModelDownloadStepProps> = ({ state, dispatch 
       {/* Action buttons */}
       <div className="flex items-center gap-3">
         <Button variant="ghost" onClick={handleSkip}>
-          Salta per ora
+          Skip for now
         </Button>
         {allRequiredDownloaded ? (
           <Button size="lg" onClick={handleContinue}>
-            Continua
+            Continue
           </Button>
         ) : (
           <Button size="lg" onClick={handleDownloadAllRequired} disabled={isAnyDownloading}>
             {isAnyDownloading && <Loader2 className="size-4 animate-spin" />}
-            Scarica i modelli richiesti
+            Download Required Models
           </Button>
         )}
       </div>
@@ -371,7 +368,7 @@ const FeatureCard: FC<FeatureCardProps> = ({
                 <p className="font-semibold">{feature.label}</p>
                 {feature.optional && (
                   <Badge variant="outline" className="text-xs">
-                    Opzionale
+                    Optional
                   </Badge>
                 )}
               </div>
@@ -383,7 +380,7 @@ const FeatureCard: FC<FeatureCardProps> = ({
             {isComplete ? (
               <Badge variant="secondary" className="gap-1">
                 <CheckCircle2 className="size-3" />
-                Pronto
+                Ready
               </Badge>
             ) : !isDownloading ? (
               <Button
@@ -392,7 +389,7 @@ const FeatureCard: FC<FeatureCardProps> = ({
                 onClick={() => onDownload(missingIds)}
               >
                 <Download className="size-3.5" />
-                Scarica
+                Download
               </Button>
             ) : null}
           </div>
@@ -428,7 +425,7 @@ const FeatureCard: FC<FeatureCardProps> = ({
             )
           })}
           <div className="flex items-center justify-between border-t border-border/50 pt-1 text-xs font-medium">
-            <span className="text-muted-foreground">Totale</span>
+            <span className="text-muted-foreground">Total</span>
             <span>{formatSize(totalSize)}</span>
           </div>
         </div>
@@ -449,8 +446,8 @@ const FeatureCard: FC<FeatureCardProps> = ({
                       {formatETA(activeProgress.activeEta)}
                     </>
                   )}
-                {activeProgress.activeStatus === 'paused' && ' · In pausa'}
-                {activeProgress.activeStatus === 'pending' && ' · Preparazione...'}
+                {activeProgress.activeStatus === 'paused' && ' · Paused'}
+                {activeProgress.activeStatus === 'pending' && ' · Preparing...'}
               </span>
               <span>{Math.round(activeProgress.percentage)}%</span>
             </div>
@@ -465,7 +462,7 @@ const FeatureCard: FC<FeatureCardProps> = ({
                       onClick={() => onPause(activeProgress.activeModelId!)}
                     >
                       <Pause className="size-3.5" />
-                      Pausa
+                      Pause
                     </Button>
                   ) : (
                     <Button
@@ -474,7 +471,7 @@ const FeatureCard: FC<FeatureCardProps> = ({
                       onClick={() => onResume(activeProgress.activeModelId!)}
                     >
                       <Play className="size-3.5" />
-                      Riprendi
+                      Resume
                     </Button>
                   )}
                 </div>
@@ -489,7 +486,7 @@ const FeatureCard: FC<FeatureCardProps> = ({
             <AlertDescription className="flex items-center justify-between">
               <span>{activeProgress.lastError}</span>
               <Button variant="ghost" size="sm" onClick={() => onRetry(missingIds[0])}>
-                Riprova
+                Retry
               </Button>
             </AlertDescription>
           </Alert>

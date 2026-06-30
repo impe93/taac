@@ -39,7 +39,7 @@ export const IndexingStatusIndicator: FC = () => {
           </Button>
         </TooltipTrigger>
         <TooltipContent side="bottom">
-          <p>Download modello embedding: {percent}%</p>
+          <p>Downloading embedding model: {percent}%</p>
         </TooltipContent>
       </Tooltip>
     )
@@ -61,9 +61,9 @@ export const IndexingStatusIndicator: FC = () => {
           </Button>
         </TooltipTrigger>
         <TooltipContent side="bottom" className="max-w-60">
-          <p className="font-medium">Modello embedding non scaricato</p>
+          <p className="font-medium">Embedding model not downloaded</p>
           <p className="text-xs text-muted-foreground">
-            Clicca per scaricare e abilitare la ricerca AI automatica
+            Click to download and enable automatic AI search
           </p>
         </TooltipContent>
       </Tooltip>
@@ -73,8 +73,8 @@ export const IndexingStatusIndicator: FC = () => {
   // When indexing is active, show animated indicator
   if (isIndexing) {
     const tooltipText = currentNoteTitle
-      ? `Indicizzazione: "${currentNoteTitle}"${queueSize > 0 ? ` (+${queueSize} in coda)` : ''}`
-      : 'Indicizzazione in corso...'
+      ? `Indexing: "${currentNoteTitle}"${queueSize > 0 ? ` (+${queueSize} queued)` : ''}`
+      : 'Indexing...'
 
     return (
       <Tooltip>

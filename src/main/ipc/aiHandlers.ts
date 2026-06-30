@@ -732,7 +732,7 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
 
         if (!isDownloaded) {
           throw new Error(
-            `Il modello di embedding "${modelId}" non è scaricato. Scaricalo prima di indicizzare le note.`
+            `The embedding model "${modelId}" is not downloaded. Download it before indexing notes.`
           )
         }
 
@@ -800,7 +800,7 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
 
       if (!isDownloaded) {
         throw new Error(
-          `Il modello di embedding "${modelId}" non è scaricato. Scaricalo prima di indicizzare le note.`
+          `The embedding model "${modelId}" is not downloaded. Download it before indexing notes.`
         )
       }
 

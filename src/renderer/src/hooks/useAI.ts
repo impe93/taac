@@ -25,15 +25,14 @@ export const useAIInitialize = () => {
     onSuccess: (data) => {
       queryClient.setQueryData(['ai', 'initialized'], true)
       if (data?.gpuFallback) {
-        toast.warning('Accelerazione GPU non disponibile', {
-          description:
-            'Il modello AI verrà eseguito in modalità CPU. Le prestazioni potrebbero essere ridotte.'
+        toast.warning('GPU acceleration unavailable', {
+          description: 'The AI model will run in CPU mode. Performance may be reduced.'
         })
       }
     },
     onError: (error) => {
-      toast.error('Inizializzazione AI fallita', {
-        description: (error as Error)?.message ?? 'Errore sconosciuto'
+      toast.error('AI initialization failed', {
+        description: (error as Error)?.message ?? 'Unknown error'
       })
     }
   })

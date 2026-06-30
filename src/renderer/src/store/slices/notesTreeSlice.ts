@@ -520,7 +520,7 @@ const notesTreeSlice = createSlice({
       })
       .addCase(loadTree.rejected, (state, action) => {
         state.loading = false
-        state.error = action.error.message || 'Errore nel caricamento del tree'
+        state.error = action.error.message || 'Failed to load tree'
       })
 
     // CREATE NOTE
@@ -554,7 +554,7 @@ const notesTreeSlice = createSlice({
         delete state.loadingOperations[`createNote-${folderId}`]
       })
       .addCase(createNote.rejected, (state, action) => {
-        state.error = action.error.message || 'Errore nella creazione della nota'
+        state.error = action.error.message || 'Failed to create note'
         delete state.loadingOperations[`createNote-${action.meta.arg.folderId}`]
       })
 

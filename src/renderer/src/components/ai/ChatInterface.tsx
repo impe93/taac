@@ -292,7 +292,7 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
     // Check embedding model availability first
     if (!isEmbeddingAvailable) {
       setRagError(
-        `Il modello di embedding "${embeddingModelName}" non è disponibile. Scaricalo per abilitare la ricerca nelle note.`
+        `The embedding model "${embeddingModelName}" is not available. Download it to enable note search.`
       )
       return []
     }
@@ -310,8 +310,7 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
       return notes
     } catch (error) {
       console.error('[RAG] Error searching for relevant notes:', error)
-      const errorMessage =
-        error instanceof Error ? error.message : 'Errore nella ricerca delle note'
+      const errorMessage = error instanceof Error ? error.message : 'Error searching notes'
       setRagError(errorMessage)
       return []
     }
@@ -513,10 +512,10 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
         <div className="px-4 pt-3 shrink-0">
           <Alert variant="destructive">
             <AlertTriangle className="size-4" />
-            <AlertTitle>Inizializzazione AI fallita</AlertTitle>
+            <AlertTitle>AI initialization failed</AlertTitle>
             <AlertDescription className="flex items-center justify-between gap-4">
               <span className="text-sm">
-                {(initializeError as Error)?.message ?? "Errore sconosciuto. Riavvia l'app."}
+                {(initializeError as Error)?.message ?? 'Unknown error. Restart the app.'}
               </span>
               <Button
                 variant="outline"
@@ -528,10 +527,10 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
                 {isInitializing ? (
                   <>
                     <Loader2 className="size-4 mr-2 animate-spin" />
-                    Caricamento...
+                    Loading...
                   </>
                 ) : (
-                  'Riprova'
+                  'Retry'
                 )}
               </Button>
             </AlertDescription>
@@ -544,11 +543,11 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
         <div className="px-4 pt-3 shrink-0">
           <Alert>
             <AlertTriangle className="size-4" />
-            <AlertTitle>Ricerca nelle note disabilitata</AlertTitle>
+            <AlertTitle>Note search disabled</AlertTitle>
             <AlertDescription className="flex items-center justify-between gap-4">
               <span className="text-sm">
-                Il modello di embedding <strong>{embeddingModelName}</strong> è necessario per
-                cercare nelle tue note. Scaricalo per abilitare il RAG.
+                The embedding model <strong>{embeddingModelName}</strong> is required to search your
+                notes. Download it to enable RAG.
               </span>
               <Button
                 variant="outline"
@@ -563,7 +562,7 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
                     {embeddingProgress ? `${embeddingProgress.percentage}%` : 'Download...'}
                   </>
                 ) : (
-                  'Scarica'
+                  'Download'
                 )}
               </Button>
             </AlertDescription>

@@ -94,7 +94,7 @@ export const NoteAIActions: FC<NoteAIActionsProps> = ({
               size="sm"
               className={className}
               disabled={isProcessing}
-              aria-label="Azioni AI"
+              aria-label="AI Actions"
             >
               <Sparkles className="size-4" />
               <span className="ml-1.5 hidden sm:inline">AI</span>
@@ -102,28 +102,28 @@ export const NoteAIActions: FC<NoteAIActionsProps> = ({
           </DropdownMenuTrigger>
         </TooltipTrigger>
         <TooltipContent side="bottom">
-          <p>Azioni AI per questa nota</p>
+          <p>AI Actions for this note</p>
         </TooltipContent>
       </Tooltip>
 
       <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuItem onClick={() => handleAction('ask')}>
           <MessageSquare className="mr-2 size-4" />
-          <span>Chiedi all&apos;AI su questa nota</span>
+          <span>Ask AI about this note</span>
         </DropdownMenuItem>
 
         <DropdownMenuItem onClick={() => handleAction('summarize')}>
           <FileText className="mr-2 size-4" />
-          <span>Riassumi questa nota</span>
+          <span>Summarize this note</span>
         </DropdownMenuItem>
 
         <DropdownMenuSeparator />
 
         <DropdownMenuItem onClick={() => handleAction('explain')} disabled={!hasSelection}>
           <MessageCircleQuestion className="mr-2 size-4" />
-          <span>Spiega il testo selezionato</span>
+          <span>Explain selected text</span>
           {!hasSelection && (
-            <span className="ml-auto text-xs text-muted-foreground">Seleziona testo</span>
+            <span className="ml-auto text-xs text-muted-foreground">Select text</span>
           )}
         </DropdownMenuItem>
       </DropdownMenuContent>
