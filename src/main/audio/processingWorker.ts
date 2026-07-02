@@ -4,41 +4,34 @@
  * Runs transcription and diarization off the Electron main thread to prevent
  * UI freezes during CPU/GPU-intensive inference.
  *
- * Transcription path selection:
- *   - GPU (hasMetal on macOS arm64, hasCuda on Windows/Linux): WhisperGpuService
- *   - CPU fallback: TranscriptionService (sherpa-onnx-node ONNX)
- *
- * Diarization always uses sherpa-onnx-node (CPU). Models are small (~15MB)
- * and fast on Apple Silicon CPU.
+ * Transcription uses a single engine — WhisperService (whisper.cpp via
+ * @fugood/whisper.node) — which runs GPU-accelerated (Metal / CUDA) when
+ * available and on CPU otherwise. Diarization uses sherpa-onnx-node (CPU).
  *
  * Message protocol: see WorkerInMessage / WorkerOutMessage below.
  */
 
 import { parentPort } from 'node:worker_threads'
-import type { TranscriptionResult, DiarizationResult } from './types'
+import type { TranscriptionResult, DiarizationResult, WhisperVariant } from './types'
 
 // ─── Message protocol ────────────────────────────────────────────────────────
 
 export interface WorkerInitConfig {
-  /** 'gpu' uses WhisperGpuService + GGML model; 'cpu' uses TranscriptionService + ONNX models */
-  transcriptionMode: 'gpu' | 'cpu'
-  /** GPU path: absolute path to the single GGML model file (e.g. ggml-base.bin) */
+  /** Absolute path to the GGML whisper model file (e.g. ggml-large-v3-turbo.bin) */
   whisperModelPath?: string
-  /** CPU path: absolute path to the directory containing ONNX model files */
-  whisperModelDir?: string
-  /** Whether Metal GPU is available (macOS Apple Silicon) */
-  hasMetal: boolean
-  /** Whether CUDA GPU is available (Windows / Linux) */
-  hasCuda: boolean
+  /** Enable GPU acceleration (Metal on macOS, CUDA/Vulkan on Windows/Linux) */
+  useGpu: boolean
+  /** Native whisper.cpp backend variant to load ('default' | 'cuda' | 'vulkan') */
+  whisperVariant?: WhisperVariant
   /** Absolute path to the pyannote segmentation ONNX model */
   segmentationModelPath: string
-  /** Absolute path to the 3dspeaker embedding ONNX model */
+  /** Absolute path to the speaker embedding ONNX model */
   embeddingModelPath: string
 }
 
 type WorkerInMessage =
   | { type: 'init'; config: WorkerInitConfig }
-  | { type: 'transcribe'; wavPath: string; taskId: string }
+  | { type: 'transcribe'; wavPath: string; taskId: string; language?: string }
   | { type: 'diarize'; wavPath: string; taskId: string }
 
 export type WorkerOutMessage =
@@ -99,53 +92,52 @@ const port = createPort()
 // ─── Worker state ─────────────────────────────────────────────────────────────
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-let gpuService: any | null = null
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let cpuService: any | null = null
+let whisperService: any | null = null
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let diarizationService: any | null = null
-let activeMode: 'gpu' | 'cpu' | null = null
 
 function send(msg: WorkerOutMessage): void {
   port.postMessage(msg)
+}
+
+// A whisper.cpp context is NOT safe for concurrent use: two overlapping
+// transcribeFile calls on the same context hang inside the native code with no
+// error (seen in remote mode, where mic + system tracks are requested together).
+// All whisper work is therefore serialized through this promise chain.
+// Diarization needs no queue: it uses a separate sherpa-onnx context and its
+// native process() call is synchronous.
+let whisperQueue: Promise<unknown> = Promise.resolve()
+
+function enqueueWhisperTask<T>(task: () => Promise<T>): Promise<T> {
+  const run = whisperQueue.then(task, task)
+  // Keep the chain alive regardless of individual task outcomes.
+  whisperQueue = run.then(
+    () => undefined,
+    () => undefined
+  )
+  return run
 }
 
 // ─── Initialization ───────────────────────────────────────────────────────────
 
 async function handleInit(config: WorkerInitConfig): Promise<void> {
   try {
-    const { WhisperGpuService } = await import('./WhisperGpuService')
-    const { TranscriptionService } = await import('./TranscriptionService')
+    const { WhisperService } = await import('./WhisperService')
     const { DiarizationService } = await import('./DiarizationService')
 
-    activeMode = config.transcriptionMode
-
-    if (config.transcriptionMode === 'gpu' && config.whisperModelPath) {
-      // GPU path: use whisper.cpp with Metal (macOS) or CUDA (Windows/Linux)
-      const useGpu = config.hasMetal || config.hasCuda
-      const svc = new WhisperGpuService()
-      await svc.initialize(config.whisperModelPath, useGpu)
-
+    // Transcription: single whisper.cpp engine (GPU when available, else CPU)
+    if (config.whisperModelPath) {
+      const svc = new WhisperService()
+      await svc.initialize(config.whisperModelPath, config.useGpu, config.whisperVariant)
       if (svc.isInitialized()) {
-        gpuService = svc
-        console.log('[Worker] Transcription: GPU (whisper.cpp)')
+        whisperService = svc
+        const backend = config.useGpu ? (config.whisperVariant ?? 'default').toUpperCase() : 'CPU'
+        console.log(`[Worker] Transcription: whisper.cpp (${backend})`)
       } else {
-        // GPU init failed — fall back to CPU ONNX path if a modelDir is available
-        console.warn('[Worker] GPU service init failed — attempting CPU fallback')
-        if (config.whisperModelDir) {
-          const cpuSvc = new TranscriptionService()
-          await cpuSvc.initialize(config.whisperModelDir)
-          cpuService = cpuSvc
-          activeMode = 'cpu'
-          console.log('[Worker] Transcription: CPU fallback (sherpa-onnx)')
-        }
+        console.warn('[Worker] Whisper model not available — transcription disabled')
       }
-    } else if (config.whisperModelDir) {
-      // CPU path: use sherpa-onnx ONNX models
-      const svc = new TranscriptionService()
-      await svc.initialize(config.whisperModelDir)
-      cpuService = svc
-      console.log('[Worker] Transcription: CPU (sherpa-onnx)')
+    } else {
+      console.warn('[Worker] No whisper model path provided — transcription disabled')
     }
 
     // Diarization always uses sherpa-onnx (CPU)
@@ -164,20 +156,23 @@ async function handleInit(config: WorkerInitConfig): Promise<void> {
 
 // ─── Task handlers ────────────────────────────────────────────────────────────
 
-async function handleTranscribe(wavPath: string, taskId: string): Promise<void> {
+async function handleTranscribe(wavPath: string, taskId: string, language?: string): Promise<void> {
   try {
     send({ type: 'progress', taskId, stage: 'transcribing', percentage: 0 })
 
     let result: TranscriptionResult
 
-    if (activeMode === 'gpu' && gpuService) {
-      result = await gpuService.transcribe(wavPath)
-    } else if (cpuService) {
-      result = await cpuService.transcribe(wavPath)
+    if (whisperService) {
+      result = await enqueueWhisperTask(() =>
+        whisperService.transcribe(wavPath, {
+          language,
+          onProgress: (percentage: number): void =>
+            send({ type: 'progress', taskId, stage: 'transcribing', percentage })
+        })
+      )
     } else {
-      // No transcription service available — return empty result
       console.warn('[Worker] No transcription service available — returning empty result')
-      result = { text: '', segments: [], detectedLanguage: 'en' }
+      result = { text: '', segments: [], detectedLanguage: '' }
     }
 
     send({ type: 'progress', taskId, stage: 'transcribing', percentage: 100 })
@@ -219,7 +214,7 @@ port.onMessage((msg: WorkerInMessage) => {
       handleInit(msg.config)
       break
     case 'transcribe':
-      handleTranscribe(msg.wavPath, msg.taskId)
+      handleTranscribe(msg.wavPath, msg.taskId, msg.language)
       break
     case 'diarize':
       handleDiarize(msg.wavPath, msg.taskId)

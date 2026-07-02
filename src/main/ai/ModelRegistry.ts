@@ -100,118 +100,6 @@ const CURATED_MODELS: ModelDefinition[] = [
   },
 
   // ============================================================================
-  // TRANSCRIPTION MODELS - Whisper ONNX via sherpa-onnx (§5.2)
-  // ============================================================================
-  {
-    id: 'whisper-base-onnx',
-    name: 'Whisper Base (ONNX)',
-    description:
-      'OpenAI Whisper base model in ONNX format — good accuracy for clear audio with fast inference (~142MB)',
-    filename: 'base-encoder.int8.onnx',
-    sizeBytes: 142 * 1024 * 1024, // ~142MB
-    layers: 0,
-    quantization: 'fp32',
-    contextLength: 0,
-    capabilities: ['transcription'],
-    hardwareTier: 'low',
-    downloadUrl:
-      'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-base/resolve/main/base-encoder.int8.onnx',
-    files: [
-      {
-        role: 'encoder',
-        filename: 'base-encoder.int8.onnx',
-        downloadUrl:
-          'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-base/resolve/main/base-encoder.int8.onnx'
-      },
-      {
-        role: 'decoder',
-        filename: 'base-decoder.int8.onnx',
-        downloadUrl:
-          'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-base/resolve/main/base-decoder.int8.onnx'
-      },
-      {
-        role: 'tokens',
-        filename: 'base-tokens.txt',
-        downloadUrl:
-          'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-base/resolve/main/base-tokens.txt'
-      }
-    ],
-    license: 'MIT'
-  },
-  {
-    id: 'whisper-small-onnx',
-    name: 'Whisper Small (ONNX)',
-    description:
-      'OpenAI Whisper small model in ONNX format — good accuracy/speed balance for multilingual transcription (~466MB)',
-    filename: 'small-encoder.int8.onnx',
-    sizeBytes: 466 * 1024 * 1024, // ~466MB
-    layers: 0,
-    quantization: 'int8',
-    contextLength: 0,
-    capabilities: ['transcription'],
-    hardwareTier: 'medium',
-    downloadUrl:
-      'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-small/resolve/main/small-encoder.int8.onnx',
-    files: [
-      {
-        role: 'encoder',
-        filename: 'small-encoder.int8.onnx',
-        downloadUrl:
-          'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-small/resolve/main/small-encoder.int8.onnx'
-      },
-      {
-        role: 'decoder',
-        filename: 'small-decoder.int8.onnx',
-        downloadUrl:
-          'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-small/resolve/main/small-decoder.int8.onnx'
-      },
-      {
-        role: 'tokens',
-        filename: 'small-tokens.txt',
-        downloadUrl:
-          'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-small/resolve/main/small-tokens.txt'
-      }
-    ],
-    license: 'MIT'
-  },
-  {
-    id: 'whisper-large-v3-turbo-onnx',
-    name: 'Whisper Large v3 Turbo (ONNX)',
-    description:
-      'OpenAI Whisper large-v3-turbo model in ONNX format — near-best accuracy at 8x the speed of large-v3 (~1.6GB)',
-    filename: 'turbo-encoder.int8.onnx',
-    sizeBytes: 1.6 * 1024 * 1024 * 1024, // ~1.6GB
-    layers: 0,
-    quantization: 'int8',
-    contextLength: 0,
-    capabilities: ['transcription'],
-    hardwareTier: 'high',
-    downloadUrl:
-      'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-turbo/resolve/main/turbo-encoder.int8.onnx',
-    files: [
-      {
-        role: 'encoder',
-        filename: 'turbo-encoder.int8.onnx',
-        downloadUrl:
-          'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-turbo/resolve/main/turbo-encoder.int8.onnx'
-      },
-      {
-        role: 'decoder',
-        filename: 'turbo-decoder.int8.onnx',
-        downloadUrl:
-          'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-turbo/resolve/main/turbo-decoder.int8.onnx'
-      },
-      {
-        role: 'tokens',
-        filename: 'turbo-tokens.txt',
-        downloadUrl:
-          'https://huggingface.co/csukuangfj/sherpa-onnx-whisper-turbo/resolve/main/turbo-tokens.txt'
-      }
-    ],
-    license: 'MIT'
-  },
-
-  // ============================================================================
   // TRANSCRIPTION MODELS — Whisper GGML via whisper.cpp / @fugood/whisper.node
   // GPU-accelerated (Metal on macOS Apple Silicon, CUDA on Windows/Linux)
   // ============================================================================
@@ -395,15 +283,6 @@ export class ModelRegistry {
   }
 
   /**
-   * Get ONNX transcription models (sherpa-onnx, CPU)
-   */
-  static getOnnxTranscriptionModels(): ModelDefinition[] {
-    return Array.from(this.models.values()).filter(
-      (m) => m.capabilities.includes('transcription') && m.format !== 'ggml'
-    )
-  }
-
-  /**
    * Get reranking models (cross-encoder rerankers)
    */
   static getRerankerModels(): ModelDefinition[] {
@@ -420,13 +299,9 @@ export class ModelRegistry {
   /**
    * Get recommended models for a hardware tier.
    *
-   * @param tier      Hardware tier for filtering compatible models
-   * @param hasGpu    Whether GPU is available — if true, GGML transcription models are preferred
+   * @param tier  Hardware tier for filtering compatible models
    */
-  static getRecommendedModels(
-    tier: HardwareTier,
-    hasGpu = false
-  ): {
+  static getRecommendedModels(tier: HardwareTier): {
     chat: ModelDefinition | undefined
     embedding: ModelDefinition | undefined
     transcription: ModelDefinition | undefined
@@ -444,19 +319,11 @@ export class ModelRegistry {
       .filter((m) => m.capabilities.includes('embedding'))
       .sort((a, b) => a.sizeBytes - b.sizeBytes)
 
-    // Prefer GGML (GPU) models when GPU is available, fall back to ONNX (CPU) (§7.4)
-    const transcriptionCandidates = compatible
-      .filter((m) => m.capabilities.includes('transcription'))
-      .filter((m) => (hasGpu ? m.format === 'ggml' : m.format !== 'ggml'))
+    // Transcription is a single whisper.cpp (GGML) engine for both GPU and CPU —
+    // pick the most capable that fits the tier.
+    const transcriptionModels = compatible
+      .filter((m) => m.capabilities.includes('transcription') && m.format === 'ggml')
       .sort((a, b) => tierOrder.indexOf(b.hardwareTier) - tierOrder.indexOf(a.hardwareTier))
-
-    // If GPU preferred but no GGML model fits the tier, fall back to ONNX
-    const transcriptionModels =
-      transcriptionCandidates.length > 0
-        ? transcriptionCandidates
-        : compatible
-            .filter((m) => m.capabilities.includes('transcription'))
-            .sort((a, b) => tierOrder.indexOf(b.hardwareTier) - tierOrder.indexOf(a.hardwareTier))
 
     return {
       chat: chatModels[0],

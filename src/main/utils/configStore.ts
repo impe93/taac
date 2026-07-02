@@ -61,6 +61,8 @@ export interface AppConfig {
     keepAudioAfterTranscription: boolean
     defaultRecordingMode: 'remote' | 'in-person'
     whisperModelId: string
+    /** Preferred spoken language: 'auto' (detect) or an ISO 639-1 code (e.g. 'it') */
+    defaultLanguage: string
   }
 }
 
@@ -184,12 +186,14 @@ const schema = {
     properties: {
       keepAudioAfterTranscription: { type: 'boolean', default: true },
       defaultRecordingMode: { type: 'string', enum: ['remote', 'in-person'], default: 'remote' },
-      whisperModelId: { type: 'string', default: 'whisper-small-onnx' }
+      whisperModelId: { type: 'string', default: 'whisper-large-v3-turbo-ggml' },
+      defaultLanguage: { type: 'string', default: 'auto' }
     },
     default: {
       keepAudioAfterTranscription: true,
       defaultRecordingMode: 'remote',
-      whisperModelId: 'whisper-small-onnx'
+      whisperModelId: 'whisper-large-v3-turbo-ggml',
+      defaultLanguage: 'auto'
     }
   }
 } as const

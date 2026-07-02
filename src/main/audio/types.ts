@@ -23,6 +23,14 @@ export interface ProcessingProgress {
   message?: string
 }
 
+/**
+ * whisper.cpp native backend variant (@fugood/whisper.node).
+ * - 'default' → CPU everywhere, plus Metal on macOS Apple Silicon (compiled in)
+ * - 'cuda'    → NVIDIA GPU acceleration on Windows / Linux
+ * - 'vulkan'  → AMD / Intel GPU acceleration on Windows / Linux
+ */
+export type WhisperVariant = 'default' | 'cuda' | 'vulkan'
+
 /** Result of a single transcription pass on a WAV file */
 export interface TranscriptionResult {
   /** Full concatenated text */

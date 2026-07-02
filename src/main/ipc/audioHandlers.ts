@@ -16,7 +16,9 @@ import fs from 'node:fs/promises'
 import { convertToWav } from '../audio/audioConverter'
 import { AudioManager } from '../audio/AudioManager'
 import { configStore } from '../utils/configStore'
+import { ModelRegistry } from '../ai/ModelRegistry'
 import type { ProcessingProgress } from '../audio/types'
+import type { Speaker, TranscriptionSegment, ActionItem } from '../../preload/types'
 
 // AbortController for the active processing job
 let activeProcessingAbort: AbortController | null = null
@@ -33,9 +35,89 @@ interface RecordingContext {
   mode: 'remote' | 'in-person'
   recordingDate: string
   durationSecs: number
+  /** Requested spoken language: 'auto' or an ISO 639-1 code */
+  requestedLanguage: string
 }
 
 const recordingContextMap = new Map<string, RecordingContext>()
+
+function isDevApp(): boolean {
+  return !app.isPackaged
+}
+
+function getAudioDir(noteId: string, spaceId: string): string {
+  const userData = app.getPath('userData')
+  const spacesBase = join(userData, 'spaces')
+  const audioDir = join(spacesBase, spaceId, 'assets', 'audio', noteId)
+  validatePath(audioDir, spacesBase)
+  return audioDir
+}
+
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    await fs.access(path)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Rebuild WAV tracks from preserved WebM files on disk (dev replay path).
+ */
+async function prepareRecordingContextFromDisk(
+  noteId: string,
+  spaceId: string,
+  options: {
+    mode: 'remote' | 'in-person'
+    recordingDate: string
+    durationSecs: number
+    requestedLanguage: string
+  },
+  onConvertingProgress: (progress: number) => void
+): Promise<RecordingContext> {
+  const audioDir = getAudioDir(noteId, spaceId)
+  const micWebmPath = join(audioDir, 'mic.webm')
+
+  if (!(await fileExists(micWebmPath))) {
+    throw new Error(
+      `No saved microphone audio found at "${micWebmPath}". Enable "Keep audio recordings after transcription" and record again.`
+    )
+  }
+
+  onConvertingProgress(10)
+  const micWavPath = join(audioDir, 'mic.wav')
+  await convertToWav(micWebmPath, micWavPath)
+  onConvertingProgress(50)
+
+  let systemWebmPath: string | undefined
+  let systemWavPath: string | undefined
+
+  if (options.mode === 'remote') {
+    const candidateSystemWebm = join(audioDir, 'system.webm')
+    if (await fileExists(candidateSystemWebm)) {
+      systemWebmPath = candidateSystemWebm
+      systemWavPath = join(audioDir, 'system.wav')
+      await convertToWav(systemWebmPath, systemWavPath)
+    }
+  }
+
+  onConvertingProgress(100)
+
+  const durationSecs =
+    options.durationSecs > 0 ? options.durationSecs : await getWavDurationSecs(micWavPath)
+
+  return {
+    micWavPath,
+    systemWavPath,
+    micWebmPath,
+    systemWebmPath,
+    mode: options.mode,
+    recordingDate: options.recordingDate,
+    durationSecs,
+    requestedLanguage: options.requestedLanguage
+  }
+}
 
 /** Stage index mapping for progress events */
 const STAGE_INDEX: Record<string, number> = {
@@ -144,6 +226,8 @@ export function registerAudioHandlers(): void {
         systemAudio?: Uint8Array
         mode: 'remote' | 'in-person'
         durationSecs?: number
+        /** Requested spoken language: 'auto' or an ISO 639-1 code */
+        language?: string
       }
     ): Promise<{
       micPath: string
@@ -190,7 +274,8 @@ export function registerAudioHandlers(): void {
           systemWebmPath: systemPath,
           mode: data.mode,
           recordingDate: new Date().toISOString(),
-          durationSecs: data.durationSecs ?? (await getWavDurationSecs(micWavPath))
+          durationSecs: data.durationSecs ?? (await getWavDurationSecs(micWavPath)),
+          requestedLanguage: data.language ?? 'auto'
         })
 
         return { micPath, micWavPath, systemPath, systemWavPath }
@@ -238,6 +323,7 @@ export function registerAudioHandlers(): void {
           context.mode,
           context.recordingDate,
           context.durationSecs,
+          context.requestedLanguage,
           (progress: ProcessingProgress) => broadcastProgress(noteId, progress)
         )
 
@@ -277,18 +363,127 @@ export function registerAudioHandlers(): void {
     }
   })
 
-  // Check if the whisper transcription model is downloaded
+  // Check if a whisper.cpp (GGML) transcription model is downloaded.
+  // GGML models are single .bin files stored directly under {userData}/models/.
   ipcMain.handle('audio:isTranscriptionModelDownloaded', async (): Promise<boolean> => {
     try {
-      const whisperModelId = configStore.get('meeting').whisperModelId
-      const modelDir = join(app.getPath('userData'), 'models', whisperModelId)
-      // Check if the model directory exists with required files
-      // File names follow the pattern: {variant}-tokens.txt (e.g., small-tokens.txt)
-      const entries = await fs.readdir(modelDir).catch(() => [] as string[])
-      return entries.some((f) => f.endsWith('-tokens.txt'))
+      const modelsBase = join(app.getPath('userData'), 'models')
+      const ggmlModels = ModelRegistry.getGgmlTranscriptionModels()
+      for (const model of ggmlModels) {
+        const exists = await fs
+          .access(join(modelsBase, model.filename))
+          .then(() => true)
+          .catch(() => false)
+        if (exists) return true
+      }
+      return false
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       throw new Error(`[AudioHandlers] Failed to check transcription model status: ${message}`)
     }
   })
+
+  ipcMain.handle(
+    'audio:hasStoredRecording',
+    async (_event, noteId: string, spaceId: string): Promise<boolean> => {
+      try {
+        const audioDir = getAudioDir(noteId, spaceId)
+        return fileExists(join(audioDir, 'mic.webm'))
+      } catch {
+        return false
+      }
+    }
+  )
+
+  // Dev-only: re-run the full pipeline from preserved WebM files on disk.
+  ipcMain.handle(
+    'audio:reprocessFromDisk',
+    async (
+      _event,
+      noteId: string,
+      spaceId: string,
+      options: {
+        mode: 'remote' | 'in-person'
+        recordingDate: string
+        durationSecs: number
+        language: string
+      }
+    ): Promise<{ metadata: unknown; content: string; summarizationError?: string }> => {
+      if (!isDevApp()) {
+        throw new Error('[AudioHandlers] reprocessFromDisk is only available in development builds')
+      }
+
+      try {
+        activeProcessingAbort = new AbortController()
+
+        const context = await prepareRecordingContextFromDisk(
+          noteId,
+          spaceId,
+          {
+            mode: options.mode,
+            recordingDate: options.recordingDate,
+            durationSecs: options.durationSecs,
+            requestedLanguage: options.language
+          },
+          (pct) =>
+            broadcastProgress(noteId, {
+              stage: 'converting',
+              progress: pct,
+              message: 'Converting audio...'
+            })
+        )
+
+        console.log(`[AudioHandlers] reprocessFromDisk called for note ${noteId}`)
+
+        const result = await AudioManager.getInstance().processRecording(
+          noteId,
+          spaceId,
+          context.micWavPath,
+          context.systemWavPath,
+          context.mode,
+          context.recordingDate,
+          context.durationSecs,
+          context.requestedLanguage,
+          (progress: ProcessingProgress) => broadcastProgress(noteId, progress)
+        )
+
+        activeProcessingAbort = null
+        await cleanupAudioFiles(context)
+
+        return result
+      } catch (error) {
+        activeProcessingAbort = null
+        const message = error instanceof Error ? error.message : String(error)
+        throw new Error(
+          `[AudioHandlers] Failed to reprocess recording from disk for note ${noteId}: ${message}`
+        )
+      }
+    }
+  )
+
+  // Re-run summarization on an already-transcribed meeting in a chosen language
+  // (recovery path when auto-detection got the language wrong).
+  ipcMain.handle(
+    'audio:regenerateSummary',
+    async (
+      _event,
+      payload: { speakers: Speaker[]; transcription: TranscriptionSegment[]; language: string }
+    ): Promise<{
+      content: string
+      actionItems: ActionItem[]
+      language: string
+      summarizationError?: string
+    }> => {
+      try {
+        return await AudioManager.getInstance().regenerateSummary(
+          payload.speakers,
+          payload.transcription,
+          payload.language
+        )
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        throw new Error(`[AudioHandlers] Failed to regenerate summary: ${message}`)
+      }
+    }
+  )
 }

@@ -343,6 +343,7 @@ const audioAPI = {
       systemAudio?: Uint8Array
       mode: 'remote' | 'in-person'
       durationSecs?: number
+      language?: string
     }
   ) => ipcRenderer.invoke('audio:saveRecording', noteId, spaceId, data),
 
@@ -359,7 +360,27 @@ const audioAPI = {
     }
   },
 
-  isTranscriptionModelDownloaded: () => ipcRenderer.invoke('audio:isTranscriptionModelDownloaded')
+  isTranscriptionModelDownloaded: () => ipcRenderer.invoke('audio:isTranscriptionModelDownloaded'),
+
+  regenerateSummary: (payload: {
+    speakers: import('./types').Speaker[]
+    transcription: import('./types').TranscriptionSegment[]
+    language: string
+  }) => ipcRenderer.invoke('audio:regenerateSummary', payload),
+
+  hasStoredRecording: (noteId: string, spaceId: string) =>
+    ipcRenderer.invoke('audio:hasStoredRecording', noteId, spaceId),
+
+  reprocessFromDisk: (
+    noteId: string,
+    spaceId: string,
+    options: {
+      mode: 'remote' | 'in-person'
+      recordingDate: string
+      durationSecs: number
+      language: string
+    }
+  ) => ipcRenderer.invoke('audio:reprocessFromDisk', noteId, spaceId, options)
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

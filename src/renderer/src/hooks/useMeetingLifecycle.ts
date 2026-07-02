@@ -37,6 +37,8 @@ export interface MeetingLifecycleContextValue {
     spaceId: string
     folderId: string
     mode: MeetingRecordingMode
+    /** Preferred spoken language: 'auto' (detect) or an ISO 639-1 code */
+    language?: string
   }) => Promise<void>
   pauseRecording: () => void
   resumeRecording: () => void

@@ -55,15 +55,29 @@ export class ProcessingUtilityManager {
       })
       this.child = child
 
+      // If the child dies before signalling ready (e.g. a native abort in a
+      // model init), reject instead of leaving the init promise pending forever.
+      const onEarlyExit = (code: number): void => {
+        reject(
+          new Error(
+            `Utility process crashed during initialization (exit code ${code}). ` +
+              'Check the audio model files and logs.'
+          )
+        )
+      }
+      child.once('exit', onEarlyExit)
+
       // One-shot initialization listener
       const onInit = (msg: WorkerOutMessage): void => {
         if (msg.type === 'ready') {
           child.off('message', onInit)
+          child.off('exit', onEarlyExit)
           this.initialized = true
           console.log('[ProcessingUtilityManager] Utility process ready')
           resolve()
         } else if (msg.type === 'init-error') {
           child.off('message', onInit)
+          child.off('exit', onEarlyExit)
           console.error('[ProcessingUtilityManager] Init error:', msg.error)
           reject(new Error(msg.error))
         }
@@ -139,9 +153,14 @@ export class ProcessingUtilityManager {
    * Transcribe a WAV file in the utility process.
    *
    * @param wavPath     Absolute path to the 16 kHz mono WAV file
+   * @param language    Optional ISO 639-1 language to pin (omit/'' → auto-detect)
    * @param onProgress  Optional callback for progress events
    */
-  transcribe(wavPath: string, onProgress?: ProgressCallback): Promise<TranscriptionResult> {
+  transcribe(
+    wavPath: string,
+    language?: string,
+    onProgress?: ProgressCallback
+  ): Promise<TranscriptionResult> {
     if (!this.child || !this.initialized) {
       return Promise.reject(new Error('Utility process not initialized'))
     }
@@ -150,7 +169,7 @@ export class ProcessingUtilityManager {
 
     return new Promise<TranscriptionResult>((resolve, reject) => {
       this.pendingTranscriptions.set(taskId, { resolve, reject, onProgress })
-      this.child!.postMessage({ type: 'transcribe', wavPath, taskId })
+      this.child!.postMessage({ type: 'transcribe', wavPath, taskId, language })
     })
   }
 

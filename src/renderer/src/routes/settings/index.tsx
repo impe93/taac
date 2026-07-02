@@ -54,12 +54,9 @@ const MODEL_ROWS: ModelRowConfig[] = [
 ]
 
 const TRANSCRIPTION_MODEL_ROWS: ModelRowConfig[] = [
-  { id: 'whisper-base-ggml', label: 'Transcription · GPU', icon: Mic },
-  { id: 'whisper-small-ggml', label: 'Transcription · GPU', icon: Mic },
-  { id: 'whisper-large-v3-turbo-ggml', label: 'Transcription · GPU', icon: Mic },
-  { id: 'whisper-base-onnx', label: 'Transcription', icon: Mic },
-  { id: 'whisper-small-onnx', label: 'Transcription', icon: Mic },
-  { id: 'whisper-large-v3-turbo-onnx', label: 'Transcription', icon: Mic }
+  { id: 'whisper-base-ggml', label: 'Transcription', icon: Mic },
+  { id: 'whisper-small-ggml', label: 'Transcription', icon: Mic },
+  { id: 'whisper-large-v3-turbo-ggml', label: 'Transcription', icon: Mic }
 ]
 
 const DIARIZATION_MODEL_ROWS: ModelRowConfig[] = [

@@ -156,5 +156,7 @@ export interface AppConfig {
     keepAudioAfterTranscription: boolean
     defaultRecordingMode: 'remote' | 'in-person'
     whisperModelId: string
+    /** Preferred spoken language: 'auto' (detect) or an ISO 639-1 code (e.g. 'it') */
+    defaultLanguage: string
   }
 }

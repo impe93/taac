@@ -3,10 +3,9 @@
  *
  * Coordinates the full post-processing pipeline for meeting notes:
  *   1. (Conversion already done in audioHandlers before processRecording is called)
- *   2. Transcription via ProcessingWorkerManager (off main thread)
- *      - GPU path: WhisperGpuService + GGML model (Metal / CUDA)
- *      - CPU path: TranscriptionService + ONNX model (sherpa-onnx)
- *   3. Diarization via ProcessingWorkerManager (off main thread, always CPU)
+ *   2. Transcription via ProcessingUtilityManager (off main thread)
+ *      - Single engine: WhisperService (whisper.cpp), GPU when available else CPU
+ *   3. Diarization via ProcessingUtilityManager (off main thread, always CPU sherpa-onnx)
  *   4. Timeline merge + speaker label assignment (main thread, lightweight)
  *   5. Summarization via AIManager (main thread, GPU via node-llama-cpp)
  *   6. Construction of the MeetingMetadata result object
@@ -33,7 +32,8 @@ import type {
   ProcessingProgress,
   TranscriptionResult,
   DiarizationResult,
-  DiarizationSegment
+  DiarizationSegment,
+  WhisperVariant
 } from './types'
 import { ProcessingUtilityManager } from './ProcessingUtilityManager'
 import type { WorkerInitConfig } from './processingWorker'
@@ -41,6 +41,8 @@ import { AIManager } from '../ai/AIManager'
 import { HardwareDetector } from '../ai/HardwareDetector'
 import { ModelRegistry } from '../ai/ModelRegistry'
 import type { ChatMessage } from '../ai/AIManager'
+import type { HardwareInfo } from '../ai/types'
+import { getLanguageName, normalizeLanguageCode, resolveMeetingLanguage } from './language'
 
 const DEFAULT_CHAT_MODEL_ID = 'qwen3-5-2b-q8'
 
@@ -53,7 +55,13 @@ export class AudioManager {
   private initialized = false
   private workerManager: ProcessingUtilityManager | null = null
 
-  private constructor() {}
+  /** Release the worker (and its ~1GB of models) after this idle period. */
+  private static readonly IDLE_DISPOSE_MS = 5 * 60 * 1000
+  private idleDisposeTimer: NodeJS.Timeout | null = null
+
+  private constructor() {
+    // §3.1 — singleton; use AudioManager.getInstance()
+  }
 
   // §3.1 — singleton access
   static getInstance(): AudioManager {
@@ -73,113 +81,52 @@ export class AudioManager {
     const modelsBase = join(app.getPath('userData'), 'models')
 
     // ------------------------------------------------------------------
-    // Detect hardware GPU capabilities
+    // Detect hardware and choose the whisper.cpp backend:
+    //   macOS      → Metal (default build)
+    //   Win/Linux  → CUDA (NVIDIA) or Vulkan (AMD/Intel) when present, else CPU
     // ------------------------------------------------------------------
     const hardware = await HardwareDetector.detect()
-    const hasGpu = hardware.gpu.hasMetal || hardware.gpu.hasCuda
+    const { useGpu, variant: whisperVariant } = this.selectWhisperBackend(hardware)
     console.log(
-      `[AudioManager] GPU: ${hardware.gpu.name} | Metal: ${hardware.gpu.hasMetal} | CUDA: ${hardware.gpu.hasCuda}`
+      `[AudioManager] GPU: ${hardware.gpu.name} | Metal: ${hardware.gpu.hasMetal} | ` +
+        `CUDA: ${hardware.gpu.hasCuda} | Vulkan: ${hardware.gpu.hasVulkan} → ` +
+        `backend: ${useGpu ? whisperVariant : 'CPU'}`
     )
 
     // ------------------------------------------------------------------
-    // Select transcription model based on GPU availability
-    //
-    // GPU path  → GGML model (whisper.cpp, Metal / CUDA)
-    // CPU path  → ONNX model (sherpa-onnx)
+    // Select the whisper.cpp (GGML) transcription model.
+    // A single engine handles both GPU (Metal / CUDA / Vulkan) and CPU.
     // ------------------------------------------------------------------
-    let transcriptionMode: 'gpu' | 'cpu' = 'cpu'
     let whisperModelPath: string | undefined
-    let whisperModelDir: string | undefined
 
     const meetingConfig = configStore.get('meeting')
-    const configuredModelId = meetingConfig.whisperModelId
+    const ggmlModels = ModelRegistry.getGgmlTranscriptionModels()
 
-    if (hasGpu) {
-      // Try to find a GGML model — prefer the one in config if it's GGML,
-      // otherwise look for any downloaded GGML model
-      const ggmlModels = ModelRegistry.getGgmlTranscriptionModels()
-
-      // Check if the configured model is a GGML model that exists on disk
-      const configuredGgml = ggmlModels.find((m) => m.id === configuredModelId)
-      if (configuredGgml) {
-        const candidatePath = join(modelsBase, configuredGgml.filename)
-        const exists = await fs
-          .access(candidatePath)
-          .then(() => true)
-          .catch(() => false)
-        if (exists) {
-          whisperModelPath = candidatePath
-          transcriptionMode = 'gpu'
-          console.log(`[AudioManager] GPU transcription — model: ${configuredGgml.id}`)
-        }
-      }
-
-      // If configured GGML model not found, scan for any available GGML model
-      if (!whisperModelPath) {
-        for (const model of ggmlModels.sort((a, b) => b.sizeBytes - a.sizeBytes)) {
-          const candidatePath = join(modelsBase, model.filename)
-          const exists = await fs
-            .access(candidatePath)
-            .then(() => true)
-            .catch(() => false)
-          if (exists) {
-            whisperModelPath = candidatePath
-            transcriptionMode = 'gpu'
-            console.log(`[AudioManager] GPU transcription — using available model: ${model.id}`)
-            // Update config so future runs use this model
-            configStore.set('meeting', { ...meetingConfig, whisperModelId: model.id })
-            break
-          }
-        }
-      }
-
-      if (!whisperModelPath) {
-        console.warn(
-          '[AudioManager] GPU available but no GGML model found on disk — falling back to CPU'
-        )
+    // Prefer the configured model when present on disk...
+    const configured = ggmlModels.find((m) => m.id === meetingConfig.whisperModelId)
+    if (configured) {
+      const candidate = join(modelsBase, configured.filename)
+      if (await this.pathExists(candidate)) {
+        whisperModelPath = candidate
+        console.log(`[AudioManager] Transcription model: ${configured.id}`)
       }
     }
 
-    // CPU fallback: find an ONNX model directory
-    if (transcriptionMode === 'cpu' || !whisperModelPath) {
-      transcriptionMode = 'cpu'
-      let onnxModelId = configuredModelId
-      let onnxModelDir = join(modelsBase, onnxModelId)
-
-      const dirExists = await fs
-        .access(onnxModelDir)
-        .then(() => true)
-        .catch(() => false)
-
-      if (!dirExists) {
-        console.warn(
-          `[AudioManager] Configured ONNX model "${onnxModelId}" not found — searching for alternatives`
-        )
-        const onnxModels = ModelRegistry.getOnnxTranscriptionModels()
-        let found = false
-        for (const model of onnxModels) {
-          const candidateDir = join(modelsBase, model.id)
-          const exists = await fs
-            .access(candidateDir)
-            .then(() => true)
-            .catch(() => false)
-          if (exists) {
-            onnxModelId = model.id
-            onnxModelDir = candidateDir
-            console.log(`[AudioManager] CPU transcription — using available model: ${model.id}`)
-            configStore.set('meeting', { ...meetingConfig, whisperModelId: model.id })
-            found = true
-            break
-          }
+    // ...otherwise fall back to the largest available GGML model on disk.
+    if (!whisperModelPath) {
+      for (const model of [...ggmlModels].sort((a, b) => b.sizeBytes - a.sizeBytes)) {
+        const candidate = join(modelsBase, model.filename)
+        if (await this.pathExists(candidate)) {
+          whisperModelPath = candidate
+          console.log(`[AudioManager] Transcription model (auto-selected): ${model.id}`)
+          configStore.set('meeting', { ...meetingConfig, whisperModelId: model.id })
+          break
         }
-        if (!found) {
-          console.warn('[AudioManager] No transcription model found on disk')
-        }
-      } else {
-        console.log(`[AudioManager] CPU transcription — model dir: ${onnxModelDir}`)
       }
+    }
 
-      whisperModelDir = onnxModelDir
+    if (!whisperModelPath) {
+      console.warn('[AudioManager] No GGML whisper model found on disk — transcription disabled')
     }
 
     // ------------------------------------------------------------------
@@ -194,10 +141,7 @@ export class AudioManager {
       '3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx'
     )
 
-    const nemoExists = await fs
-      .access(nemoEmbeddingPath)
-      .then(() => true)
-      .catch(() => false)
+    const nemoExists = await this.pathExists(nemoEmbeddingPath)
     const embeddingModelPath = nemoExists ? nemoEmbeddingPath : threeDSpeakerEmbeddingPath
     console.log(
       `[AudioManager] Diarization embedding: ${nemoExists ? 'NeMo TitaNet Small' : '3DSpeaker ERes2Net'}`
@@ -207,11 +151,9 @@ export class AudioManager {
     // Start the processing worker
     // ------------------------------------------------------------------
     const workerConfig: WorkerInitConfig = {
-      transcriptionMode,
       whisperModelPath,
-      whisperModelDir,
-      hasMetal: hardware.gpu.hasMetal,
-      hasCuda: hardware.gpu.hasCuda,
+      useGpu,
+      whisperVariant,
       segmentationModelPath,
       embeddingModelPath
     }
@@ -221,17 +163,69 @@ export class AudioManager {
 
     this.initialized = true
     console.log(
-      `[AudioManager] Initialized — transcription: ${transcriptionMode.toUpperCase()}, worker: ready`
+      `[AudioManager] Initialized — transcription: whisper.cpp ` +
+        `(${useGpu ? whisperVariant.toUpperCase() : 'CPU'}), worker: ready`
     )
+  }
+
+  /**
+   * Choose the whisper.cpp native backend for the detected hardware.
+   * - macOS: Metal is compiled into the default build → 'default'
+   * - Windows/Linux: prefer CUDA (NVIDIA), then Vulkan (AMD/Intel), else CPU
+   */
+  private selectWhisperBackend(hardware: HardwareInfo): {
+    useGpu: boolean
+    variant: WhisperVariant
+  } {
+    if (hardware.platform === 'darwin') {
+      return { useGpu: hardware.gpu.hasMetal, variant: 'default' }
+    }
+    if (hardware.gpu.hasCuda) return { useGpu: true, variant: 'cuda' }
+    if (hardware.gpu.hasVulkan) return { useGpu: true, variant: 'vulkan' }
+    return { useGpu: false, variant: 'default' }
+  }
+
+  /** Returns true if the given path exists (file or directory). */
+  private async pathExists(p: string): Promise<boolean> {
+    try {
+      await fs.access(p)
+      return true
+    } catch {
+      return false
+    }
   }
 
   // §3.4 — full cleanup
   async dispose(): Promise<void> {
     console.log('[AudioManager] Disposing...')
+    this.clearIdleDispose()
     await this.workerManager?.dispose()
     this.workerManager = null
     this.initialized = false
     console.log('[AudioManager] Disposed')
+  }
+
+  /** Cancel a pending idle-dispose (the manager is active again). */
+  private clearIdleDispose(): void {
+    if (this.idleDisposeTimer) {
+      clearTimeout(this.idleDisposeTimer)
+      this.idleDisposeTimer = null
+    }
+  }
+
+  /**
+   * Release the worker and its loaded models after a period of inactivity, so a
+   * single meeting doesn't keep ~1GB resident forever on memory-constrained
+   * machines. The next recording re-initializes lazily.
+   */
+  private scheduleIdleDispose(): void {
+    this.clearIdleDispose()
+    this.idleDisposeTimer = setTimeout(() => {
+      console.log('[AudioManager] Idle timeout — releasing transcription/diarization models')
+      void this.dispose()
+    }, AudioManager.IDLE_DISPOSE_MS)
+    // Do not keep the process alive just for this timer.
+    this.idleDisposeTimer.unref?.()
   }
 
   /**
@@ -257,47 +251,85 @@ export class AudioManager {
     mode: 'remote' | 'in-person',
     recordingDate: string,
     durationSecs: number,
+    requestedLanguage: string,
     onProgress: (progress: ProcessingProgress) => void
-  ): Promise<{ metadata: MeetingMetadata; content: string }> {
+  ): Promise<{ metadata: MeetingMetadata; content: string; summarizationError?: string }> {
     await this.initialize()
+    this.clearIdleDispose()
 
-    console.log(`[AudioManager] processRecording — note=${noteId} space=${spaceId} mode=${mode}`)
+    const { configStore } = await import('../utils/configStore')
+    const pinnedLanguage = normalizeLanguageCode(requestedLanguage) // '' when auto
+
+    console.log(
+      `[AudioManager] processRecording — note=${noteId} space=${spaceId} mode=${mode} lang=${pinnedLanguage || 'auto'}`
+    )
 
     // ------------------------------------------------------------------
-    // Stage 1: Transcription (runs in worker thread — non-blocking)
+    // Stage 1 + 2: Transcription and diarization run concurrently per track.
+    // Diarization does not depend on the transcript, so overlapping them cuts
+    // wall-clock time (ASR on GPU + diarization on CPU). The two transcriptions
+    // are serialized inside the worker (a whisper context cannot run two jobs
+    // at once) — the progress bar is split mic 0–50% / system 50–100%.
     // ------------------------------------------------------------------
     onProgress({ stage: 'transcribing', progress: 0, message: 'Transcribing audio...' })
-    console.log('[AudioManager] Stage: transcribing')
+    console.log('[AudioManager] Stage: transcribing + diarizing')
 
-    const micTranscription = await this.workerManager!.transcribe(micWavPath)
+    const hasSystemTrack = mode === 'remote' && !!systemWavPath
 
-    let systemTranscription: TranscriptionResult | null = null
-    if (mode === 'remote' && systemWavPath) {
-      onProgress({ stage: 'transcribing', progress: 50, message: 'Transcribing system audio...' })
-      systemTranscription = await this.workerManager!.transcribe(systemWavPath)
-    }
+    const micTranscriptionP = this.workerManager!.transcribe(
+      micWavPath,
+      pinnedLanguage,
+      (_stage, pct) =>
+        onProgress({
+          stage: 'transcribing',
+          progress: hasSystemTrack ? Math.round(pct / 2) : pct,
+          message: 'Transcribing audio...'
+        })
+    )
+    const micDiarizationP = this.workerManager!.diarize(micWavPath)
+
+    const systemTranscriptionP: Promise<TranscriptionResult | null> = hasSystemTrack
+      ? this.workerManager!.transcribe(systemWavPath!, pinnedLanguage, (_stage, pct) =>
+          onProgress({
+            stage: 'transcribing',
+            progress: 50 + Math.round(pct / 2),
+            message: 'Transcribing system audio...'
+          })
+        )
+      : Promise.resolve(null)
+    const systemDiarizationP: Promise<DiarizationResult | null> = hasSystemTrack
+      ? this.workerManager!.diarize(systemWavPath!)
+      : Promise.resolve(null)
+
+    const [micTranscription, systemTranscription] = await Promise.all([
+      micTranscriptionP,
+      systemTranscriptionP
+    ])
 
     onProgress({ stage: 'transcribing', progress: 100, message: 'Transcription complete' })
-
-    // Detect language early so it's available for summarization
-    const detectedLanguage =
-      micTranscription.detectedLanguage || systemTranscription?.detectedLanguage || 'en'
-
-    // ------------------------------------------------------------------
-    // Stage 2: Diarization (runs in worker thread — non-blocking)
-    // ------------------------------------------------------------------
     onProgress({ stage: 'diarizing', progress: 0, message: 'Identifying speakers...' })
-    console.log('[AudioManager] Stage: diarizing')
 
-    const micDiarization = await this.workerManager!.diarize(micWavPath)
-
-    let systemDiarization: DiarizationResult | null = null
-    if (mode === 'remote' && systemWavPath) {
-      onProgress({ stage: 'diarizing', progress: 50, message: 'Identifying remote speakers...' })
-      systemDiarization = await this.workerManager!.diarize(systemWavPath)
-    }
+    const [micDiarization, systemDiarization] = await Promise.all([
+      micDiarizationP,
+      systemDiarizationP
+    ])
 
     onProgress({ stage: 'diarizing', progress: 100, message: 'Speaker identification complete' })
+
+    // ------------------------------------------------------------------
+    // Resolve the meeting language: explicit override → detected → user
+    // default → app locale (never a blind 'en').
+    // ------------------------------------------------------------------
+    const detected =
+      pinnedLanguage ||
+      micTranscription.detectedLanguage ||
+      systemTranscription?.detectedLanguage ||
+      ''
+    const userDefault = configStore.get('meeting').defaultLanguage
+    const resolvedLanguage = resolveMeetingLanguage(detected, userDefault, app.getLocale())
+    console.log(
+      `[AudioManager] Language — pinned=${pinnedLanguage || '-'} detected=${detected || '-'} resolved=${resolvedLanguage}`
+    )
 
     // ------------------------------------------------------------------
     // Stage 3: Merge timelines + assign speaker labels (main thread, lightweight)
@@ -316,10 +348,14 @@ export class AudioManager {
     onProgress({ stage: 'summarizing', progress: 0, message: 'Generating summary...' })
     console.log('[AudioManager] Stage: summarizing')
 
-    const { content, actionItems } = await this.summarizeTranscript(
+    const {
+      content,
+      actionItems,
+      error: summarizationError
+    } = await this.summarizeTranscript(
       speakers,
       transcriptionSegments,
-      detectedLanguage,
+      resolvedLanguage,
       onProgress
     )
 
@@ -332,7 +368,7 @@ export class AudioManager {
     const metadata: MeetingMetadata = {
       recordingMode: mode,
       duration: durationSecs,
-      language: detectedLanguage,
+      language: resolvedLanguage,
       recordingDate,
       speakers,
       transcription: transcriptionSegments,
@@ -342,7 +378,42 @@ export class AudioManager {
     console.log('[AudioManager] processRecording complete')
     onProgress({ stage: 'done', progress: 100, message: 'Processing complete' })
 
-    return { metadata, content }
+    // Free the worker + models if no further recording arrives soon.
+    this.scheduleIdleDispose()
+
+    return { metadata, content, summarizationError }
+  }
+
+  /**
+   * Re-run summarization on an already-transcribed meeting in a chosen language.
+   * Used to correct a mis-detected language without re-recording — it only needs
+   * the LLM (no transcription/diarization worker), so it stays lightweight.
+   */
+  async regenerateSummary(
+    speakers: Speaker[],
+    transcriptionSegments: TranscriptionSegment[],
+    requestedLanguage: string
+  ): Promise<{
+    content: string
+    actionItems: ActionItem[]
+    language: string
+    summarizationError?: string
+  }> {
+    const { configStore } = await import('../utils/configStore')
+    const resolvedLanguage = resolveMeetingLanguage(
+      normalizeLanguageCode(requestedLanguage),
+      configStore.get('meeting').defaultLanguage,
+      app.getLocale()
+    )
+    console.log(`[AudioManager] Regenerating summary — language: ${resolvedLanguage}`)
+
+    const { content, actionItems, error } = await this.summarizeTranscript(
+      speakers,
+      transcriptionSegments,
+      resolvedLanguage,
+      () => {}
+    )
+    return { content, actionItems, language: resolvedLanguage, summarizationError: error }
   }
 
   // ---------------------------------------------------------------------------
@@ -546,43 +617,6 @@ export class AudioManager {
   // ---------------------------------------------------------------------------
 
   /**
-   * Convert ISO 639-1 language code to a human-readable language name.
-   */
-  private getLanguageName(code: string): string {
-    const map: Record<string, string> = {
-      en: 'English',
-      it: 'Italian',
-      es: 'Spanish',
-      fr: 'French',
-      de: 'German',
-      pt: 'Portuguese',
-      nl: 'Dutch',
-      ru: 'Russian',
-      zh: 'Chinese',
-      ja: 'Japanese',
-      ko: 'Korean',
-      ar: 'Arabic',
-      hi: 'Hindi',
-      pl: 'Polish',
-      sv: 'Swedish',
-      da: 'Danish',
-      fi: 'Finnish',
-      no: 'Norwegian',
-      tr: 'Turkish',
-      cs: 'Czech',
-      ro: 'Romanian',
-      hu: 'Hungarian',
-      uk: 'Ukrainian',
-      el: 'Greek',
-      he: 'Hebrew',
-      th: 'Thai',
-      vi: 'Vietnamese',
-      id: 'Indonesian'
-    }
-    return map[code] ?? code
-  }
-
-  /**
    * Returns the ID of the first loaded chat model, or the default model ID.
    * This ensures we reuse a model already in memory without forcing a load.
    */
@@ -620,13 +654,16 @@ export class AudioManager {
   }
 
   /**
-   * Build a fallback content string (raw transcript) used when summarization fails.
+   * Build fallback content used when summarization fails or is unavailable.
+   * Preserves the raw transcript so the user never loses their meeting content,
+   * and states the reason so the failure is visible rather than silent.
    */
-  private buildFallbackContent(): string {
+  private buildFallbackContent(transcriptText: string, reason: string): string {
+    const transcriptBlock = transcriptText.trim() ? transcriptText.trim() : '_No speech detected._'
     return [
       '## Meeting Summary',
       '',
-      '_Automatic summarization was not available._',
+      `_${reason}_`,
       '',
       '## Key Topics Discussed',
       '',
@@ -638,7 +675,11 @@ export class AudioManager {
       '',
       '## Action Items',
       '',
-      '_Not available._'
+      '_Not available._',
+      '',
+      '## Full Transcript',
+      '',
+      transcriptBlock
     ].join('\n')
   }
 
@@ -669,21 +710,312 @@ export class AudioManager {
     return actionItems
   }
 
+  // Memory-friendly context for mid-end machines: map-reduce lets us use a small
+  // KV cache instead of a single huge context, avoiding overflow on long meetings.
+  private static readonly SUMMARY_CONTEXT_SIZE = 8192
+  private static readonly SUMMARY_MAX_OUTPUT_TOKENS = 2048
+  private static readonly MAP_MAX_OUTPUT_TOKENS = 1024
+  private static readonly SUMMARY_SECTIONS = [
+    '## Meeting Summary',
+    '## Key Topics Discussed',
+    '## Key Decisions',
+    '## Action Items'
+  ]
+
   /**
-   * Call AIManager to generate a structured meeting summary from the transcript.
-   * Emits progress events during generation.
-   * On failure, returns the raw transcript as content (graceful degradation).
+   * Generate a structured meeting summary from the transcript.
+   *
+   * Robustness (fixes the "sometimes no summary" bug):
+   *   - map-reduce chunking within the model's token budget → no context overflow
+   *   - required-section validation with one strict retry
+   *   - failures surface to the caller (error field) instead of silently returning
+   *     a placeholder; the raw transcript is always preserved in the content.
+   *
+   * The body language is `language`; section headings stay in English for parsing.
    */
   private async summarizeTranscript(
     speakers: Speaker[],
     transcriptionSegments: TranscriptionSegment[],
     language: string,
     onProgress: (progress: ProcessingProgress) => void
-  ): Promise<{ content: string; actionItems: ActionItem[] }> {
+  ): Promise<{ content: string; actionItems: ActionItem[]; error?: string }> {
     const transcriptText = this.formatTranscriptForPrompt(transcriptionSegments, speakers)
-    const languageName = this.getLanguageName(language)
+    const languageName = getLanguageName(language)
 
-    const systemPrompt = `You are a meeting summarizer. Given a timestamped transcript with speaker labels, produce a structured and comprehensive summary in markdown format with the following sections:
+    if (!transcriptText.trim()) {
+      const reason = 'No speech was detected in this recording.'
+      console.warn('[AudioManager] Empty transcript — skipping summarization')
+      return {
+        content: this.buildFallbackContent('', reason),
+        actionItems: [],
+        error: reason
+      }
+    }
+
+    const aiManager = AIManager.getInstance()
+
+    try {
+      if (!aiManager.isInitialized()) {
+        console.log('[AudioManager] AIManager not initialized — initializing now...')
+        await aiManager.initialize()
+      }
+
+      const modelId = this.getActiveChatModelId()
+      // Throws if the chat model is missing/unloadable → surfaced as a clear error.
+      await aiManager.loadModel(modelId)
+      console.log(`[AudioManager] Summarizing with model: ${modelId}`)
+
+      let summary = await this.generateSummary(
+        aiManager,
+        modelId,
+        transcriptText,
+        languageName,
+        onProgress,
+        false
+      )
+
+      if (!this.isValidSummary(summary)) {
+        console.warn('[AudioManager] Summary missing required sections — retrying once (strict)')
+        const retry = await this.generateSummary(
+          aiManager,
+          modelId,
+          transcriptText,
+          languageName,
+          onProgress,
+          true
+        )
+        if (this.isValidSummary(retry)) {
+          summary = retry
+        } else {
+          console.error('[AudioManager] Summary still incomplete after retry')
+          return {
+            content: this.buildFallbackContent(
+              transcriptText,
+              'The automatic summary was incomplete. The full transcript is preserved below.'
+            ),
+            actionItems: this.parseActionItems(summary),
+            error: 'Summary was incomplete after retry.'
+          }
+        }
+      }
+
+      console.log(`[AudioManager] Summarization complete (${summary.length} chars)`)
+      return { content: summary, actionItems: this.parseActionItems(summary) }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      const stack = err instanceof Error ? err.stack : ''
+      console.error(`[AudioManager] Summarization failed: ${msg}`)
+      if (stack) console.error(`[AudioManager] Stack: ${stack}`)
+      return {
+        content: this.buildFallbackContent(
+          transcriptText,
+          `Automatic summarization failed: ${msg}. The full transcript is preserved below.`
+        ),
+        actionItems: [],
+        error: msg
+      }
+    }
+  }
+
+  /**
+   * Map-reduce summary generation that keeps every LLM call within the token
+   * budget so it never overflows the context window.
+   */
+  private async generateSummary(
+    aiManager: AIManager,
+    modelId: string,
+    transcriptText: string,
+    languageName: string,
+    onProgress: (progress: ProcessingProgress) => void,
+    strict: boolean
+  ): Promise<string> {
+    const model = await aiManager.getModelInstance(modelId)
+    const countTokens = (text: string): number => model.tokenize(text).length
+
+    const finalSystemPrompt = this.buildSummarySystemPrompt(languageName, strict)
+    const budget = Math.max(
+      1024,
+      AudioManager.SUMMARY_CONTEXT_SIZE -
+        AudioManager.SUMMARY_MAX_OUTPUT_TOKENS -
+        countTokens(finalSystemPrompt) -
+        320 // framing / chat-template overhead margin
+    )
+
+    // Fits in one pass → summarize directly.
+    if (countTokens(transcriptText) <= budget) {
+      return this.runSummaryChat(
+        aiManager,
+        modelId,
+        finalSystemPrompt,
+        `Here is the meeting transcript:\n\n${transcriptText}`,
+        AudioManager.SUMMARY_MAX_OUTPUT_TOKENS,
+        (p) => onProgress({ stage: 'summarizing', progress: p, message: 'Generating summary...' }),
+        10,
+        95
+      )
+    }
+
+    // ---- Map: summarize each chunk into intermediate notes ----
+    const mapSystemPrompt = this.buildMapSystemPrompt(languageName)
+    const chunks = this.splitIntoChunks(transcriptText, budget, countTokens)
+    console.log(`[AudioManager] Long transcript — map-reduce over ${chunks.length} chunk(s)`)
+
+    let partials: string[] = []
+    for (let i = 0; i < chunks.length; i++) {
+      const partial = await this.runSummaryChat(
+        aiManager,
+        modelId,
+        mapSystemPrompt,
+        `Meeting transcript part ${i + 1} of ${chunks.length}:\n\n${chunks[i]}`,
+        AudioManager.MAP_MAX_OUTPUT_TOKENS
+      )
+      partials.push(partial)
+      const pct = Math.round(((i + 1) / chunks.length) * 65)
+      onProgress({ stage: 'summarizing', progress: pct, message: 'Summarizing sections...' })
+    }
+
+    // ---- Collapse partials until they fit the budget ----
+    let guard = 0
+    while (countTokens(partials.join('\n\n')) > budget && guard++ < 3) {
+      const groups = this.groupByBudget(partials, budget, countTokens)
+      const collapsed: string[] = []
+      for (const group of groups) {
+        collapsed.push(
+          await this.runSummaryChat(
+            aiManager,
+            modelId,
+            mapSystemPrompt,
+            `Combine these meeting notes into one set of notes, preserving all decisions and action items:\n\n${group}`,
+            AudioManager.MAP_MAX_OUTPUT_TOKENS
+          )
+        )
+      }
+      partials = collapsed
+    }
+
+    // ---- Reduce: synthesize the final structured summary ----
+    const combined = partials.join('\n\n---\n\n')
+    return this.runSummaryChat(
+      aiManager,
+      modelId,
+      finalSystemPrompt,
+      `Here are notes from consecutive parts of the same meeting, in order. Synthesize them into a single structured summary. Do not lose any decisions or action items:\n\n${combined}`,
+      AudioManager.SUMMARY_MAX_OUTPUT_TOKENS,
+      (p) => onProgress({ stage: 'summarizing', progress: p, message: 'Finalizing summary...' }),
+      70,
+      95
+    )
+  }
+
+  /**
+   * Run a single isolated chat completion and return the cleaned text.
+   * Optionally maps generation cadence to a progress range [progressFrom, progressTo].
+   */
+  private async runSummaryChat(
+    aiManager: AIManager,
+    modelId: string,
+    systemPrompt: string,
+    userMessage: string,
+    maxTokens: number,
+    onProgress?: (percentage: number) => void,
+    progressFrom = 0,
+    progressTo = 100
+  ): Promise<string> {
+    const messages: ChatMessage[] = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userMessage }
+    ]
+
+    const generator = aiManager.generateChatCompletion(modelId, messages, {
+      isolated: true,
+      maxTokens,
+      contextSize: AudioManager.SUMMARY_CONTEXT_SIZE
+    })
+
+    let fullContent = ''
+    let chunkCount = 0
+    for await (const chunk of generator) {
+      fullContent += chunk
+      chunkCount++
+      if (onProgress && chunkCount % 20 === 0) {
+        const span = progressTo - progressFrom
+        const estimated = progressFrom + Math.min(span, chunkCount / 3)
+        onProgress(Math.round(estimated))
+      }
+    }
+
+    // Strip any Full Transcript section the model might have added on its own.
+    const transcriptHeadingIndex = fullContent.indexOf('## Full Transcript')
+    if (transcriptHeadingIndex !== -1) {
+      fullContent = fullContent.substring(0, transcriptHeadingIndex).trimEnd()
+    }
+    return fullContent.trim()
+  }
+
+  /** Whether the summary contains all required sections plus real body content. */
+  private isValidSummary(text: string): boolean {
+    if (!text) return false
+    const hasAllSections = AudioManager.SUMMARY_SECTIONS.every((h) => text.includes(h))
+    if (!hasAllSections) return false
+    // Ensure there is meaningful content beyond the headings themselves.
+    let body = text
+    for (const h of AudioManager.SUMMARY_SECTIONS) body = body.split(h).join('')
+    return body.replace(/[#\s_*\-[\]()]/g, '').length > 40
+  }
+
+  /** Split transcript text into token-budgeted chunks at line boundaries. */
+  private splitIntoChunks(
+    text: string,
+    budget: number,
+    countTokens: (t: string) => number
+  ): string[] {
+    const lines = text.split('\n')
+    // Estimate tokens-per-char once to avoid tokenizing every line.
+    const perChar = countTokens(text) / Math.max(1, text.length)
+    const chunks: string[] = []
+    let current = ''
+    let currentTokens = 0
+    for (const line of lines) {
+      const lineTokens = Math.ceil((line.length + 1) * perChar)
+      if (currentTokens + lineTokens > budget && current) {
+        chunks.push(current)
+        current = ''
+        currentTokens = 0
+      }
+      current += (current ? '\n' : '') + line
+      currentTokens += lineTokens
+    }
+    if (current.trim()) chunks.push(current)
+    return chunks.length > 0 ? chunks : [text]
+  }
+
+  /** Group partial summaries into budget-sized blobs for a reduction pass. */
+  private groupByBudget(
+    parts: string[],
+    budget: number,
+    countTokens: (t: string) => number
+  ): string[] {
+    const groups: string[] = []
+    let current = ''
+    for (const part of parts) {
+      const candidate = current ? `${current}\n\n---\n\n${part}` : part
+      if (current && countTokens(candidate) > budget) {
+        groups.push(current)
+        current = part
+      } else {
+        current = candidate
+      }
+    }
+    if (current.trim()) groups.push(current)
+    return groups
+  }
+
+  /** System prompt for the final structured summary. */
+  private buildSummarySystemPrompt(languageName: string, strict: boolean): string {
+    const strictLine = strict
+      ? '\nYou MUST output every section below, each with real content. Do not skip any section.'
+      : ''
+    return `You are a meeting summarizer. Given a timestamped transcript with speaker labels, produce a structured and comprehensive summary in markdown format with the following sections:
 
 ## Meeting Summary
 A comprehensive and detailed overview of the meeting. Write as many paragraphs as needed to thoroughly capture all important points, context, and nuances discussed. Do not limit yourself to a fixed number of sentences — cover everything that matters.
@@ -698,77 +1030,20 @@ Numbered list of decisions made during the meeting. For each decision, include t
 Checklist format with assignee and deadline if mentioned:
 - [ ] [Action description] — Assigned to: [Speaker] — Due: [Date if mentioned]
 
-Be thorough and detailed in all sections. This summary will serve as a reference document and will be indexed for search, so completeness is more important than brevity.
+Be thorough and detailed in all sections. This summary will serve as a reference document and will be indexed for search, so completeness is more important than brevity.${strictLine}
 
 IMPORTANT: Write ALL content (body text, bullet points, descriptions) in ${languageName}. The section headings (## Meeting Summary, ## Key Topics Discussed, ## Key Decisions, ## Action Items) MUST remain exactly as shown above in English for parsing consistency.
 Do not include any text outside of these sections. Use the exact section headings above. Do NOT include a transcript section.`
+  }
 
-    const userMessage = `Here is the meeting transcript:\n\n${transcriptText}`
+  /** System prompt for the map step (per-chunk intermediate notes). */
+  private buildMapSystemPrompt(languageName: string): string {
+    return `You are taking notes on part of a meeting transcript. Extract, in ${languageName}:
+- the key points and context discussed
+- any decisions made (with rationale)
+- any action items (with assignee and deadline if mentioned)
+- who said what when relevant
 
-    const messages: ChatMessage[] = [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userMessage }
-    ]
-
-    const aiManager = AIManager.getInstance()
-
-    // Ensure AIManager is initialized (loads llama.cpp + GPU backend)
-    if (!aiManager.isInitialized()) {
-      console.log('[AudioManager] AIManager not initialized — initializing now...')
-      await aiManager.initialize()
-    }
-
-    const modelId = this.getActiveChatModelId()
-    console.log(`[AudioManager] Summarizing with model: ${modelId}`)
-
-    // Ensure the chat model is loaded before generating
-    await aiManager.loadModel(modelId)
-    console.log(`[AudioManager] Model ${modelId} ready`)
-
-    try {
-      const generator = aiManager.generateChatCompletion(modelId, messages, {
-        isolated: true,
-        maxTokens: 8192,
-        contextSize: 32768
-      })
-
-      let fullContent = ''
-      let chunkCount = 0
-      // We don't know total tokens; emit progress up to 90% based on chunk cadence
-      const PROGRESS_INTERVAL = 20
-
-      for await (const chunk of generator) {
-        fullContent += chunk
-        chunkCount++
-        if (chunkCount % PROGRESS_INTERVAL === 0) {
-          // Estimate progress: cap at 90% until we're done
-          const estimated = Math.min(10 + chunkCount / 2, 90)
-          onProgress({
-            stage: 'summarizing',
-            progress: Math.round(estimated),
-            message: 'Generating summary...'
-          })
-        }
-      }
-
-      // Strip any Full Transcript section the LLM might have added
-      const transcriptHeadingIndex = fullContent.indexOf('## Full Transcript')
-      if (transcriptHeadingIndex !== -1) {
-        fullContent = fullContent.substring(0, transcriptHeadingIndex).trimEnd()
-      }
-
-      console.log(`[AudioManager] Summarization complete (${fullContent.length} chars)`)
-      const actionItems = this.parseActionItems(fullContent)
-      return { content: fullContent, actionItems }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      const stack = err instanceof Error ? err.stack : ''
-      console.error(`[AudioManager] Summarization failed, falling back to raw transcript: ${msg}`)
-      if (stack) console.error(`[AudioManager] Stack: ${stack}`)
-      return {
-        content: this.buildFallbackContent(),
-        actionItems: []
-      }
-    }
+Be faithful and concise. Do not invent information. Output plain notes in ${languageName} — no preamble, no headings required. This is an intermediate note that will be merged with notes from other parts of the same meeting.`
   }
 }

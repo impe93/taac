@@ -3,9 +3,17 @@ import { Mic, Pause, Play, Square, Wifi, Users } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { Card, CardContent } from '@renderer/components/ui/card'
 import { ToggleGroup, ToggleGroupItem } from '@renderer/components/ui/toggle-group'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@renderer/components/ui/select'
 import { cn } from '@renderer/lib/utils'
 import { useMeetingLifecycle } from '@renderer/hooks/useMeetingLifecycle'
 import { useConfig } from '@renderer/hooks/useConfig'
+import { MEETING_LANGUAGE_OPTIONS } from '@renderer/lib/meetingLanguages'
 
 type RecordingMode = 'remote' | 'in-person'
 
@@ -25,6 +33,7 @@ function formatDuration(seconds: number): string {
 export const MeetingRecorder: FC<MeetingRecorderProps> = ({ noteId, spaceId, folderId }) => {
   const { data: meetingConfig } = useConfig('meeting')
   const [mode, setMode] = useState<RecordingMode>(meetingConfig?.defaultRecordingMode ?? 'remote')
+  const [language, setLanguage] = useState<string>(meetingConfig?.defaultLanguage ?? 'auto')
   const {
     recordingSession,
     isRecordingBusy,
@@ -46,8 +55,8 @@ export const MeetingRecorder: FC<MeetingRecorderProps> = ({ noteId, spaceId, fol
 
   const handleStart = useCallback(async (): Promise<void> => {
     if (!spaceId) return
-    await startRecording({ noteId, spaceId, folderId, mode })
-  }, [noteId, spaceId, folderId, mode, startRecording])
+    await startRecording({ noteId, spaceId, folderId, mode, language })
+  }, [noteId, spaceId, folderId, mode, language, startRecording])
 
   const handleStop = useCallback(async (): Promise<void> => {
     await stopRecording()
@@ -113,6 +122,27 @@ export const MeetingRecorder: FC<MeetingRecorderProps> = ({ noteId, spaceId, fol
                   {mode === 'remote'
                     ? 'Captures microphone + system audio (Zoom, Teams, Meet)'
                     : 'Captures microphone only (all participants in same room)'}
+                </p>
+              </div>
+
+              <div className="flex flex-col items-center gap-2 w-full">
+                <span className="text-sm font-medium text-muted-foreground">Language</span>
+                <Select value={language} onValueChange={setLanguage}>
+                  <SelectTrigger className="w-full" aria-label="Meeting language">
+                    <SelectValue placeholder="Auto-detect" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MEETING_LANGUAGE_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground text-center">
+                  {language === 'auto'
+                    ? 'The spoken language is detected automatically'
+                    : 'Transcription and summary will use the selected language'}
                 </p>
               </div>
 

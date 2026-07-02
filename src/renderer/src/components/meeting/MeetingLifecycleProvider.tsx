@@ -39,6 +39,7 @@ export const MeetingLifecycleProvider: FC<{ children: ReactNode }> = ({ children
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const durationRef = useRef(0)
   const recordingModeRef = useRef<MeetingRecordingMode>('in-person')
+  const recordingLanguageRef = useRef<string>('auto')
   const sessionIdsRef = useRef<{
     noteId: string
     spaceId: string
@@ -85,6 +86,7 @@ export const MeetingLifecycleProvider: FC<{ children: ReactNode }> = ({ children
           const result = (await window.audio.processRecording(job.noteId, job.spaceId)) as {
             metadata: MeetingMetadata
             content: string
+            summarizationError?: string
           }
 
           await dispatch(
@@ -100,7 +102,14 @@ export const MeetingLifecycleProvider: FC<{ children: ReactNode }> = ({ children
           ).unwrap()
 
           setProcessingFailure((prev) => (prev?.noteId === job.noteId ? null : prev))
-          toast.success('Meeting processed')
+          // The transcript is always saved; a summarization error is surfaced as a
+          // non-blocking warning (the note keeps the full transcript) rather than a
+          // silent placeholder.
+          if (result.summarizationError) {
+            toast.warning(`Meeting saved, but the summary failed: ${result.summarizationError}`)
+          } else {
+            toast.success('Meeting processed')
+          }
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Processing failed'
           setProcessingFailure({ noteId: job.noteId, message })
@@ -152,8 +161,9 @@ export const MeetingLifecycleProvider: FC<{ children: ReactNode }> = ({ children
       spaceId: string
       folderId: string
       mode: MeetingRecordingMode
+      language?: string
     }): Promise<void> => {
-      const { noteId, spaceId, folderId, mode } = args
+      const { noteId, spaceId, folderId, mode, language } = args
 
       if (recordingStateRef.current !== 'idle') {
         toast.error('A recording is already in progress')
@@ -169,6 +179,7 @@ export const MeetingLifecycleProvider: FC<{ children: ReactNode }> = ({ children
       micChunksRef.current = []
       systemChunksRef.current = []
       recordingModeRef.current = mode
+      recordingLanguageRef.current = language ?? 'auto'
 
       setRecordingSession({
         noteId,
@@ -299,7 +310,8 @@ export const MeetingLifecycleProvider: FC<{ children: ReactNode }> = ({ children
         micAudio,
         systemAudio,
         mode,
-        durationSecs: durationRef.current
+        durationSecs: durationRef.current,
+        language: recordingLanguageRef.current
       })
 
       micChunksRef.current = []

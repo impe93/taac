@@ -43,11 +43,12 @@ interface CuratedFeature {
 
 const TIER_RANK: Record<HardwareTier, number> = { low: 0, medium: 1, high: 2, ultra: 3 }
 
-const pickWhisperId = (tier: HardwareTier, hasGpu: boolean): string => {
-  const variant = hasGpu ? 'ggml' : 'onnx'
-  if (TIER_RANK[tier] >= TIER_RANK['high']) return `whisper-large-v3-turbo-${variant}`
-  if (TIER_RANK[tier] >= TIER_RANK['medium']) return `whisper-small-${variant}`
-  return `whisper-base-${variant}`
+// A single whisper.cpp (GGML) engine handles both GPU and CPU, so the variant is
+// always GGML — the model size is chosen purely by hardware tier.
+const pickWhisperId = (tier: HardwareTier): string => {
+  if (TIER_RANK[tier] >= TIER_RANK['high']) return 'whisper-large-v3-turbo-ggml'
+  if (TIER_RANK[tier] >= TIER_RANK['medium']) return 'whisper-small-ggml'
+  return 'whisper-base-ggml'
 }
 
 const FEATURES: CuratedFeature[] = [
@@ -80,8 +81,8 @@ const FEATURES: CuratedFeature[] = [
     losesIfSkipped:
       'Without these models you won’t be able to record meetings or generate automatic transcriptions and summaries.',
     optional: true,
-    resolveModelIds: (tier, hasGpu) => [
-      pickWhisperId(tier, hasGpu),
+    resolveModelIds: (tier) => [
+      pickWhisperId(tier),
       'sherpa-onnx-pyannote-segmentation',
       'sherpa-onnx-nemo-titanet-small'
     ]

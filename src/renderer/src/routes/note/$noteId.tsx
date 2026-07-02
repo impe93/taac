@@ -224,7 +224,12 @@ function NoteView(): ReactElement {
 
         {note.type === 'meeting' && note.meetingMetadata && (
           <div className="mt-2">
-            <MeetingMetadataBar metadata={note.meetingMetadata} />
+            <MeetingMetadataBar
+              metadata={note.meetingMetadata}
+              noteId={note.id}
+              spaceId={activeSpaceId ?? ''}
+              folderId={note.folderId}
+            />
           </div>
         )}
 

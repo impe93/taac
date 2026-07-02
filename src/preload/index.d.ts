@@ -317,15 +317,46 @@ export interface AudioAPI {
       systemAudio?: Uint8Array
       mode: 'remote' | 'in-person'
       durationSecs?: number
+      /** Preferred spoken language: 'auto' (detect) or an ISO 639-1 code */
+      language?: string
     }
   ) => Promise<{ micPath: string; systemPath?: string }>
   processRecording: (
     noteId: string,
     spaceId: string
-  ) => Promise<{ metadata: import('./types').MeetingMetadata; content: string }>
+  ) => Promise<{
+    metadata: import('./types').MeetingMetadata
+    content: string
+    summarizationError?: string
+  }>
   cancelProcessing: (noteId: string) => Promise<void>
   onProcessingProgress: (callback: (progress: ProcessingProgress) => void) => () => void
   isTranscriptionModelDownloaded: () => Promise<boolean>
+  regenerateSummary: (payload: {
+    speakers: import('./types').Speaker[]
+    transcription: import('./types').TranscriptionSegment[]
+    language: string
+  }) => Promise<{
+    content: string
+    actionItems: import('./types').ActionItem[]
+    language: string
+    summarizationError?: string
+  }>
+  hasStoredRecording: (noteId: string, spaceId: string) => Promise<boolean>
+  reprocessFromDisk: (
+    noteId: string,
+    spaceId: string,
+    options: {
+      mode: 'remote' | 'in-person'
+      recordingDate: string
+      durationSecs: number
+      language: string
+    }
+  ) => Promise<{
+    metadata: import('./types').MeetingMetadata
+    content: string
+    summarizationError?: string
+  }>
 }
 
 // Global window interface
