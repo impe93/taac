@@ -14,6 +14,17 @@
  * weights on the GPU device registered by the main context regardless of its
  * use_gpu flag, and the CPU-scheduled graph then hard-aborts (SIGABRT) on Metal.
  *
+ * Binding language gotchas (verified in @fugood/whisper.node 1.0.16 sources):
+ *   - An absent/empty `language` option does NOT mean auto-detect — the native
+ *     layer only overrides whisper.cpp's default when the string is non-empty,
+ *     and that default is "en". Auto-detection must be requested explicitly
+ *     with `language: 'auto'`, otherwise decoding is silently forced to English
+ *     and the result's `language` field always reports 'en'.
+ *   - whisper.cpp's auto-detect samples offset 0 of the audio buffer passed to
+ *     whisper_full and ignores the `offset` transcribe option, so windowed
+ *     detection must hand the native layer only the window's samples
+ *     (transcribeData) rather than transcribeFile + offset.
+ *
  * §3.3  initialize() is idempotent — safe to call multiple times
  * §3.4  dispose() releases the contexts and resets state
  * §3.5  type-only imports at top level; runtime dynamic import() inside initialize()
@@ -24,6 +35,7 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import type { TranscriptionResult, TranscriptionSegment, WhisperVariant } from './types'
 import { normalizeLanguageCode } from './language'
+import { readWavPcmPrefix } from './wav'
 
 // §3.5 — type-only at top level; module loaded at runtime via dynamic import()
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -157,8 +169,9 @@ export class WhisperService {
 
     const { promise } = this.context.transcribeFile(wavPath, {
       maxThreads,
-      // undefined → whisper.cpp auto-detect; a code → pin decoding to that language
-      language: language || undefined,
+      // A code pins decoding to that language. 'auto' must be explicit: an
+      // absent/empty string silently forces whisper.cpp's default "en".
+      language: language || 'auto',
       tokenTimestamps: true,
       onProgress:
         typeof options?.onProgress === 'function'
@@ -196,35 +209,52 @@ export class WhisperService {
   /** Minimum decoded text length before trusting a window's language. Filters
    *  out hallucinated fragments whisper emits on silence ("Thank you." etc). */
   private static readonly DETECT_MIN_TEXT_CHARS = 12
+  /** Window sizes in raw s16 mono 16 kHz PCM bytes (2 bytes per sample). */
+  private static readonly DETECT_WINDOW_BYTES =
+    (WhisperService.DETECT_WINDOW_MS / 1000) * 16_000 * 2
+  /** Trailing slivers shorter than 1s carry too little signal — skip them. */
+  private static readonly DETECT_MIN_WINDOW_BYTES = 16_000 * 2
 
   /**
    * Windowed spoken-language detection.
    *
-   * Whisper's built-in auto-detect samples only the first 30s of audio; when
-   * those contain silence or music it tends to guess English — the root cause of
-   * the "always English" bug. Instead we decode successive 30s windows until one
-   * yields real text, and use that window's language. Any failure returns '' so
-   * the caller falls back to its configured default / app locale.
+   * Whisper's auto-detect samples only the first 30s of the audio buffer it is
+   * given (and ignores the `offset` transcribe option); when those contain
+   * silence or music it tends to guess English — the root cause of the "always
+   * English" bug. So we slice the raw PCM ourselves and hand the native layer
+   * one 30s window at a time with `language: 'auto'`, until a window yields
+   * real text, then use that window's detected language. Any failure returns ''
+   * so the caller falls back to its configured default / app locale.
    */
   private async detectLanguage(wavPath: string, maxThreads: number): Promise<string> {
+    const windowBytes = WhisperService.DETECT_WINDOW_BYTES
+    const prefix = await readWavPcmPrefix(wavPath, WhisperService.DETECT_MAX_WINDOWS * windowBytes)
+    if (!prefix) return ''
+
+    const { pcm } = prefix
     for (let i = 0; i < WhisperService.DETECT_MAX_WINDOWS; i++) {
-      const offsetMs = i * WhisperService.DETECT_WINDOW_MS
+      const start = i * windowBytes
+      const end = Math.min(start + windowBytes, pcm.length)
+      if (end - start < WhisperService.DETECT_MIN_WINDOW_BYTES) break
+
+      // Standalone even-sized copy: transcribeData reads the WHOLE ArrayBuffer
+      // as s16 PCM, and Node Buffers may share a larger pooled backing store.
+      const windowBuffer = pcm.buffer.slice(pcm.byteOffset + start, pcm.byteOffset + end)
       try {
-        const { promise } = this.context.transcribeFile(wavPath, {
+        const { promise } = this.context.transcribeData(windowBuffer, {
           maxThreads,
-          offset: offsetMs,
-          duration: WhisperService.DETECT_WINDOW_MS
+          language: 'auto'
         })
         const raw = await promise
         const text = ((raw.result as string) ?? '').trim()
         const lang = normalizeLanguageCode(raw.language)
 
         if (text.length >= WhisperService.DETECT_MIN_TEXT_CHARS && lang) {
-          console.log(`[WhisperService] Detected language: ${lang} (window at ${offsetMs / 1000}s)`)
+          console.log(
+            `[WhisperService] Detected language: ${lang} (window at ${(i * WhisperService.DETECT_WINDOW_MS) / 1000}s)`
+          )
           return lang
         }
-        // Empty window and past the end of the file → nothing left to scan.
-        if (!text && i > 0) return ''
       } catch (err) {
         console.warn(`[WhisperService] Language detection window ${i} failed:`, err)
         return ''

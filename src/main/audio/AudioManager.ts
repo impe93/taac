@@ -46,6 +46,15 @@ import { getLanguageName, normalizeLanguageCode, resolveMeetingLanguage } from '
 
 const DEFAULT_CHAT_MODEL_ID = 'qwen3-5-2b-q8'
 
+/**
+ * TEMPORARY DEBUG AID — when true, the raw (unprocessed) whisper transcription
+ * is appended at the bottom of every generated meeting note so language
+ * detection issues can be diagnosed. Flip to false (or remove the flag, the
+ * buildDebugTranscriptSection method and its call site) once the language
+ * pipeline is validated.
+ */
+const APPEND_RAW_TRANSCRIPT_DEBUG = true
+
 // ---------------------------------------------------------------------------
 // AudioManager
 // ---------------------------------------------------------------------------
@@ -381,7 +390,47 @@ export class AudioManager {
     // Free the worker + models if no further recording arrives soon.
     this.scheduleIdleDispose()
 
-    return { metadata, content, summarizationError }
+    const finalContent = APPEND_RAW_TRANSCRIPT_DEBUG
+      ? `${content}\n\n${this.buildDebugTranscriptSection(
+          pinnedLanguage,
+          resolvedLanguage,
+          micTranscription,
+          systemTranscription
+        )}`
+      : content
+
+    return { metadata, content: finalContent, summarizationError }
+  }
+
+  /**
+   * TEMPORARY DEBUG AID — markdown section with the raw whisper output per
+   * track and the language resolution details, appended at the bottom of the
+   * meeting note when APPEND_RAW_TRANSCRIPT_DEBUG is set. Note that
+   * regenerateSummary rebuilds the note from segments only, so the section is
+   * dropped on regeneration — acceptable for a temporary aid.
+   */
+  private buildDebugTranscriptSection(
+    pinnedLanguage: string,
+    resolvedLanguage: string,
+    micTranscription: TranscriptionResult,
+    systemTranscription: TranscriptionResult | null
+  ): string {
+    const lines: string[] = [
+      '## Debug — Raw Transcript',
+      '',
+      '_Temporary debug output: unprocessed whisper transcription, before speaker/timeline merge._',
+      '',
+      `**Language** — pinned: ${pinnedLanguage || '-'} · mic detected: ${micTranscription.detectedLanguage || '-'} · ` +
+        `system detected: ${systemTranscription ? systemTranscription.detectedLanguage || '-' : 'n/a'} · resolved: ${resolvedLanguage}`,
+      '',
+      '### Mic track (raw)',
+      '',
+      micTranscription.text.trim() || '_Empty._'
+    ]
+    if (systemTranscription) {
+      lines.push('', '### System track (raw)', '', systemTranscription.text.trim() || '_Empty._')
+    }
+    return lines.join('\n')
   }
 
   /**
