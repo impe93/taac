@@ -41,6 +41,12 @@ nsis:
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
 mac:
+  # Bundled Python runtime for the realtime ASR sidecar (Qwen3-ASR via MLX).
+  # Built by scripts/prepare-asr-runtime.sh; resolved at runtime via
+  # process.resourcesPath (see src/main/audio/realtime/pythonRuntime.ts).
+  extraResources:
+    - from: python-runtime
+      to: python-runtime
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
     - NSCameraUsageDescription: Application requests access to the device's camera.

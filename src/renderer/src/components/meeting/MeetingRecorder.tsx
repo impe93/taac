@@ -21,6 +21,7 @@ interface MeetingRecorderProps {
   noteId: string
   spaceId: string
   folderId: string
+  className?: string
 }
 
 function formatDuration(seconds: number): string {
@@ -30,7 +31,12 @@ function formatDuration(seconds: number): string {
   return [h, m, s].map((v) => String(v).padStart(2, '0')).join(':')
 }
 
-export const MeetingRecorder: FC<MeetingRecorderProps> = ({ noteId, spaceId, folderId }) => {
+export const MeetingRecorder: FC<MeetingRecorderProps> = ({
+  noteId,
+  spaceId,
+  folderId,
+  className
+}) => {
   const { data: meetingConfig } = useConfig('meeting')
   const [mode, setMode] = useState<RecordingMode>(meetingConfig?.defaultRecordingMode ?? 'remote')
   const [language, setLanguage] = useState<string>(meetingConfig?.defaultLanguage ?? 'auto')
@@ -74,7 +80,7 @@ export const MeetingRecorder: FC<MeetingRecorderProps> = ({ noteId, spaceId, fol
   const startError = recordingStartFailure?.noteId === noteId ? recordingStartFailure.message : null
 
   return (
-    <div className="flex items-center justify-center flex-1 p-6">
+    <div className={cn('flex items-center justify-center flex-1 p-6', className)}>
       <Card className="w-full max-w-md">
         <CardContent className="pt-8 pb-8 px-8 flex flex-col items-center gap-6">
           {isBlockedByOtherRecording ? (

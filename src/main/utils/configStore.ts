@@ -63,6 +63,10 @@ export interface AppConfig {
     whisperModelId: string
     /** Preferred spoken language: 'auto' (detect) or an ISO 639-1 code (e.g. 'it') */
     defaultLanguage: string
+    /** 'auto' = transcribe live during recording when available, 'off' = always post-process */
+    realtimeTranscription: 'auto' | 'off'
+    /** MLX ASR model for the realtime sidecar (macOS Apple Silicon only) */
+    asrModelId: string
   }
 }
 
@@ -187,13 +191,17 @@ const schema = {
       keepAudioAfterTranscription: { type: 'boolean', default: true },
       defaultRecordingMode: { type: 'string', enum: ['remote', 'in-person'], default: 'remote' },
       whisperModelId: { type: 'string', default: 'whisper-large-v3-turbo-ggml' },
-      defaultLanguage: { type: 'string', default: 'auto' }
+      defaultLanguage: { type: 'string', default: 'auto' },
+      realtimeTranscription: { type: 'string', enum: ['auto', 'off'], default: 'auto' },
+      asrModelId: { type: 'string', default: 'qwen3-asr-1.7b-mlx-8bit' }
     },
     default: {
       keepAudioAfterTranscription: true,
       defaultRecordingMode: 'remote',
       whisperModelId: 'whisper-large-v3-turbo-ggml',
-      defaultLanguage: 'auto'
+      defaultLanguage: 'auto',
+      realtimeTranscription: 'auto',
+      asrModelId: 'qwen3-asr-1.7b-mlx-8bit'
     }
   }
 } as const

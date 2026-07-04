@@ -2,10 +2,12 @@ import { type FC, type ReactNode, useState, useRef, useCallback, useEffect, useM
 import { toast } from 'sonner'
 import { useAppDispatch } from '@renderer/store/hooks'
 import { updateNote } from '@renderer/store/slices/notesTreeSlice'
-import type { ProcessingProgress } from '@preload/index.d'
+import { PcmTapStreamer } from '@renderer/lib/pcmTapStreamer'
+import type { ProcessingProgress, RealtimeSegment, RealtimeStatusEvent } from '@preload/index.d'
 import type { MeetingMetadata } from '@preload/types'
 import {
   MeetingLifecycleContext,
+  type LiveTranscriptionStatus,
   type MeetingLifecycleContextValue,
   type MeetingRecordingSession,
   type MeetingRecordingMode,
@@ -26,6 +28,9 @@ export const MeetingLifecycleProvider: FC<{ children: ReactNode }> = ({ children
   const [recordingStartFailure, setRecordingStartFailure] = useState<RecordingStartFailure | null>(
     null
   )
+  const [liveSegments, setLiveSegments] = useState<RealtimeSegment[]>([])
+  const [liveTranscriptionStatus, setLiveTranscriptionStatus] =
+    useState<LiveTranscriptionStatus>('idle')
 
   const processingQueueRef = useRef<ProcessingJob[]>([])
   processingQueueRef.current = processingQueue
@@ -46,6 +51,8 @@ export const MeetingLifecycleProvider: FC<{ children: ReactNode }> = ({ children
     folderId: string
   } | null>(null)
   const recordingStateRef = useRef<'idle' | 'recording' | 'paused'>('idle')
+  const micTapRef = useRef<PcmTapStreamer | null>(null)
+  const systemTapRef = useRef<PcmTapStreamer | null>(null)
 
   const stopAllStreams = useCallback((): void => {
     micStreamRef.current?.getTracks().forEach((t) => t.stop())
@@ -53,6 +60,76 @@ export const MeetingLifecycleProvider: FC<{ children: ReactNode }> = ({ children
     micStreamRef.current = null
     systemStreamRef.current = null
   }, [])
+
+  const stopTaps = useCallback(async (): Promise<void> => {
+    const taps = [micTapRef.current, systemTapRef.current].filter(Boolean) as PcmTapStreamer[]
+    micTapRef.current = null
+    systemTapRef.current = null
+    await Promise.allSettled(taps.map((tap) => tap.stop()))
+  }, [])
+
+  /**
+   * Start the realtime transcription path for the active recording. Never
+   * blocks or fails the recording itself — any error just downgrades the
+   * status to 'unavailable' and the whisper post-processing path takes over.
+   */
+  const startLiveTranscription = useCallback(
+    async (noteId: string, mode: MeetingRecordingMode, language: string): Promise<void> => {
+      try {
+        setLiveTranscriptionStatus('starting')
+        const availability = await window.audio.startRealtime(noteId, {
+          hasSystemTrack: mode === 'remote',
+          language
+        })
+        if (!availability.available) {
+          setLiveTranscriptionStatus('unavailable')
+          return
+        }
+
+        // The user may have already stopped while the session was starting
+        if (sessionIdsRef.current?.noteId !== noteId || recordingStateRef.current === 'idle') {
+          console.warn('[MeetingLifecycle] Recording ended before realtime session came up')
+          void window.audio.abortRealtime(noteId)
+          return
+        }
+
+        if (micStreamRef.current) {
+          const micTap = new PcmTapStreamer({ stream: micStreamRef.current, track: 'mic', noteId })
+          try {
+            await micTap.start()
+          } catch (err) {
+            throw new Error(`Mic PCM tap failed: ${err instanceof Error ? err.message : err}`)
+          }
+          micTapRef.current = micTap
+        }
+        if (systemStreamRef.current) {
+          const systemTap = new PcmTapStreamer({
+            stream: systemStreamRef.current,
+            track: 'system',
+            noteId
+          })
+          try {
+            await systemTap.start()
+          } catch (err) {
+            throw new Error(`System PCM tap failed: ${err instanceof Error ? err.message : err}`)
+          }
+          systemTapRef.current = systemTap
+        }
+
+        // Recording may have been paused while the taps were being created
+        if (recordingStateRef.current === 'paused') {
+          micTapRef.current?.setGate(false)
+          systemTapRef.current?.setGate(false)
+        }
+      } catch (err) {
+        console.error('[MeetingLifecycle] Live transcription unavailable:', err)
+        setLiveTranscriptionStatus('unavailable')
+        void window.audio.abortRealtime(noteId)
+        await stopTaps()
+      }
+    },
+    [stopTaps]
+  )
 
   const stopTimer = useCallback((): void => {
     if (timerRef.current) {
@@ -147,6 +224,36 @@ export const MeetingLifecycleProvider: FC<{ children: ReactNode }> = ({ children
     })
   }, [])
 
+  useEffect(() => {
+    return window.audio.onRealtimeSegment((segment: RealtimeSegment) => {
+      if (sessionIdsRef.current?.noteId !== segment.noteId) return
+      setLiveSegments((prev) =>
+        // mic/system segments arrive interleaved — keep chronological order
+        [...prev, segment].sort((a, b) => a.startTime - b.startTime)
+      )
+    })
+  }, [])
+
+  useEffect(() => {
+    return window.audio.onRealtimeStatus((event: RealtimeStatusEvent) => {
+      if (sessionIdsRef.current?.noteId !== event.noteId) return
+      switch (event.status) {
+        case 'starting':
+          setLiveTranscriptionStatus('starting')
+          break
+        case 'live':
+          setLiveTranscriptionStatus('live')
+          break
+        case 'failed':
+          setLiveTranscriptionStatus('unavailable')
+          break
+        case 'stopped':
+          setLiveTranscriptionStatus('idle')
+          break
+      }
+    })
+  }, [])
+
   const clearProcessingFailure = useCallback((): void => {
     setProcessingFailure(null)
   }, [])
@@ -226,8 +333,16 @@ export const MeetingLifecycleProvider: FC<{ children: ReactNode }> = ({ children
 
         micRecorder.start()
         startTimer()
+
+        // Live transcription runs alongside the recorders; failures only
+        // downgrade to the whisper post-processing path.
+        setLiveSegments([])
+        void startLiveTranscription(noteId, mode, language ?? 'auto')
       } catch (err) {
         stopAllStreams()
+        void stopTaps()
+        void window.audio.abortRealtime(noteId)
+        setLiveTranscriptionStatus('idle')
         recordingStateRef.current = 'idle'
         sessionIdsRef.current = null
         const message = err instanceof Error ? err.message : 'Failed to start recording'
@@ -236,13 +351,17 @@ export const MeetingLifecycleProvider: FC<{ children: ReactNode }> = ({ children
         toast.error(message)
       }
     },
-    [startTimer, stopAllStreams]
+    [startTimer, stopAllStreams, startLiveTranscription, stopTaps]
   )
 
   const pauseRecording = useCallback((): void => {
     if (recordingStateRef.current !== 'recording') return
     micRecorderRef.current?.pause()
     systemRecorderRef.current?.pause()
+    // Gate the PCM taps so paused samples are dropped, keeping the live
+    // transcript timeline aligned with the pause-compressed WAV.
+    micTapRef.current?.setGate(false)
+    systemTapRef.current?.setGate(false)
     stopTimer()
     recordingStateRef.current = 'paused'
     setRecordingSession((prev) => (prev ? { ...prev, state: 'paused' } : prev))
@@ -252,6 +371,8 @@ export const MeetingLifecycleProvider: FC<{ children: ReactNode }> = ({ children
     if (recordingStateRef.current !== 'paused') return
     micRecorderRef.current?.resume()
     systemRecorderRef.current?.resume()
+    micTapRef.current?.setGate(true)
+    systemTapRef.current?.setGate(true)
     recordingStateRef.current = 'recording'
     startTimer()
     setRecordingSession((prev) => (prev ? { ...prev, state: 'recording' } : prev))
@@ -265,6 +386,9 @@ export const MeetingLifecycleProvider: FC<{ children: ReactNode }> = ({ children
 
     stopTimer()
     recordingStateRef.current = 'idle'
+
+    // Stop the PCM taps before the recorders — no more chunks reach the VAD
+    await stopTaps()
 
     await new Promise<void>((resolve) => {
       let pendingStops = 1 + (mode === 'remote' ? 1 : 0)
@@ -293,6 +417,16 @@ export const MeetingLifecycleProvider: FC<{ children: ReactNode }> = ({ children
     })
 
     stopAllStreams()
+
+    // Finish the live session BEFORE saveRecording: guarantees the realtime
+    // transcript is stored in main before processRecording consumes it.
+    // A failed/absent session returns hasTranscript:false → whisper fallback.
+    try {
+      await window.audio.stopRealtime(noteId)
+    } catch (err) {
+      console.warn('[MeetingLifecycle] stopRealtime failed — whisper fallback:', err)
+    }
+    setLiveTranscriptionStatus('idle')
 
     try {
       const micBlob = new Blob(micChunksRef.current, { type: 'audio/webm' })
@@ -331,8 +465,10 @@ export const MeetingLifecycleProvider: FC<{ children: ReactNode }> = ({ children
       systemRecorderRef.current = null
       sessionIdsRef.current = null
       setRecordingSession(null)
+      // The stored realtime transcript is orphaned when the save fails
+      void window.audio.abortRealtime(noteId)
     }
-  }, [stopTimer, stopAllStreams, enqueueProcessingJob])
+  }, [stopTimer, stopAllStreams, stopTaps, enqueueProcessingJob])
 
   const isRecordingBusy = recordingSession !== null
 
@@ -350,7 +486,9 @@ export const MeetingLifecycleProvider: FC<{ children: ReactNode }> = ({ children
       processingFailure,
       clearProcessingFailure,
       recordingStartFailure,
-      clearRecordingStartFailure
+      clearRecordingStartFailure,
+      liveSegments,
+      liveTranscriptionStatus
     }),
     [
       recordingSession,
@@ -365,7 +503,9 @@ export const MeetingLifecycleProvider: FC<{ children: ReactNode }> = ({ children
       processingFailure,
       clearProcessingFailure,
       recordingStartFailure,
-      clearRecordingStartFailure
+      clearRecordingStartFailure,
+      liveSegments,
+      liveTranscriptionStatus
     ]
   )
 

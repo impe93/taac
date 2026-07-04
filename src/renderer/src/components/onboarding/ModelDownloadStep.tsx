@@ -21,7 +21,7 @@ import { Alert, AlertDescription } from '@renderer/components/ui/alert'
 import { Skeleton } from '@renderer/components/ui/skeleton'
 import { useDownloadedModels, useModelDownload } from '@renderer/hooks/useModels'
 import { useHardwareInfo, useAvailableModels } from '@renderer/hooks/useHardware'
-import { useSetConfig } from '@renderer/hooks/useConfig'
+import { useConfig, useSetConfig } from '@renderer/hooks/useConfig'
 import { formatSize, formatSpeed, formatETA } from '@renderer/lib/format'
 import type { OnboardingAction, OnboardingState } from './OnboardingWizard'
 
@@ -38,7 +38,7 @@ interface CuratedFeature {
   description: string
   losesIfSkipped: string
   optional: boolean
-  resolveModelIds: (tier: HardwareTier, hasGpu: boolean) => string[]
+  resolveModelIds: (tier: HardwareTier, hasGpu: boolean, realtimeAsr: boolean) => string[]
 }
 
 const TIER_RANK: Record<HardwareTier, number> = { low: 0, medium: 1, high: 2, ultra: 3 }
@@ -50,6 +50,11 @@ const pickWhisperId = (tier: HardwareTier): string => {
   if (TIER_RANK[tier] >= TIER_RANK['medium']) return 'whisper-small-ggml'
   return 'whisper-base-ggml'
 }
+
+// Realtime transcription model (Qwen3-ASR via MLX, Apple Silicon only) —
+// 1.7B for medium+ machines, 0.6B keeps low-tier machines responsive.
+const pickAsrId = (tier: HardwareTier): string =>
+  TIER_RANK[tier] >= TIER_RANK['medium'] ? 'qwen3-asr-1.7b-mlx-8bit' : 'qwen3-asr-0.6b-mlx-8bit'
 
 const FEATURES: CuratedFeature[] = [
   {
@@ -81,8 +86,10 @@ const FEATURES: CuratedFeature[] = [
     losesIfSkipped:
       'Without these models you won’t be able to record meetings or generate automatic transcriptions and summaries.',
     optional: true,
-    resolveModelIds: (tier) => [
+    resolveModelIds: (tier, _hasGpu, realtimeAsr) => [
+      // Whisper stays as the post-processing fallback on every platform
       pickWhisperId(tier),
+      ...(realtimeAsr ? [pickAsrId(tier), 'silero-vad-onnx'] : []),
       'sherpa-onnx-pyannote-segmentation',
       'sherpa-onnx-nemo-titanet-small'
     ]
@@ -109,6 +116,7 @@ export const ModelDownloadStep: FC<ModelDownloadStepProps> = ({ state, dispatch 
   const { data: availableModels } = useAvailableModels()
   const { progress, download, pause, resume } = useModelDownload()
   const setConfig = useSetConfig<'meeting'>()
+  const { data: meetingConfig } = useConfig('meeting')
 
   const downloadedIds = useMemo(
     () => new Set(downloadedModels?.map((m) => m.id) ?? []),
@@ -117,6 +125,9 @@ export const ModelDownloadStep: FC<ModelDownloadStepProps> = ({ state, dispatch 
 
   const hasGpu = !!(hardwareInfo?.gpu.hasMetal || hardwareInfo?.gpu.hasCuda)
   const tier: HardwareTier = hardwareInfo?.tier ?? 'low'
+  // Realtime ASR (Qwen3-ASR via MLX) runs on macOS Apple Silicon only
+  const supportsRealtimeAsr =
+    window.platform === 'darwin' && !!hardwareInfo?.cpu.brand.includes('Apple')
 
   // Resolve curated bundles into actual ModelDefinition lists
   const resolvedFeatures = useMemo<ResolvedFeature[]>(() => {
@@ -125,11 +136,11 @@ export const ModelDownloadStep: FC<ModelDownloadStepProps> = ({ state, dispatch 
     return FEATURES.map((feature) => ({
       feature,
       models: feature
-        .resolveModelIds(tier, hasGpu)
+        .resolveModelIds(tier, hasGpu, supportsRealtimeAsr)
         .map((id) => byId.get(id))
         .filter((m): m is ModelDefinition => !!m)
     }))
-  }, [availableModels, tier, hasGpu])
+  }, [availableModels, tier, hasGpu, supportsRealtimeAsr])
 
   const isModelComplete = (modelId: string): boolean =>
     downloadedIds.has(modelId) || progress.get(modelId)?.status === 'completed'
@@ -155,22 +166,35 @@ export const ModelDownloadStep: FC<ModelDownloadStepProps> = ({ state, dispatch 
     }
   }, [allRequiredDownloaded, state.models.chatModelDownloaded, dispatch])
 
-  // Persist whisperModelId when transcription model completes
+  // Persist the transcription model choices as their downloads complete.
+  // config:set replaces the whole `meeting` object, so updates are merged
+  // over the current config to avoid clobbering other fields.
   useEffect(() => {
     const meeting = resolvedFeatures.find((rf) => rf.feature.key === 'meeting')
-    if (!meeting) return
-    const transcriptionModel = meeting.models.find((m) => m.capabilities.includes('transcription'))
-    if (!transcriptionModel) return
-    const p = progress.get(transcriptionModel.id)
-    if (p?.status === 'completed') {
-      setConfig.mutate({
-        key: 'meeting',
-        value: { whisperModelId: transcriptionModel.id } as Parameters<
-          typeof setConfig.mutate
-        >[0]['value']
-      })
+    if (!meeting || !meetingConfig) return
+
+    const whisperModel = meeting.models.find(
+      (m) => m.capabilities.includes('transcription') && m.format === 'ggml'
+    )
+    const asrModel = meeting.models.find(
+      (m) => m.capabilities.includes('transcription') && m.format === 'mlx'
+    )
+
+    const updates: { whisperModelId?: string; asrModelId?: string } = {}
+    if (whisperModel && progress.get(whisperModel.id)?.status === 'completed') {
+      updates.whisperModelId = whisperModel.id
     }
-  }, [progress, resolvedFeatures, setConfig])
+    if (asrModel && progress.get(asrModel.id)?.status === 'completed') {
+      updates.asrModelId = asrModel.id
+    }
+
+    const isNoop =
+      (updates.whisperModelId ?? meetingConfig.whisperModelId) === meetingConfig.whisperModelId &&
+      (updates.asrModelId ?? meetingConfig.asrModelId) === meetingConfig.asrModelId
+    if (Object.keys(updates).length === 0 || isNoop) return
+
+    setConfig.mutate({ key: 'meeting', value: { ...meetingConfig, ...updates } })
+  }, [progress, resolvedFeatures, meetingConfig, setConfig])
 
   // Handlers
   const handleDownloadMissing = (ids: string[]): void => {

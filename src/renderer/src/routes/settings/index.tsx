@@ -59,6 +59,13 @@ const TRANSCRIPTION_MODEL_ROWS: ModelRowConfig[] = [
   { id: 'whisper-large-v3-turbo-ggml', label: 'Transcription', icon: Mic }
 ]
 
+// Realtime transcription (Qwen3-ASR via MLX sidecar) — macOS Apple Silicon only
+const REALTIME_ASR_MODEL_ROWS: ModelRowConfig[] = [
+  { id: 'qwen3-asr-1.7b-mlx-8bit', label: 'Realtime · Best quality', icon: Mic },
+  { id: 'qwen3-asr-0.6b-mlx-8bit', label: 'Realtime · Light', icon: Mic },
+  { id: 'silero-vad-onnx', label: 'Voice activity detection', icon: Mic }
+]
+
 const DIARIZATION_MODEL_ROWS: ModelRowConfig[] = [
   { id: 'sherpa-onnx-pyannote-segmentation', label: 'Diarization', icon: Users },
   { id: 'sherpa-onnx-nemo-titanet-small', label: 'Diarization · Fast', icon: Users },
@@ -293,6 +300,15 @@ const MeetingModelsSection: FC<MeetingModelsSectionProps> = ({
           <div className="space-y-3">{renderModelRows(TRANSCRIPTION_MODEL_ROWS)}</div>
         </div>
 
+        {window.platform === 'darwin' && (
+          <div>
+            <p className="mb-2 text-sm font-medium text-muted-foreground">
+              Realtime transcription (macOS — live transcript while recording)
+            </p>
+            <div className="space-y-3">{renderModelRows(REALTIME_ASR_MODEL_ROWS)}</div>
+          </div>
+        )}
+
         <div>
           <p className="mb-2 text-sm font-medium text-muted-foreground">
             Speaker Identification (segmentation + one embedding)
@@ -313,7 +329,18 @@ const MeetingNotesSettings: FC<MeetingNotesSettingsProps> = ({ downloadedModels 
   const setConfig = useSetConfig<'meeting'>()
 
   const whisperModels = useMemo(
-    () => downloadedModels.filter((m) => m.capabilities.includes('transcription')),
+    () =>
+      downloadedModels.filter(
+        (m) => m.capabilities.includes('transcription') && m.format === 'ggml'
+      ),
+    [downloadedModels]
+  )
+
+  const realtimeAsrModels = useMemo(
+    () =>
+      downloadedModels.filter(
+        (m) => m.capabilities.includes('transcription') && m.format === 'mlx'
+      ),
     [downloadedModels]
   )
 
@@ -336,6 +363,19 @@ const MeetingNotesSettings: FC<MeetingNotesSettingsProps> = ({ downloadedModels 
   const handleWhisperModelChange = (value: string): void => {
     setConfig.mutate({ key: 'meeting', value: { ...meetingConfig, whisperModelId: value } })
   }
+
+  const handleRealtimeTranscriptionChange = (checked: boolean): void => {
+    setConfig.mutate({
+      key: 'meeting',
+      value: { ...meetingConfig, realtimeTranscription: checked ? 'auto' : 'off' }
+    })
+  }
+
+  const handleAsrModelChange = (value: string): void => {
+    setConfig.mutate({ key: 'meeting', value: { ...meetingConfig, asrModelId: value } })
+  }
+
+  const isMac = window.platform === 'darwin'
 
   return (
     <div className="mt-8">
@@ -408,6 +448,54 @@ const MeetingNotesSettings: FC<MeetingNotesSettingsProps> = ({ downloadedModels 
               </SelectContent>
             </Select>
           </div>
+
+          {/* Realtime transcription (macOS Apple Silicon only) */}
+          {isMac && (
+            <>
+              <div className="flex items-center justify-between py-4">
+                <div className="flex-1 pr-4">
+                  <p className="text-sm font-medium">Realtime transcription</p>
+                  <p className="text-xs text-muted-foreground">
+                    Transcribe live while recording (Apple Silicon, macOS 15+). When off or
+                    unavailable, the transcript is generated after the meeting ends.
+                  </p>
+                </div>
+                <Switch
+                  checked={meetingConfig.realtimeTranscription !== 'off'}
+                  onCheckedChange={handleRealtimeTranscriptionChange}
+                />
+              </div>
+
+              <div className="flex items-center justify-between py-4">
+                <div className="flex-1 pr-4">
+                  <p className="text-sm font-medium">Realtime transcription model</p>
+                  <p className="text-xs text-muted-foreground">
+                    {realtimeAsrModels.length === 0
+                      ? 'No realtime models downloaded yet'
+                      : 'Qwen3-ASR model used for live transcription'}
+                  </p>
+                </div>
+                <Select
+                  value={meetingConfig.asrModelId}
+                  onValueChange={handleAsrModelChange}
+                  disabled={
+                    realtimeAsrModels.length === 0 || meetingConfig.realtimeTranscription === 'off'
+                  }
+                >
+                  <SelectTrigger className="w-52">
+                    <SelectValue placeholder="No model available" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {realtimeAsrModels.map((m) => (
+                      <SelectItem key={m.id} value={m.id}>
+                        {m.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
     </div>

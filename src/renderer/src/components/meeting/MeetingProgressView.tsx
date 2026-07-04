@@ -5,20 +5,21 @@ import { Progress } from '@renderer/components/ui/progress'
 import { cn } from '@renderer/lib/utils'
 import type { ProcessingProgress } from '@preload/index.d'
 
-type StageKey = 'converting' | 'transcribing' | 'diarizing' | 'summarizing'
-
 interface Stage {
-  key: StageKey
+  key: string
   label: string
   index: number
 }
 
-const STAGES: Stage[] = [
-  { key: 'converting', label: 'Converting audio', index: 1 },
-  { key: 'transcribing', label: 'Transcribing', index: 2 },
-  { key: 'diarizing', label: 'Identifying speakers', index: 3 },
-  { key: 'summarizing', label: 'Generating summary', index: 4 }
-]
+const STAGE_LABELS: Record<string, string> = {
+  converting: 'Converting audio',
+  transcribing: 'Transcribing',
+  diarizing: 'Identifying speakers',
+  summarizing: 'Generating summary'
+}
+
+/** Whisper post-processing pipeline; realtime runs send their own 3-stage list */
+const DEFAULT_STAGE_KEYS = ['converting', 'transcribing', 'diarizing', 'summarizing']
 
 export interface MeetingProgressViewProps {
   progress: ProcessingProgress | null
@@ -31,9 +32,16 @@ export const MeetingProgressView: FC<MeetingProgressViewProps> = ({
   title = 'Processing your meeting...',
   className
 }) => {
+  const stageKeys = progress?.stages ?? DEFAULT_STAGE_KEYS
+  const stages: Stage[] = stageKeys.map((key, i) => ({
+    key,
+    label: STAGE_LABELS[key] ?? key,
+    index: i + 1
+  }))
+
   const currentStageIndex = progress?.currentStage ?? 0
   const overallPercentage = progress
-    ? Math.round(((currentStageIndex - 1) * 100 + progress.percentage) / 4)
+    ? Math.max(0, Math.round(((currentStageIndex - 1) * 100 + progress.percentage) / stages.length))
     : 0
 
   const getStageStatus = (stage: Stage): 'done' | 'active' | 'pending' => {
@@ -50,7 +58,7 @@ export const MeetingProgressView: FC<MeetingProgressViewProps> = ({
       </CardHeader>
       <CardContent className="flex flex-col gap-5">
         <div className="flex flex-col gap-3">
-          {STAGES.map((stage) => {
+          {stages.map((stage) => {
             const status = getStageStatus(stage)
             const isActive = status === 'active'
             const isDone = status === 'done'

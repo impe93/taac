@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react'
-import type { ProcessingProgress } from '@preload/index.d'
+import type { ProcessingProgress, RealtimeSegment } from '@preload/index.d'
 
 export type MeetingRecordingMode = 'remote' | 'in-person'
 
@@ -28,6 +28,16 @@ export interface RecordingStartFailure {
   message: string
 }
 
+/**
+ * Live transcription state for the active recording:
+ * - 'idle'        no recording / no live session
+ * - 'starting'    ASR sidecar warming up (utterances are queued, not lost)
+ * - 'live'        segments arriving in real time
+ * - 'unavailable' realtime path not available or failed — transcript will be
+ *                 generated in post-processing (whisper fallback)
+ */
+export type LiveTranscriptionStatus = 'idle' | 'starting' | 'live' | 'unavailable'
+
 export interface MeetingLifecycleContextValue {
   recordingSession: MeetingRecordingSession | null
   /** True while recording or paused (not idle) */
@@ -54,6 +64,9 @@ export interface MeetingLifecycleContextValue {
   /** Last failed attempt to start recording (e.g. permission denied); not tied to active session */
   recordingStartFailure: RecordingStartFailure | null
   clearRecordingStartFailure: () => void
+  /** Live transcript segments for the active recording, ordered by startTime */
+  liveSegments: RealtimeSegment[]
+  liveTranscriptionStatus: LiveTranscriptionStatus
 }
 
 export const MeetingLifecycleContext = createContext<MeetingLifecycleContextValue | null>(null)

@@ -380,7 +380,39 @@ const audioAPI = {
       durationSecs: number
       language: string
     }
-  ) => ipcRenderer.invoke('audio:reprocessFromDisk', noteId, spaceId, options)
+  ) => ipcRenderer.invoke('audio:reprocessFromDisk', noteId, spaceId, options),
+
+  // --- Realtime transcription (macOS Apple Silicon) ---
+
+  isRealtimeAvailable: () => ipcRenderer.invoke('audio:isRealtimeAvailable'),
+
+  startRealtime: (noteId: string, options: { hasSystemTrack: boolean; language: string }) =>
+    ipcRenderer.invoke('audio:realtime:start', noteId, options),
+
+  // Fire-and-forget PCM stream (s16le 16 kHz mono chunks from the worklet tap)
+  pushRealtimePcm: (noteId: string, track: 'mic' | 'system', pcm: ArrayBuffer): void => {
+    ipcRenderer.send('audio:realtime:pcm', noteId, track, new Uint8Array(pcm))
+  },
+
+  stopRealtime: (noteId: string) => ipcRenderer.invoke('audio:realtime:stop', noteId),
+
+  abortRealtime: (noteId: string) => ipcRenderer.invoke('audio:realtime:abort', noteId),
+
+  onRealtimeSegment: (callback: (segment: unknown) => void) => {
+    const handler = (_: unknown, segment: unknown): void => callback(segment)
+    ipcRenderer.on('audio:realtime-segment', handler)
+    return (): void => {
+      ipcRenderer.removeListener('audio:realtime-segment', handler)
+    }
+  },
+
+  onRealtimeStatus: (callback: (status: unknown) => void) => {
+    const handler = (_: unknown, status: unknown): void => callback(status)
+    ipcRenderer.on('audio:realtime-status', handler)
+    return (): void => {
+      ipcRenderer.removeListener('audio:realtime-status', handler)
+    }
+  }
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

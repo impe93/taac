@@ -9,11 +9,40 @@
  * Reference: docs/AI_ARCHITECTURE.md section 6.4
  */
 
-import type { ModelDefinition, HardwareTier } from './types'
+import type { ModelDefinition, ModelFile, HardwareTier } from './types'
 import type { ModelFormat } from './types'
 
 // Re-export for use in AudioManager without importing types.ts directly
 export type { ModelFormat }
+
+/**
+ * Tokenizer/config assets shared by the mlx-community Qwen3-ASR checkpoints.
+ * Sizes verified against the HuggingFace tree API (2026-07).
+ */
+const QWEN3_ASR_SHARED_FILES: Record<string, number> = {
+  'chat_template.json': 1_161,
+  'generation_config.json': 142,
+  'merges.txt': 1_671_853,
+  'preprocessor_config.json': 330,
+  'tokenizer_config.json': 12_487,
+  'vocab.json': 2_776_833
+}
+
+/**
+ * Build the multi-file list for an mlx-community Qwen3-ASR checkpoint.
+ * `checkpointFiles` holds the per-checkpoint entries (weights, index, config)
+ * whose sizes differ between the 0.6B and 1.7B variants.
+ */
+function qwen3AsrMlxFiles(repo: string, checkpointFiles: Record<string, number>): ModelFile[] {
+  return Object.entries({ ...checkpointFiles, ...QWEN3_ASR_SHARED_FILES }).map(
+    ([filename, sizeBytes]) => ({
+      role: filename === 'model.safetensors' ? 'weights' : 'config',
+      filename,
+      downloadUrl: `https://huggingface.co/${repo}/resolve/main/${filename}`,
+      sizeBytes
+    })
+  )
+}
 
 /**
  * Curated list of tested models organized by hardware tier
@@ -154,6 +183,80 @@ const CURATED_MODELS: ModelDefinition[] = [
   },
 
   // ============================================================================
+  // REALTIME TRANSCRIPTION MODELS — Qwen3-ASR MLX via Python sidecar
+  // macOS Apple Silicon only. Multi-file checkpoints downloaded into
+  // {userData}/models/{modelId}/ and loaded from the local directory (offline).
+  // ============================================================================
+  {
+    id: 'qwen3-asr-1.7b-mlx-8bit',
+    name: 'Qwen3-ASR 1.7B (MLX 8-bit)',
+    description:
+      'Alibaba Qwen3-ASR 1.7B quantized 8-bit for Apple Silicon — realtime transcription with automatic language identification (~2.3GB)',
+    filename: 'model.safetensors',
+    sizeBytes: 2_467_856_503,
+    layers: 0,
+    quantization: '8-bit',
+    contextLength: 0,
+    format: 'mlx' as const,
+    capabilities: ['transcription'],
+    hardwareTier: 'medium',
+    downloadUrl:
+      'https://huggingface.co/mlx-community/Qwen3-ASR-1.7B-8bit/resolve/main/model.safetensors',
+    files: [
+      ...qwen3AsrMlxFiles('mlx-community/Qwen3-ASR-1.7B-8bit', {
+        'model.safetensors': 2_463_307_541,
+        'model.safetensors.index.json': 78_968,
+        'config.json': 7_188
+      })
+    ],
+    license: 'Apache 2.0'
+  },
+  {
+    id: 'qwen3-asr-0.6b-mlx-8bit',
+    name: 'Qwen3-ASR 0.6B (MLX 8-bit)',
+    description:
+      'Alibaba Qwen3-ASR 0.6B quantized 8-bit for Apple Silicon — lighter realtime transcription for low-memory machines (~1GB)',
+    filename: 'model.safetensors',
+    sizeBytes: 1_010_771_234,
+    layers: 0,
+    quantization: '8-bit',
+    contextLength: 0,
+    format: 'mlx' as const,
+    capabilities: ['transcription'],
+    hardwareTier: 'low',
+    downloadUrl:
+      'https://huggingface.co/mlx-community/Qwen3-ASR-0.6B-8bit/resolve/main/model.safetensors',
+    files: [
+      ...qwen3AsrMlxFiles('mlx-community/Qwen3-ASR-0.6B-8bit', {
+        'model.safetensors': 1_006_229_426,
+        'model.safetensors.index.json': 71_815,
+        'config.json': 7_187
+      })
+    ],
+    license: 'Apache 2.0'
+  },
+
+  // ============================================================================
+  // VAD MODELS - Voice activity detection via sherpa-onnx
+  // Segments live audio into utterances for realtime transcription.
+  // ============================================================================
+  {
+    id: 'silero-vad-onnx',
+    name: 'Silero VAD',
+    description:
+      'Silero voice activity detection model — segments speech in real time for live transcription (~1.8MB)',
+    filename: 'silero_vad.onnx',
+    sizeBytes: 1_807_522,
+    layers: 0,
+    quantization: 'fp32',
+    contextLength: 0,
+    capabilities: ['vad'],
+    hardwareTier: 'low',
+    downloadUrl: 'https://huggingface.co/csukuangfj/vad/resolve/main/silero_vad.onnx',
+    license: 'MIT'
+  },
+
+  // ============================================================================
   // DIARIZATION MODELS - Speaker segmentation & embedding via sherpa-onnx (§5.3)
   // Small enough to bundle with the app or auto-download silently during onboarding.
   // ============================================================================
@@ -280,6 +383,22 @@ export class ModelRegistry {
     return Array.from(this.models.values()).filter(
       (m) => m.capabilities.includes('transcription') && m.format === 'ggml'
     )
+  }
+
+  /**
+   * Get MLX transcription models (Qwen3-ASR realtime sidecar, macOS Apple Silicon)
+   */
+  static getMlxTranscriptionModels(): ModelDefinition[] {
+    return Array.from(this.models.values()).filter(
+      (m) => m.capabilities.includes('transcription') && m.format === 'mlx'
+    )
+  }
+
+  /**
+   * Get VAD models (voice activity detection via sherpa-onnx)
+   */
+  static getVadModels(): ModelDefinition[] {
+    return Array.from(this.models.values()).filter((m) => m.capabilities.includes('vad'))
   }
 
   /**

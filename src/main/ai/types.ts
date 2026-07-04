@@ -71,11 +71,12 @@ export type ModelCapability =
   | 'reasoning'
   | 'transcription'
   | 'diarization'
+  | 'vad'
 
 /**
  * Model file format — determines which transcription engine handles the model
  */
-export type ModelFormat = 'gguf' | 'ggml' | 'onnx'
+export type ModelFormat = 'gguf' | 'ggml' | 'onnx' | 'mlx'
 
 /**
  * Performance estimation levels
@@ -89,6 +90,8 @@ export interface ModelFile {
   role: string
   filename: string
   downloadUrl: string
+  /** Size in bytes — enables aggregate progress across multi-file downloads */
+  sizeBytes?: number
 }
 
 /**

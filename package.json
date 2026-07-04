@@ -16,8 +16,10 @@
     "postinstall": "electron-builder install-app-deps",
     "build:unpack": "npm run build && electron-builder --dir",
     "build:win": "npm run build && electron-builder --win",
-    "build:mac": "electron-vite build && electron-builder --mac",
+    "build:mac": "npm run prepare:asr-runtime && electron-vite build && electron-builder --mac",
     "build:linux": "electron-vite build && electron-builder --linux",
+    "prepare:asr-runtime": "bash scripts/prepare-asr-runtime.sh",
+    "setup:asr-dev": "python3 -m venv .venv-asr && .venv-asr/bin/pip install mlx-qwen3-asr==0.3.5",
     "ui-add": "pnpm dlx shadcn@latest add"
   },
   "dependencies": {
@@ -96,7 +98,7 @@
     "react-redux": "^9.2.0",
     "react-resizable-panels": "^2.1.7",
     "recharts": "^2.15.1",
-    "sherpa-onnx-node": "^1.12.32",
+    "sherpa-onnx-node": "^1.13.3",
     "sonner": "^2.0.2",
     "sqlite-vec": "0.1.7",
     "systeminformation": "^5.30.6",

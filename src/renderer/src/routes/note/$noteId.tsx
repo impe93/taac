@@ -19,6 +19,7 @@ import { toast } from 'sonner'
 import { MeetingRecorder } from '@renderer/components/meeting/MeetingRecorder'
 import { MeetingProgress } from '@renderer/components/meeting/MeetingProgress'
 import { MeetingMetadataBar } from '@renderer/components/meeting/MeetingMetadataBar'
+import { LiveTranscript } from '@renderer/components/meeting/LiveTranscript'
 import { useMeetingLifecycle } from '@renderer/hooks/useMeetingLifecycle'
 
 export const Route = createFileRoute('/note/$noteId')({
@@ -30,8 +31,13 @@ function NoteView(): ReactElement {
   const dispatch = useAppDispatch()
   const note = useAppSelector(selectNoteById(noteId))
   const activeSpaceId = useAppSelector(selectActiveSpaceId)
-  const { processingQueue, activeProcessingJob, processingFailure, clearProcessingFailure } =
-    useMeetingLifecycle()
+  const {
+    processingQueue,
+    activeProcessingJob,
+    processingFailure,
+    clearProcessingFailure,
+    recordingSession
+  } = useMeetingLifecycle()
 
   const [title, setTitle] = useState(note?.title ?? '')
   const [content, setContent] = useState(note?.content ?? '')
@@ -188,12 +194,20 @@ function NoteView(): ReactElement {
       )
     }
 
+    const isRecordingThisNote = recordingSession?.noteId === note.id
+
     return (
       <div className="flex flex-col h-full w-full max-w-4xl mx-auto">
         <div className="px-6 py-4 border-b border-border">
           <NoteTitle title={title} onChange={handleTitleChange} placeholder="Meeting Title" />
         </div>
-        <MeetingRecorder noteId={note.id} spaceId={activeSpaceId ?? ''} folderId={note.folderId} />
+        <MeetingRecorder
+          noteId={note.id}
+          spaceId={activeSpaceId ?? ''}
+          folderId={note.folderId}
+          className={isRecordingThisNote ? 'flex-none pb-2' : undefined}
+        />
+        {isRecordingThisNote && <LiveTranscript className="mx-6 mb-6 flex-1" />}
       </div>
     )
   }

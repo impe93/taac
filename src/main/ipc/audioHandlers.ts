@@ -17,6 +17,10 @@ import { convertToWav } from '../audio/audioConverter'
 import { AudioManager } from '../audio/AudioManager'
 import { configStore } from '../utils/configStore'
 import { ModelRegistry } from '../ai/ModelRegistry'
+import { RealtimeTranscriptionService } from '../audio/realtime/RealtimeTranscriptionService'
+import { checkRealtimeAvailability } from '../audio/realtime/availability'
+import type { RealtimeAvailability } from '../audio/realtime/availability'
+import type { RealtimeSessionResult, RealtimeTrack } from '../audio/realtime/types'
 import type { ProcessingProgress } from '../audio/types'
 import type { Speaker, TranscriptionSegment, ActionItem } from '../../preload/types'
 
@@ -40,6 +44,13 @@ interface RecordingContext {
 }
 
 const recordingContextMap = new Map<string, RecordingContext>()
+
+/**
+ * Transcripts produced live during recording, keyed by noteId.
+ * Stored by audio:realtime:stop and consumed by audio:processRecording so the
+ * pipeline can skip whisper transcription entirely.
+ */
+const realtimeResults = new Map<string, RealtimeSessionResult>()
 
 function isDevApp(): boolean {
   return !app.isPackaged
@@ -119,14 +130,9 @@ async function prepareRecordingContextFromDisk(
   }
 }
 
-/** Stage index mapping for progress events */
-const STAGE_INDEX: Record<string, number> = {
-  converting: 1,
-  transcribing: 2,
-  diarizing: 3,
-  summarizing: 4
-}
-const TOTAL_STAGES = 4
+/** Pipeline stages in order — the realtime path has no transcribing stage */
+const DEFAULT_STAGES = ['converting', 'transcribing', 'diarizing', 'summarizing'] as const
+const REALTIME_STAGES = ['converting', 'diarizing', 'summarizing'] as const
 
 /**
  * §3.6 Path Validation — ensure the resolved path stays within the expected base directory.
@@ -160,15 +166,23 @@ async function getWavDurationSecs(wavPath: string): Promise<number> {
 /**
  * Broadcast progress to all renderer windows, transforming the internal
  * ProcessingProgress format to the renderer's expected format.
+ *
+ * @param stages  Ordered stage list for this pipeline run — differs between
+ *                the whisper path (4 stages) and the realtime path (3 stages)
  */
-function broadcastProgress(noteId: string, progress: ProcessingProgress): void {
-  const currentStage = STAGE_INDEX[progress.stage] ?? 0
+function broadcastProgress(
+  noteId: string,
+  progress: ProcessingProgress,
+  stages: readonly string[] = DEFAULT_STAGES
+): void {
+  const stageIndex = stages.indexOf(progress.stage)
   const rendererProgress = {
     noteId,
     stage: progress.stage,
     percentage: progress.progress,
-    currentStage,
-    totalStages: TOTAL_STAGES
+    currentStage: stageIndex >= 0 ? stageIndex + 1 : 0,
+    totalStages: stages.length,
+    stages: [...stages]
   }
 
   BrowserWindow.getAllWindows().forEach((win) => {
@@ -212,7 +226,101 @@ async function cleanupAudioFiles(context: RecordingContext): Promise<void> {
   }
 }
 
+/**
+ * Coerce an IPC payload (ArrayBuffer or any typed-array view) into Int16Array.
+ * Always copies into a fresh buffer: Electron delivers pooled Buffers whose
+ * byteOffset can be odd, which would make an Int16Array view throw.
+ */
+function toInt16Array(payload: ArrayBuffer | ArrayBufferView): Int16Array {
+  const view =
+    payload instanceof ArrayBuffer
+      ? new Uint8Array(payload)
+      : new Uint8Array(payload.buffer, payload.byteOffset, payload.byteLength)
+  const copy = new Uint8Array(view.length - (view.length % 2))
+  copy.set(view.subarray(0, copy.length))
+  return new Int16Array(copy.buffer)
+}
+
 export function registerAudioHandlers(): void {
+  // ---------------------------------------------------------------------
+  // Realtime transcription (macOS Apple Silicon — Qwen3-ASR MLX sidecar)
+  // ---------------------------------------------------------------------
+
+  ipcMain.handle('audio:isRealtimeAvailable', async (): Promise<RealtimeAvailability> => {
+    return checkRealtimeAvailability()
+  })
+
+  // Start a live transcription session for a recording. Never blocks
+  // recording: failures return { available: false } and the pipeline
+  // falls back to whisper post-processing.
+  ipcMain.handle(
+    'audio:realtime:start',
+    async (
+      _event,
+      noteId: string,
+      options: { hasSystemTrack: boolean; language: string }
+    ): Promise<RealtimeAvailability> => {
+      const availability = await checkRealtimeAvailability()
+      if (!availability.available) {
+        console.log(`[AudioHandlers] Realtime transcription unavailable: ${availability.reason}`)
+        return availability
+      }
+
+      try {
+        await RealtimeTranscriptionService.getInstance().startSession({
+          noteId,
+          hasSystemTrack: options.hasSystemTrack,
+          language: options.language ?? 'auto'
+        })
+        return { available: true }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        console.error(`[AudioHandlers] Failed to start realtime session: ${message}`)
+        return { available: false, reason: 'python-runtime-missing' }
+      }
+    }
+  )
+
+  // PCM chunk stream — fire-and-forget (≈32 KB/s per track, no backpressure
+  // concern; an invoke round-trip per chunk would be pure overhead).
+  ipcMain.on(
+    'audio:realtime:pcm',
+    (_event, noteId: string, track: RealtimeTrack, pcm: ArrayBuffer | ArrayBufferView): void => {
+      try {
+        RealtimeTranscriptionService.getInstance().pushPcm(noteId, track, toInt16Array(pcm))
+      } catch (error) {
+        // A PCM/VAD failure must never crash the main process — but it must be
+        // loud: a repeated error here means live segments are being lost.
+        console.error(`[AudioHandlers] Realtime PCM processing error (${track}):`, error)
+      }
+    }
+  )
+
+  // Stop the live session and stash its transcript for processRecording.
+  ipcMain.handle(
+    'audio:realtime:stop',
+    async (_event, noteId: string): Promise<{ hasTranscript: boolean }> => {
+      try {
+        const result = await RealtimeTranscriptionService.getInstance().finishSession(noteId)
+        if (result) {
+          realtimeResults.set(noteId, result)
+          return { hasTranscript: true }
+        }
+        return { hasTranscript: false }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        console.error(`[AudioHandlers] Failed to stop realtime session: ${message}`)
+        return { hasTranscript: false }
+      }
+    }
+  )
+
+  // Abort the live session, discarding everything (recording error paths).
+  ipcMain.handle('audio:realtime:abort', async (_event, noteId: string): Promise<void> => {
+    await RealtimeTranscriptionService.getInstance().abortSession(noteId)
+    realtimeResults.delete(noteId)
+  })
+
   // Save raw audio buffers to {userData}/spaces/{spaceId}/assets/audio/{noteId}/
   // and immediately convert each track to 16 kHz mono WAV for the transcription pipeline.
   ipcMain.handle(
@@ -304,16 +412,28 @@ export function registerAudioHandlers(): void {
           )
         }
 
+        // Transcript produced live during recording (undefined → whisper path)
+        const realtime = realtimeResults.get(noteId)
+        realtimeResults.delete(noteId)
+        const stages = realtime ? REALTIME_STAGES : DEFAULT_STAGES
+
         activeProcessingAbort = new AbortController()
 
-        console.log(`[AudioHandlers] processRecording called for note ${noteId}`)
+        console.log(
+          `[AudioHandlers] processRecording called for note ${noteId}` +
+            (realtime ? ' (using realtime transcript)' : '')
+        )
 
         // Emit initial converting-done progress (conversion already happened in saveRecording)
-        broadcastProgress(noteId, {
-          stage: 'converting',
-          progress: 100,
-          message: 'Conversion complete'
-        })
+        broadcastProgress(
+          noteId,
+          {
+            stage: 'converting',
+            progress: 100,
+            message: 'Conversion complete'
+          },
+          stages
+        )
 
         const result = await AudioManager.getInstance().processRecording(
           noteId,
@@ -324,7 +444,8 @@ export function registerAudioHandlers(): void {
           context.recordingDate,
           context.durationSecs,
           context.requestedLanguage,
-          (progress: ProcessingProgress) => broadcastProgress(noteId, progress)
+          (progress: ProcessingProgress) => broadcastProgress(noteId, progress, stages),
+          realtime
         )
 
         activeProcessingAbort = null
@@ -339,6 +460,7 @@ export function registerAudioHandlers(): void {
       } catch (error) {
         activeProcessingAbort = null
         recordingContextMap.delete(noteId)
+        realtimeResults.delete(noteId)
         const message = error instanceof Error ? error.message : String(error)
         throw new Error(
           `[AudioHandlers] Failed to process recording for note ${noteId}: ${message}`
@@ -357,6 +479,7 @@ export function registerAudioHandlers(): void {
       }
       // Clean up context for cancelled processing
       recordingContextMap.delete(noteId)
+      realtimeResults.delete(noteId)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       throw new Error(`[AudioHandlers] Failed to cancel processing for note ${noteId}: ${message}`)

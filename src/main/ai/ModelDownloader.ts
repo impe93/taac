@@ -36,6 +36,8 @@ export type ProgressListener = (progress: DownloadProgress) => void
 export class ModelDownloader extends EventEmitter {
   private downloads: Map<string, DownloadTask> = new Map()
   private progressCache: Map<string, DownloadProgress> = new Map()
+  /** Rebase context so multi-file downloads emit one aggregate 0-100% progress */
+  private aggregates: Map<string, { baseBytes: number; totalBytes: number }> = new Map()
   private modelsDir: string
   private tempDir: string
 
@@ -71,22 +73,40 @@ export class ModelDownloader extends EventEmitter {
       const modelDir = join(this.modelsDir, modelId)
       await fs.mkdir(modelDir, { recursive: true })
 
-      for (let i = 0; i < model.files.length; i++) {
-        const file = model.files[i]
-        const task: DownloadTask = {
-          modelId,
-          url: file.downloadUrl,
-          filename: file.filename,
-          abortController: new AbortController(),
-          resumePosition: 0
-        }
+      // Aggregate progress only works when every file declares its size
+      const totalBytes = model.files.reduce((sum, f) => sum + (f.sizeBytes ?? 0), 0)
+      const hasAllSizes = model.files.every((f) => typeof f.sizeBytes === 'number')
+      let baseBytes = 0
 
-        this.downloads.set(modelId, task)
-        try {
-          await this.executeDownload(task, modelDir)
-        } finally {
-          this.downloads.delete(modelId)
+      try {
+        for (let i = 0; i < model.files.length; i++) {
+          const file = model.files[i]
+          if (hasAllSizes) {
+            this.aggregates.set(modelId, {
+              baseBytes,
+              totalBytes
+            })
+          }
+
+          const task: DownloadTask = {
+            modelId,
+            url: file.downloadUrl,
+            filename: file.filename,
+            abortController: new AbortController(),
+            resumePosition: 0
+          }
+
+          this.downloads.set(modelId, task)
+          try {
+            await this.executeDownload(task, modelDir)
+          } finally {
+            this.downloads.delete(modelId)
+          }
+
+          baseBytes += file.sizeBytes ?? 0
         }
+      } finally {
+        this.aggregates.delete(modelId)
       }
       return
     }
@@ -448,9 +468,25 @@ export class ModelDownloader extends EventEmitter {
   }
 
   /**
-   * Helper to emit progress and cache it
+   * Helper to emit progress and cache it.
+   * When an aggregate context exists (multi-file model), per-file progress is
+   * rebased onto the whole-model byte range so consumers see one 0-100% bar.
    */
   private emitProgress(progress: DownloadProgress): void {
+    const aggregate = this.aggregates.get(progress.modelId)
+    if (aggregate && aggregate.totalBytes > 0) {
+      const bytesDownloaded = aggregate.baseBytes + progress.bytesDownloaded
+      const isFinalByte = bytesDownloaded >= aggregate.totalBytes
+      progress = {
+        ...progress,
+        bytesDownloaded,
+        totalBytes: aggregate.totalBytes,
+        percentage: (bytesDownloaded / aggregate.totalBytes) * 100,
+        eta: progress.speed > 0 ? (aggregate.totalBytes - bytesDownloaded) / progress.speed : 0,
+        // Intermediate files finishing must not read as "model completed"
+        status: progress.status === 'completed' && !isFinalByte ? 'downloading' : progress.status
+      }
+    }
     this.progressCache.set(progress.modelId, progress)
     this.emit('progress', progress)
 

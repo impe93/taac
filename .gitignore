@@ -4,3 +4,7 @@ out
 .DS_Store
 .eslintcache
 *.log*
+
+# Realtime ASR (Qwen3-ASR MLX sidecar)
+.venv-asr/
+python-runtime/

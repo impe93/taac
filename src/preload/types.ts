@@ -158,5 +158,9 @@ export interface AppConfig {
     whisperModelId: string
     /** Preferred spoken language: 'auto' (detect) or an ISO 639-1 code (e.g. 'it') */
     defaultLanguage: string
+    /** 'auto' = transcribe live during recording when available, 'off' = always post-process */
+    realtimeTranscription: 'auto' | 'off'
+    /** MLX ASR model for the realtime sidecar (macOS Apple Silicon only) */
+    asrModelId: string
   }
 }

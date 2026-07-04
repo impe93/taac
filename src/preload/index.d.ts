@@ -305,6 +305,37 @@ export interface ProcessingProgress {
   percentage: number
   currentStage: number
   totalStages: number
+  /** Ordered stage list for this run — 3 stages when realtime transcription was used */
+  stages?: string[]
+}
+
+// Realtime transcription (macOS Apple Silicon — live segments during recording)
+export interface RealtimeAvailability {
+  available: boolean
+  reason?:
+    | 'unsupported-platform'
+    | 'unsupported-os-version'
+    | 'disabled-in-settings'
+    | 'asr-model-missing'
+    | 'vad-model-missing'
+    | 'python-runtime-missing'
+}
+
+export interface RealtimeSegment {
+  noteId: string
+  track: 'mic' | 'system'
+  /** Seconds from recording start (pause-compressed timeline) */
+  startTime: number
+  endTime: number
+  text: string
+  /** Normalized ISO 639-1 code detected for this utterance, '' when unknown */
+  language: string
+}
+
+export interface RealtimeStatusEvent {
+  noteId: string
+  status: 'starting' | 'live' | 'failed' | 'stopped'
+  message?: string
 }
 
 // Audio API interface
@@ -357,6 +388,17 @@ export interface AudioAPI {
     content: string
     summarizationError?: string
   }>
+  // --- Realtime transcription (macOS Apple Silicon) ---
+  isRealtimeAvailable: () => Promise<RealtimeAvailability>
+  startRealtime: (
+    noteId: string,
+    options: { hasSystemTrack: boolean; language: string }
+  ) => Promise<RealtimeAvailability>
+  pushRealtimePcm: (noteId: string, track: 'mic' | 'system', pcm: ArrayBuffer) => void
+  stopRealtime: (noteId: string) => Promise<{ hasTranscript: boolean }>
+  abortRealtime: (noteId: string) => Promise<void>
+  onRealtimeSegment: (callback: (segment: RealtimeSegment) => void) => () => void
+  onRealtimeStatus: (callback: (status: RealtimeStatusEvent) => void) => () => void
 }
 
 // Global window interface

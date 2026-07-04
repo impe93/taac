@@ -37,12 +37,14 @@ import type {
 } from './types'
 import { ProcessingUtilityManager } from './ProcessingUtilityManager'
 import type { WorkerInitConfig } from './processingWorker'
+import type { RealtimeSessionResult } from './realtime/types'
 import { AIManager } from '../ai/AIManager'
 import { HardwareDetector } from '../ai/HardwareDetector'
 import { ModelRegistry } from '../ai/ModelRegistry'
 import type { ChatMessage } from '../ai/AIManager'
 import type { HardwareInfo } from '../ai/types'
 import { getLanguageName, normalizeLanguageCode, resolveMeetingLanguage } from './language'
+import { isCrossTalkDuplicate } from './crossTalk'
 
 const DEFAULT_CHAT_MODEL_ID = 'qwen3-5-2b-q8'
 
@@ -53,7 +55,7 @@ const DEFAULT_CHAT_MODEL_ID = 'qwen3-5-2b-q8'
  * buildDebugTranscriptSection method and its call site) once the language
  * pipeline is validated.
  */
-const APPEND_RAW_TRANSCRIPT_DEBUG = true
+const APPEND_RAW_TRANSCRIPT_DEBUG = false
 
 // ---------------------------------------------------------------------------
 // AudioManager
@@ -63,6 +65,12 @@ export class AudioManager {
   private static instance: AudioManager | null = null
   private initialized = false
   private workerManager: ProcessingUtilityManager | null = null
+  /**
+   * Whether the current worker was initialized with whisper requested.
+   * The realtime path skips loading the whisper model (~1.5GB saved); a later
+   * job that needs the fallback re-initializes the worker with the model.
+   */
+  private workerWhisperRequested = false
 
   /** Release the worker (and its ~1GB of models) after this idle period. */
   private static readonly IDLE_DISPOSE_MS = 5 * 60 * 1000
@@ -81,10 +89,18 @@ export class AudioManager {
   }
 
   // §3.3 — idempotent initialization
-  async initialize(): Promise<void> {
-    if (this.initialized) return
+  async initialize(options?: { needsWhisper?: boolean }): Promise<void> {
+    const needsWhisper = options?.needsWhisper ?? true
 
-    console.log('[AudioManager] Initializing...')
+    if (this.initialized) {
+      // A worker started without whisper (realtime path) must be rebuilt when
+      // a job that needs the whisper fallback arrives.
+      if (!needsWhisper || this.workerWhisperRequested) return
+      console.log('[AudioManager] Worker lacks whisper — re-initializing with the model')
+      await this.dispose()
+    }
+
+    console.log(`[AudioManager] Initializing${needsWhisper ? '' : ' (whisper skipped)'}...`)
 
     const { configStore } = await import('../utils/configStore')
     const modelsBase = join(app.getPath('userData'), 'models')
@@ -108,34 +124,36 @@ export class AudioManager {
     // ------------------------------------------------------------------
     let whisperModelPath: string | undefined
 
-    const meetingConfig = configStore.get('meeting')
-    const ggmlModels = ModelRegistry.getGgmlTranscriptionModels()
+    if (needsWhisper) {
+      const meetingConfig = configStore.get('meeting')
+      const ggmlModels = ModelRegistry.getGgmlTranscriptionModels()
 
-    // Prefer the configured model when present on disk...
-    const configured = ggmlModels.find((m) => m.id === meetingConfig.whisperModelId)
-    if (configured) {
-      const candidate = join(modelsBase, configured.filename)
-      if (await this.pathExists(candidate)) {
-        whisperModelPath = candidate
-        console.log(`[AudioManager] Transcription model: ${configured.id}`)
-      }
-    }
-
-    // ...otherwise fall back to the largest available GGML model on disk.
-    if (!whisperModelPath) {
-      for (const model of [...ggmlModels].sort((a, b) => b.sizeBytes - a.sizeBytes)) {
-        const candidate = join(modelsBase, model.filename)
+      // Prefer the configured model when present on disk...
+      const configured = ggmlModels.find((m) => m.id === meetingConfig.whisperModelId)
+      if (configured) {
+        const candidate = join(modelsBase, configured.filename)
         if (await this.pathExists(candidate)) {
           whisperModelPath = candidate
-          console.log(`[AudioManager] Transcription model (auto-selected): ${model.id}`)
-          configStore.set('meeting', { ...meetingConfig, whisperModelId: model.id })
-          break
+          console.log(`[AudioManager] Transcription model: ${configured.id}`)
         }
       }
-    }
 
-    if (!whisperModelPath) {
-      console.warn('[AudioManager] No GGML whisper model found on disk — transcription disabled')
+      // ...otherwise fall back to the largest available GGML model on disk.
+      if (!whisperModelPath) {
+        for (const model of [...ggmlModels].sort((a, b) => b.sizeBytes - a.sizeBytes)) {
+          const candidate = join(modelsBase, model.filename)
+          if (await this.pathExists(candidate)) {
+            whisperModelPath = candidate
+            console.log(`[AudioManager] Transcription model (auto-selected): ${model.id}`)
+            configStore.set('meeting', { ...meetingConfig, whisperModelId: model.id })
+            break
+          }
+        }
+      }
+
+      if (!whisperModelPath) {
+        console.warn('[AudioManager] No GGML whisper model found on disk — transcription disabled')
+      }
     }
 
     // ------------------------------------------------------------------
@@ -171,9 +189,11 @@ export class AudioManager {
     await this.workerManager.initialize(workerConfig)
 
     this.initialized = true
+    this.workerWhisperRequested = needsWhisper
     console.log(
-      `[AudioManager] Initialized — transcription: whisper.cpp ` +
-        `(${useGpu ? whisperVariant.toUpperCase() : 'CPU'}), worker: ready`
+      `[AudioManager] Initialized — transcription: ${
+        needsWhisper ? `whisper.cpp (${useGpu ? whisperVariant.toUpperCase() : 'CPU'})` : 'realtime'
+      }, worker: ready`
     )
   }
 
@@ -211,6 +231,7 @@ export class AudioManager {
     await this.workerManager?.dispose()
     this.workerManager = null
     this.initialized = false
+    this.workerWhisperRequested = false
     console.log('[AudioManager] Disposed')
   }
 
@@ -251,6 +272,8 @@ export class AudioManager {
    * @param recordingDate ISO 8601 timestamp of when the recording started
    * @param durationSecs  Duration of the recording in seconds
    * @param onProgress    Progress callback; called at each pipeline stage
+   * @param precomputed   Transcripts produced live during recording (realtime
+   *                      path) — when present, whisper transcription is skipped
    */
   async processRecording(
     noteId: string,
@@ -261,9 +284,10 @@ export class AudioManager {
     recordingDate: string,
     durationSecs: number,
     requestedLanguage: string,
-    onProgress: (progress: ProcessingProgress) => void
+    onProgress: (progress: ProcessingProgress) => void,
+    precomputed?: RealtimeSessionResult
   ): Promise<{ metadata: MeetingMetadata; content: string; summarizationError?: string }> {
-    await this.initialize()
+    await this.initialize({ needsWhisper: !precomputed })
     this.clearIdleDispose()
 
     const { configStore } = await import('../utils/configStore')
@@ -279,49 +303,83 @@ export class AudioManager {
     // wall-clock time (ASR on GPU + diarization on CPU). The two transcriptions
     // are serialized inside the worker (a whisper context cannot run two jobs
     // at once) — the progress bar is split mic 0–50% / system 50–100%.
+    // With a realtime (precomputed) transcript, only diarization runs here.
     // ------------------------------------------------------------------
-    onProgress({ stage: 'transcribing', progress: 0, message: 'Transcribing audio...' })
-    console.log('[AudioManager] Stage: transcribing + diarizing')
-
     const hasSystemTrack = mode === 'remote' && !!systemWavPath
 
-    const micTranscriptionP = this.workerManager!.transcribe(
-      micWavPath,
-      pinnedLanguage,
-      (_stage, pct) =>
-        onProgress({
-          stage: 'transcribing',
-          progress: hasSystemTrack ? Math.round(pct / 2) : pct,
-          message: 'Transcribing audio...'
-        })
-    )
     const micDiarizationP = this.workerManager!.diarize(micWavPath)
-
-    const systemTranscriptionP: Promise<TranscriptionResult | null> = hasSystemTrack
-      ? this.workerManager!.transcribe(systemWavPath!, pinnedLanguage, (_stage, pct) =>
-          onProgress({
-            stage: 'transcribing',
-            progress: 50 + Math.round(pct / 2),
-            message: 'Transcribing system audio...'
-          })
-        )
-      : Promise.resolve(null)
     const systemDiarizationP: Promise<DiarizationResult | null> = hasSystemTrack
       ? this.workerManager!.diarize(systemWavPath!)
       : Promise.resolve(null)
+    // The diarization promises are awaited only after transcription: attach
+    // no-op handlers so an early rejection (e.g. worker crash) does not
+    // surface as an unhandled rejection before the await below runs.
+    micDiarizationP.catch(() => {})
+    systemDiarizationP.catch(() => {})
 
-    const [micTranscription, systemTranscription] = await Promise.all([
-      micTranscriptionP,
-      systemTranscriptionP
-    ])
+    let micTranscription: TranscriptionResult
+    let systemTranscription: TranscriptionResult | null
 
-    onProgress({ stage: 'transcribing', progress: 100, message: 'Transcription complete' })
+    if (precomputed) {
+      console.log('[AudioManager] Stage: diarizing (transcript from realtime session)')
+      micTranscription = precomputed.mic
+      systemTranscription = hasSystemTrack ? (precomputed.system ?? null) : null
+    } else {
+      onProgress({ stage: 'transcribing', progress: 0, message: 'Transcribing audio...' })
+      console.log('[AudioManager] Stage: transcribing + diarizing')
+
+      const micTranscriptionP = this.workerManager!.transcribe(
+        micWavPath,
+        pinnedLanguage,
+        (_stage, pct) =>
+          onProgress({
+            stage: 'transcribing',
+            progress: hasSystemTrack ? Math.round(pct / 2) : pct,
+            message: 'Transcribing audio...'
+          })
+      )
+
+      const systemTranscriptionP: Promise<TranscriptionResult | null> = hasSystemTrack
+        ? this.workerManager!.transcribe(systemWavPath!, pinnedLanguage, (_stage, pct) =>
+            onProgress({
+              stage: 'transcribing',
+              progress: 50 + Math.round(pct / 2),
+              message: 'Transcribing system audio...'
+            })
+          )
+        : Promise.resolve(null)
+
+      const [mic, system] = await Promise.all([micTranscriptionP, systemTranscriptionP])
+      micTranscription = mic
+      systemTranscription = system
+
+      onProgress({ stage: 'transcribing', progress: 100, message: 'Transcription complete' })
+    }
+
     onProgress({ stage: 'diarizing', progress: 0, message: 'Identifying speakers...' })
 
-    const [micDiarization, systemDiarization] = await Promise.all([
-      micDiarizationP,
-      systemDiarizationP
-    ])
+    // Diarization failures (including a native crash that kills the worker)
+    // must not lose the meeting: degrade to a single-speaker timeline and let
+    // transcript + summary proceed. The worker is disposed so the next job
+    // re-initializes from a clean state.
+    let micDiarization: DiarizationResult
+    let systemDiarization: DiarizationResult | null
+    try {
+      ;[micDiarization, systemDiarization] = await Promise.all([
+        micDiarizationP,
+        systemDiarizationP
+      ])
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error(
+        `[AudioManager] Diarization failed — falling back to single speaker: ${message}`
+      )
+      micDiarization = { segments: [{ speaker: 0, startTime: 0, endTime: 0 }], numSpeakers: 1 }
+      systemDiarization = hasSystemTrack
+        ? { segments: [{ speaker: 0, startTime: 0, endTime: 0 }], numSpeakers: 1 }
+        : null
+      await this.dispose()
+    }
 
     onProgress({ stage: 'diarizing', progress: 100, message: 'Speaker identification complete' })
 
@@ -549,28 +607,16 @@ export class AudioManager {
       }
     }
 
-    // Assign mic transcription segments, deduplicating bleed-through from system audio.
-    // For each mic segment, check if there's a temporally overlapping system segment
-    // with similar text. If so, it's bleed-through (system audio picked up by mic) — skip it.
+    // Assign mic transcription segments, deduplicating bleed-through from system
+    // audio (speakers → microphone echo, mis-attributed to "You" otherwise).
+    // Containment against the pooled overlapping system text handles the N:M
+    // boundary mismatch between tracks — a single long mic VAD utterance can
+    // correspond to several short system utterances (see crossTalk.ts).
     const segments: TranscriptionSegment[] = [...systemSegments]
-    const TIME_TOLERANCE_SECS = 2
-    const SIMILARITY_THRESHOLD = 0.6
     let droppedCount = 0
 
     for (const micSeg of micTranscription.segments) {
-      // Find system segments that overlap in time (within tolerance)
-      const overlapping = systemSegments.filter(
-        (sysSeg) =>
-          micSeg.startTime <= sysSeg.endTime + TIME_TOLERANCE_SECS &&
-          micSeg.endTime >= sysSeg.startTime - TIME_TOLERANCE_SECS
-      )
-
-      // Check if any overlapping system segment has similar text
-      const isDuplicate = overlapping.some(
-        (sysSeg) => this.computeTextSimilarity(micSeg.text, sysSeg.text) > SIMILARITY_THRESHOLD
-      )
-
-      if (isDuplicate) {
+      if (isCrossTalkDuplicate(micSeg, systemSegments)) {
         droppedCount++
         continue
       }
@@ -602,23 +648,6 @@ export class AudioManager {
     segments.sort((a, b) => a.startTime - b.startTime)
 
     return { speakers: activeSpeakers, transcriptionSegments: segments }
-  }
-
-  /**
-   * Compute Jaccard similarity between two text strings based on word sets.
-   * Returns a value between 0 (completely different) and 1 (identical).
-   */
-  private computeTextSimilarity(a: string, b: string): number {
-    const wordsA = new Set(a.toLowerCase().split(/\s+/).filter(Boolean))
-    const wordsB = new Set(b.toLowerCase().split(/\s+/).filter(Boolean))
-    if (wordsA.size === 0 && wordsB.size === 0) return 1
-    if (wordsA.size === 0 || wordsB.size === 0) return 0
-    let intersectionSize = 0
-    for (const word of wordsA) {
-      if (wordsB.has(word)) intersectionSize++
-    }
-    const unionSize = wordsA.size + wordsB.size - intersectionSize
-    return unionSize === 0 ? 0 : intersectionSize / unionSize
   }
 
   /**

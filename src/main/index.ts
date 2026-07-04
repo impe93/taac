@@ -29,6 +29,7 @@ import {
 import { registerImportHandlers } from './ipc/importHandlers'
 import { registerAudioHandlers } from './ipc/audioHandlers'
 import { AudioManager } from './audio/AudioManager'
+import { RealtimeTranscriptionService } from './audio/realtime/RealtimeTranscriptionService'
 
 // Register custom protocol for serving local assets
 // Must be called before app is ready
@@ -260,6 +261,8 @@ app.on('window-all-closed', () => {
 app.on('before-quit', async () => {
   cancelBatchIndexing()
   disposeIndexingQueue()
+  // Quit mid-recording must never leave an orphan Python sidecar process
+  await RealtimeTranscriptionService.getInstance().abortAll()
   await AudioManager.getInstance().dispose()
 })
 

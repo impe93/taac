@@ -31,6 +31,8 @@ pnpm build:win          # Build for Windows
 pnpm build:linux        # Build for Linux
 pnpm build:unpack       # Build without packaging (for testing)
 pnpm ui-add             # Add new Shadcn/UI components (shadcn "new-york" style)
+pnpm setup:asr-dev      # One-time dev setup: .venv-asr for the realtime ASR sidecar (macOS)
+pnpm prepare:asr-runtime # Build the bundled Python runtime (runs automatically in build:mac)
 ```
 
 ## Architecture
@@ -108,6 +110,18 @@ See `docs/AI_ARCHITECTURE.md` for full design. Key components in `src/main/ai/`:
 - Distance-to-relevance conversion: sqlite-vec returns L2 distance; cosine similarity = `1 - dist²/2` (quadratic, NOT linear) because vectors are L2-normalized
 - Relevance threshold: 20% cosine similarity in ChatInterface.tsx
 - `EmbeddingService.chunkText()` is async (needs model for tokenization via `model.tokenize()`/`detokenize()`)
+
+### Realtime Meeting Transcription (macOS Apple Silicon)
+
+Live transcription during recording via **Qwen3-ASR MLX** in a Python sidecar (`src/main/audio/realtime/`):
+
+- **Flow**: renderer AudioWorklet tap (16 kHz s16 mono, gated on pause) → IPC `audio:realtime:pcm` → per-track **Silero VAD** (`VadSegmenter`, sherpa-onnx, 0.3s pre-pad against clipped attacks) → utterance PCM → **AsrSidecarManager** (spawns `resources/asr/qwen3_asr_bridge.py`, JSONL over stdio, base64 PCM) → `audio:realtime-segment` events → `LiveTranscript` panel
+- **Post-processing skip**: `RealtimeTranscriptionService.finishSession()` synthesizes per-track `TranscriptionResult`s (duration-weighted `majorityLanguage` vote); `AudioManager.processRecording(..., precomputed)` then runs only diarization + summary and inits the worker WITHOUT whisper (`needsWhisper:false`, ~1.5GB saved)
+- **Language**: Qwen3-ASR auto-detects per utterance (returns English names like "Italian" — `normalizeLanguageCode` handles them); pinned language passed as hint per transcribe call
+- **Availability gate** (`realtime/availability.ts`): darwin + arm64 + macOS 15+ + config `meeting.realtimeTranscription !== 'off'` + ASR model dir + `silero_vad.onnx` + Python runtime. Any failure (also mid-recording sidecar crash) → whisper post-processing fallback, recording never blocked
+- **Python runtime**: dev = `.venv-asr/` (`pnpm setup:asr-dev`), packaged = `python-runtime/` extraResource (`scripts/prepare-asr-runtime.sh`, python-build-standalone + `mlx-qwen3-asr` pinned); `TAAC_ASR_PYTHON` env overrides
+- **Memory discipline (16GB target)**: 1.7B-8bit sidecar ≈2.5GB RSS lives only during recording; disposed at stop BEFORE the summary LLM loads
+- **Models**: `qwen3-asr-1.7b-mlx-8bit` (default) / `qwen3-asr-0.6b-mlx-8bit` (low tier) — multi-file MLX checkpoints in `{userData}/models/{modelId}/` (ModelDownloader `files[]` + aggregate progress) + `silero-vad-onnx`
 
 ### TypeScript Configuration
 
