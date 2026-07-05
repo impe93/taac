@@ -188,7 +188,7 @@ export class VectorDBManager {
 
     const instance = new VectorDBManager({
       dbPath,
-      embeddingDimension: 768 // nomic-embed-text dimension
+      embeddingDimension: 768 // EmbeddingGemma dimension
     })
     this.instances.set(spaceId, instance)
     return instance

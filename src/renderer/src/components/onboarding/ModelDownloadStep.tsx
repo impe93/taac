@@ -23,6 +23,7 @@ import { useDownloadedModels, useModelDownload } from '@renderer/hooks/useModels
 import { useHardwareInfo, useAvailableModels } from '@renderer/hooks/useHardware'
 import { useConfig, useSetConfig } from '@renderer/hooks/useConfig'
 import { formatSize, formatSpeed, formatETA } from '@renderer/lib/format'
+import { pickWhisperId, pickAsrId } from '@renderer/lib/modelSelection'
 import type { OnboardingAction, OnboardingState } from './OnboardingWizard'
 
 // =============================================================================
@@ -40,21 +41,6 @@ interface CuratedFeature {
   optional: boolean
   resolveModelIds: (tier: HardwareTier, hasGpu: boolean, realtimeAsr: boolean) => string[]
 }
-
-const TIER_RANK: Record<HardwareTier, number> = { low: 0, medium: 1, high: 2, ultra: 3 }
-
-// A single whisper.cpp (GGML) engine handles both GPU and CPU, so the variant is
-// always GGML — the model size is chosen purely by hardware tier.
-const pickWhisperId = (tier: HardwareTier): string => {
-  if (TIER_RANK[tier] >= TIER_RANK['high']) return 'whisper-large-v3-turbo-ggml'
-  if (TIER_RANK[tier] >= TIER_RANK['medium']) return 'whisper-small-ggml'
-  return 'whisper-base-ggml'
-}
-
-// Realtime transcription model (Qwen3-ASR via MLX, Apple Silicon only) —
-// 1.7B for medium+ machines, 0.6B keeps low-tier machines responsive.
-const pickAsrId = (tier: HardwareTier): string =>
-  TIER_RANK[tier] >= TIER_RANK['medium'] ? 'qwen3-asr-1.7b-mlx-8bit' : 'qwen3-asr-0.6b-mlx-8bit'
 
 const FEATURES: CuratedFeature[] = [
   {

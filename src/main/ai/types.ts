@@ -117,13 +117,12 @@ export interface ModelDefinition {
   /**
    * Task-prompt template for QUERY embeddings (asymmetric search). `%s` is the
    * placeholder for the query text. Model-specific — e.g. `'task: search result | query: %s'`
-   * for EmbeddingGemma, `'search_query: %s'` for nomic-embed-text-v2-moe.
+   * for EmbeddingGemma.
    */
   embeddingQueryPrompt?: string
   /**
    * Task-prompt template for DOCUMENT/chunk embeddings. `%s` is the placeholder
-   * for the chunk text — e.g. `'title: none | text: %s'` for EmbeddingGemma,
-   * `'search_document: %s'` for nomic-embed-text-v2-moe.
+   * for the chunk text — e.g. `'title: none | text: %s'` for EmbeddingGemma.
    */
   embeddingDocumentPrompt?: string
 }

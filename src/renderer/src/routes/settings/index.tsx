@@ -16,7 +16,8 @@ import {
   Palette,
   Monitor,
   Sun,
-  Moon
+  Moon,
+  ChevronDown
 } from 'lucide-react'
 import { Card, CardContent } from '@renderer/components/ui/card'
 import { Badge } from '@renderer/components/ui/badge'
@@ -25,17 +26,23 @@ import { Progress } from '@renderer/components/ui/progress'
 import { Switch } from '@renderer/components/ui/switch'
 import { ToggleGroup, ToggleGroupItem } from '@renderer/components/ui/toggle-group'
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger
+} from '@renderer/components/ui/collapsible'
+import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue
 } from '@renderer/components/ui/select'
-import { useAvailableModels } from '@renderer/hooks/useHardware'
+import { useAvailableModels, useHardwareInfo } from '@renderer/hooks/useHardware'
 import { useDownloadedModels, useModelDownload, useDeleteModel } from '@renderer/hooks/useModels'
 import { useConfig, useSetConfig } from '@renderer/hooks/useConfig'
 import { formatSize, formatSpeed, formatETA } from '@renderer/lib/format'
-import type { ModelDefinition, DownloadProgress } from '@main/ai/types'
+import { getWhisperChoice, getAsrChoice, type ModelChoice } from '@renderer/lib/modelSelection'
+import type { ModelDefinition, DownloadProgress, HardwareTier } from '@main/ai/types'
 
 export const Route = createFileRoute('/settings/')({
   component: SettingsPage
@@ -53,28 +60,16 @@ const MODEL_ROWS: ModelRowConfig[] = [
   { id: 'qwen3-reranker-0.6b-q8', label: 'Reranker', icon: ArrowUpDown }
 ]
 
-const TRANSCRIPTION_MODEL_ROWS: ModelRowConfig[] = [
-  { id: 'whisper-base-ggml', label: 'Transcription', icon: Mic },
-  { id: 'whisper-small-ggml', label: 'Transcription', icon: Mic },
-  { id: 'whisper-large-v3-turbo-ggml', label: 'Transcription', icon: Mic }
-]
-
-// Realtime transcription (Qwen3-ASR via MLX sidecar) — macOS Apple Silicon only
-const REALTIME_ASR_MODEL_ROWS: ModelRowConfig[] = [
-  { id: 'qwen3-asr-1.7b-mlx-8bit', label: 'Realtime · Best quality', icon: Mic },
-  { id: 'qwen3-asr-0.6b-mlx-8bit', label: 'Realtime · Light', icon: Mic },
-  { id: 'silero-vad-onnx', label: 'Voice activity detection', icon: Mic }
-]
-
-const DIARIZATION_MODEL_ROWS: ModelRowConfig[] = [
-  { id: 'sherpa-onnx-pyannote-segmentation', label: 'Diarization', icon: Users },
-  { id: 'sherpa-onnx-nemo-titanet-small', label: 'Diarization · Fast', icon: Users },
-  { id: 'sherpa-onnx-3dspeaker-embedding', label: 'Diarization', icon: Users }
+// Speaker identification always needs segmentation + one embedding model.
+const DIARIZATION_MODEL_IDS = [
+  'sherpa-onnx-pyannote-segmentation',
+  'sherpa-onnx-nemo-titanet-small'
 ]
 
 function SettingsPage(): ReactNode {
   const { data: availableModels } = useAvailableModels()
   const { data: downloadedModels } = useDownloadedModels()
+  const { data: hardwareInfo } = useHardwareInfo()
   const { progress, download, pause, resume, cancel } = useModelDownload()
   const deleteModel = useDeleteModel()
 
@@ -88,6 +83,28 @@ function SettingsPage(): ReactNode {
     for (const m of availableModels ?? []) map.set(m.id, m)
     return map
   }, [availableModels])
+
+  const tier: HardwareTier = hardwareInfo?.tier ?? 'low'
+  // Realtime ASR (Qwen3-ASR via MLX) runs on macOS Apple Silicon only.
+  const supportsRealtimeAsr =
+    window.platform === 'darwin' && !!hardwareInfo?.cpu.brand.includes('Apple')
+
+  // Resolve the optimal transcription/ASR variant for this machine, with
+  // compatible alternatives surfaced behind an "Advanced" toggle.
+  const whisperChoice = useMemo(
+    () => getWhisperChoice(availableModels ?? [], tier),
+    [availableModels, tier]
+  )
+  const asrChoice = useMemo(
+    () => (supportsRealtimeAsr ? getAsrChoice(availableModels ?? [], tier) : null),
+    [availableModels, tier, supportsRealtimeAsr]
+  )
+  const vadModel = modelsMap.get('silero-vad-onnx')
+  const diarizationModels = useMemo(
+    () =>
+      DIARIZATION_MODEL_IDS.map((id) => modelsMap.get(id)).filter((m): m is ModelDefinition => !!m),
+    [modelsMap]
+  )
 
   return (
     <div className="flex w-full max-w-2xl flex-col mx-auto">
@@ -125,7 +142,10 @@ function SettingsPage(): ReactNode {
       <SearchSettings />
 
       <MeetingModelsSection
-        modelsMap={modelsMap}
+        whisperChoice={whisperChoice}
+        asrChoice={asrChoice}
+        vadModel={supportsRealtimeAsr ? vadModel : undefined}
+        diarizationModels={diarizationModels}
         downloadedModelIds={downloadedModelIds}
         progress={progress}
         onDownload={download}
@@ -239,7 +259,14 @@ const AppearanceSettings: FC = () => {
 }
 
 interface MeetingModelsSectionProps {
-  modelsMap: Map<string, ModelDefinition>
+  /** Optimal Whisper (GGML) variant for this machine, plus compatible alternatives. */
+  whisperChoice: ModelChoice | null
+  /** Optimal realtime ASR (MLX) variant — only on Apple Silicon, otherwise null. */
+  asrChoice: ModelChoice | null
+  /** Voice-activity-detection dependency for realtime ASR (undefined when unsupported). */
+  vadModel: ModelDefinition | undefined
+  /** Speaker-identification models (segmentation + embedding). */
+  diarizationModels: ModelDefinition[]
   downloadedModelIds: Set<string>
   progress: Map<string, DownloadProgress>
   onDownload: (id: string) => void
@@ -250,7 +277,10 @@ interface MeetingModelsSectionProps {
 }
 
 const MeetingModelsSection: FC<MeetingModelsSectionProps> = ({
-  modelsMap,
+  whisperChoice,
+  asrChoice,
+  vadModel,
+  diarizationModels,
   downloadedModelIds,
   progress,
   onDownload,
@@ -259,26 +289,25 @@ const MeetingModelsSection: FC<MeetingModelsSectionProps> = ({
   onResume,
   onCancel
 }) => {
-  const renderModelRows = (rows: ModelRowConfig[]): ReactNode =>
-    rows.map((row) => {
-      const model = modelsMap.get(row.id)
-      if (!model) return null
-      return (
-        <ModelRow
-          key={row.id}
-          model={model}
-          label={row.label}
-          icon={row.icon}
-          isDownloaded={downloadedModelIds.has(row.id)}
-          downloadProgress={progress.get(row.id)}
-          onDownload={onDownload}
-          onDelete={onDelete}
-          onPause={onPause}
-          onResume={onResume}
-          onCancel={onCancel}
-        />
-      )
-    })
+  const renderRow = (
+    model: ModelDefinition,
+    label: string,
+    icon: FC<{ className?: string }>
+  ): ReactNode => (
+    <ModelRow
+      key={model.id}
+      model={model}
+      label={label}
+      icon={icon}
+      isDownloaded={downloadedModelIds.has(model.id)}
+      downloadProgress={progress.get(model.id)}
+      onDownload={onDownload}
+      onDelete={onDelete}
+      onPause={onPause}
+      onResume={onResume}
+      onCancel={onCancel}
+    />
+  )
 
   return (
     <div className="mt-8">
@@ -293,30 +322,67 @@ const MeetingModelsSection: FC<MeetingModelsSectionProps> = ({
       </div>
 
       <div className="space-y-4">
-        <div>
-          <p className="mb-2 text-sm font-medium text-muted-foreground">
-            Transcription (choose one)
-          </p>
-          <div className="space-y-3">{renderModelRows(TRANSCRIPTION_MODEL_ROWS)}</div>
-        </div>
+        {whisperChoice && (
+          <div>
+            <p className="mb-2 text-sm font-medium text-muted-foreground">
+              Transcription (recommended for your hardware)
+            </p>
+            <div className="space-y-3">
+              {renderRow(whisperChoice.optimal, 'Transcription', Mic)}
+            </div>
+            <AdvancedModels label="other transcription models">
+              {whisperChoice.alternatives.map((m) => renderRow(m, 'Transcription', Mic))}
+            </AdvancedModels>
+          </div>
+        )}
 
-        {window.platform === 'darwin' && (
+        {asrChoice && (
           <div>
             <p className="mb-2 text-sm font-medium text-muted-foreground">
               Realtime transcription (macOS — live transcript while recording)
             </p>
-            <div className="space-y-3">{renderModelRows(REALTIME_ASR_MODEL_ROWS)}</div>
+            <div className="space-y-3">
+              {renderRow(asrChoice.optimal, 'Realtime', Mic)}
+              {vadModel && renderRow(vadModel, 'Voice activity detection', Mic)}
+            </div>
+            <AdvancedModels label="other realtime models">
+              {asrChoice.alternatives.map((m) => renderRow(m, 'Realtime', Mic))}
+            </AdvancedModels>
           </div>
         )}
 
-        <div>
-          <p className="mb-2 text-sm font-medium text-muted-foreground">
-            Speaker Identification (segmentation + one embedding)
-          </p>
-          <div className="space-y-3">{renderModelRows(DIARIZATION_MODEL_ROWS)}</div>
-        </div>
+        {diarizationModels.length > 0 && (
+          <div>
+            <p className="mb-2 text-sm font-medium text-muted-foreground">
+              Speaker Identification (segmentation + embedding)
+            </p>
+            <div className="space-y-3">
+              {diarizationModels.map((m) => renderRow(m, 'Diarization', Users))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
+  )
+}
+
+/**
+ * Collapsible container for non-optimal but compatible model variants.
+ * Renders nothing when there are no alternatives to show.
+ */
+const AdvancedModels: FC<{ label: string; children: ReactNode }> = ({ label, children }) => {
+  const [open, setOpen] = useState(false)
+  const items = Array.isArray(children) ? children.filter(Boolean) : children
+  if (Array.isArray(items) && items.length === 0) return null
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} className="mt-2">
+      <CollapsibleTrigger className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground">
+        <ChevronDown className={`size-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
+        {open ? `Hide ${label}` : `Show ${label}`}
+      </CollapsibleTrigger>
+      <CollapsibleContent className="mt-2 space-y-3">{items}</CollapsibleContent>
+    </Collapsible>
   )
 }
 

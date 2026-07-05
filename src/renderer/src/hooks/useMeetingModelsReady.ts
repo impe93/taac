@@ -4,8 +4,8 @@ import { useDownloadedModels } from './useModels'
 /** Segmentation model is always required */
 const SEGMENTATION_MODEL_ID = 'sherpa-onnx-pyannote-segmentation'
 
-/** At least one embedding model is required — NeMo TitaNet Small is the preferred (faster) option */
-const EMBEDDING_MODEL_IDS = ['sherpa-onnx-nemo-titanet-small', 'sherpa-onnx-3dspeaker-embedding']
+/** Speaker embedding model — NeMo TitaNet Small (fast, sole supported option) */
+const EMBEDDING_MODEL_ID = 'sherpa-onnx-nemo-titanet-small'
 
 interface MeetingModelsStatus {
   isReady: boolean
@@ -21,7 +21,7 @@ export const useMeetingModelsReady = (): MeetingModelsStatus => {
 
     const hasTranscription = downloaded.some((m) => m.capabilities.includes('transcription'))
     const hasSegmentation = downloadedIds.has(SEGMENTATION_MODEL_ID)
-    const hasEmbedding = EMBEDDING_MODEL_IDS.some((id) => downloadedIds.has(id))
+    const hasEmbedding = downloadedIds.has(EMBEDDING_MODEL_ID)
     const hasDiarization = hasSegmentation && hasEmbedding
     const hasChat = downloaded.some((m) => m.capabilities.includes('chat'))
 

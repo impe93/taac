@@ -71,24 +71,6 @@ const CURATED_MODELS: ModelDefinition[] = [
   // EMBEDDING MODELS - For vector search and RAG
   // ============================================================================
   {
-    id: 'nomic-embed-text-v2-moe',
-    name: 'Nomic Embed Text v2 MoE (Q8_0)',
-    description:
-      'High-quality multilingual embedding model with MoE architecture for semantic search (~100 languages)',
-    filename: 'nomic-embed-text-v2-moe-q8_0.gguf',
-    sizeBytes: 512 * 1024 * 1024, // ~512MB
-    layers: 22,
-    quantization: 'Q8_0',
-    contextLength: 2048,
-    capabilities: ['embedding'],
-    hardwareTier: 'low',
-    downloadUrl:
-      'https://huggingface.co/ggml-org/Nomic-Embed-Text-V2-GGUF/resolve/main/nomic-embed-text-v2-moe-q8_0.gguf',
-    embeddingQueryPrompt: 'search_query: %s',
-    embeddingDocumentPrompt: 'search_document: %s',
-    license: 'Apache 2.0'
-  },
-  {
     id: 'embeddinggemma-300m-q8',
     name: 'EmbeddingGemma 300M (Q8_0)',
     description:
@@ -275,22 +257,6 @@ const CURATED_MODELS: ModelDefinition[] = [
     downloadUrl:
       'https://huggingface.co/csukuangfj/sherpa-onnx-pyannote-segmentation-3-0/resolve/main/model.onnx',
     license: 'MIT'
-  },
-  {
-    id: 'sherpa-onnx-3dspeaker-embedding',
-    name: 'Speaker Embedding (3D-Speaker)',
-    description:
-      'ERes2Net speaker embedding model — creates voice fingerprints to cluster speakers (~40MB). Intended to be bundled with the app.',
-    filename: '3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx',
-    sizeBytes: 40 * 1024 * 1024, // ~40MB
-    layers: 0,
-    quantization: 'fp32',
-    contextLength: 0,
-    capabilities: ['diarization'],
-    hardwareTier: 'low',
-    downloadUrl:
-      'https://huggingface.co/csukuangfj/speaker-embedding-models/resolve/main/3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx',
-    license: 'Apache 2.0'
   },
   {
     id: 'sherpa-onnx-nemo-titanet-small',

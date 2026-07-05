@@ -169,8 +169,7 @@ export class EmbeddingService {
    *
    * Modern embedding models need asymmetric task prefixes for good retrieval
    * quality, but the exact format is model-specific:
-   * - nomic-embed-text-v2-moe: `search_document: <text>` / `search_query: <text>`
-   * - EmbeddingGemma:          `title: none | text: <text>` / `task: search result | query: <text>`
+   * - EmbeddingGemma: `title: none | text: <text>` / `task: search result | query: <text>`
    *
    * The template comes from the model definition (`embeddingDocumentPrompt` /
    * `embeddingQueryPrompt`, with `%s` as the placeholder). Falls back to the

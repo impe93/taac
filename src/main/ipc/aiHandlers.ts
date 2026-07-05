@@ -1181,8 +1181,8 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
     } catch (error) {
       return {
         isAvailable: false,
-        modelId: 'nomic-embed-text-v1.5',
-        modelName: 'Nomic Embed Text',
+        modelId: 'embeddinggemma-300m-q8',
+        modelName: 'EmbeddingGemma 300M',
         error: (error as Error).message
       }
     }

@@ -158,21 +158,16 @@ export class AudioManager {
 
     // ------------------------------------------------------------------
     // Diarization model paths (always CPU, sherpa-onnx)
-    // Prefer NeMo TitaNet Small (~2.7x faster) if available, fall back to 3DSpeaker
+    // NeMo TitaNet Small (~2.7x faster) is the sole speaker-embedding model.
     // ------------------------------------------------------------------
     const segmentationModelPath = join(modelsBase, 'model.onnx')
 
-    const nemoEmbeddingPath = join(modelsBase, 'nemo_en_titanet_small.onnx')
-    const threeDSpeakerEmbeddingPath = join(
-      modelsBase,
-      '3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx'
-    )
-
-    const nemoExists = await this.pathExists(nemoEmbeddingPath)
-    const embeddingModelPath = nemoExists ? nemoEmbeddingPath : threeDSpeakerEmbeddingPath
-    console.log(
-      `[AudioManager] Diarization embedding: ${nemoExists ? 'NeMo TitaNet Small' : '3DSpeaker ERes2Net'}`
-    )
+    const embeddingModelPath = join(modelsBase, 'nemo_en_titanet_small.onnx')
+    if (!(await this.pathExists(embeddingModelPath))) {
+      console.warn(
+        '[AudioManager] NeMo TitaNet embedding model not found on disk — diarization disabled'
+      )
+    }
 
     // ------------------------------------------------------------------
     // Start the processing worker
