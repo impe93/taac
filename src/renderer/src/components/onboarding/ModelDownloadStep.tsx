@@ -9,10 +9,11 @@ import {
   AlertCircle,
   Loader2,
   Mic,
-  Info
+  Info,
+  Cpu
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import type { DownloadProgress, ModelDefinition, HardwareTier } from '@main/ai/types'
+import type { DownloadProgress, ModelDefinition, ModelProfile } from '@main/ai/types'
 import { Button } from '@renderer/components/ui/button'
 import { Card, CardContent } from '@renderer/components/ui/card'
 import { Progress } from '@renderer/components/ui/progress'
@@ -20,10 +21,9 @@ import { Badge } from '@renderer/components/ui/badge'
 import { Alert, AlertDescription } from '@renderer/components/ui/alert'
 import { Skeleton } from '@renderer/components/ui/skeleton'
 import { useDownloadedModels, useModelDownload } from '@renderer/hooks/useModels'
-import { useHardwareInfo, useAvailableModels } from '@renderer/hooks/useHardware'
+import { useModelProfile } from '@renderer/hooks/useHardware'
 import { useConfig, useSetConfig } from '@renderer/hooks/useConfig'
 import { formatSize, formatSpeed, formatETA } from '@renderer/lib/format'
-import { pickWhisperId, pickAsrId } from '@renderer/lib/modelSelection'
 import type { OnboardingAction, OnboardingState } from './OnboardingWizard'
 
 // =============================================================================
@@ -39,7 +39,6 @@ interface CuratedFeature {
   description: string
   losesIfSkipped: string
   optional: boolean
-  resolveModelIds: (tier: HardwareTier, hasGpu: boolean, realtimeAsr: boolean) => string[]
 }
 
 const FEATURES: CuratedFeature[] = [
@@ -50,8 +49,7 @@ const FEATURES: CuratedFeature[] = [
     description: 'Converse naturally with an AI assistant that runs entirely on your device.',
     losesIfSkipped:
       'Without this model you won’t be able to chat with your notes or generate AI content.',
-    optional: false,
-    resolveModelIds: () => ['qwen3-5-2b-q8']
+    optional: false
   },
   {
     key: 'search',
@@ -60,8 +58,7 @@ const FEATURES: CuratedFeature[] = [
     description: 'Find your notes by meaning, not just keywords. Powered by local RAG.',
     losesIfSkipped:
       'Without these models, advanced search and contextual note retrieval will be disabled.',
-    optional: false,
-    resolveModelIds: () => ['embeddinggemma-300m-q8', 'qwen3-reranker-0.6b-q8']
+    optional: false
   },
   {
     key: 'meeting',
@@ -71,16 +68,38 @@ const FEATURES: CuratedFeature[] = [
       'Record meetings, automatically transcribe audio, and identify different speakers — all offline.',
     losesIfSkipped:
       'Without these models you won’t be able to record meetings or generate automatic transcriptions and summaries.',
-    optional: true,
-    resolveModelIds: (tier, _hasGpu, realtimeAsr) => [
-      // Whisper stays as the post-processing fallback on every platform
-      pickWhisperId(tier),
-      ...(realtimeAsr ? [pickAsrId(tier), 'silero-vad-onnx'] : []),
-      'sherpa-onnx-pyannote-segmentation',
-      'sherpa-onnx-nemo-titanet-small'
-    ]
+    optional: true
   }
 ]
+
+const resolveFeatureModels = (profile: ModelProfile, key: FeatureKey): ModelDefinition[] => {
+  const { features, supportsRealtimeAsr } = profile
+
+  switch (key) {
+    case 'chat':
+      return [features.chat]
+    case 'search':
+      return [features.search.embedding, features.search.reranker]
+    case 'meeting': {
+      const models: ModelDefinition[] = [features.meeting.whisper]
+      if (supportsRealtimeAsr && features.meeting.asr) {
+        models.push(features.meeting.asr)
+      }
+      if (supportsRealtimeAsr && features.meeting.vad) {
+        models.push(features.meeting.vad)
+      }
+      models.push(...features.meeting.diarization)
+      return models
+    }
+  }
+}
+
+const formatRamGb = (bytes: number): string => {
+  const gb = bytes / (1024 * 1024 * 1024)
+  return `${Math.round(gb)} GB`
+}
+
+const formatTierLabel = (tier: string): string => tier.charAt(0).toUpperCase() + tier.slice(1)
 
 // =============================================================================
 // Component
@@ -98,8 +117,7 @@ interface ResolvedFeature {
 
 export const ModelDownloadStep: FC<ModelDownloadStepProps> = ({ state, dispatch }) => {
   const { data: downloadedModels, isLoading: isLoadingModels } = useDownloadedModels()
-  const { data: hardwareInfo, isLoading: isLoadingHardware } = useHardwareInfo()
-  const { data: availableModels } = useAvailableModels()
+  const { data: profile, isLoading: isLoadingProfile } = useModelProfile()
   const { progress, download, pause, resume } = useModelDownload()
   const setConfig = useSetConfig<'meeting'>()
   const { data: meetingConfig } = useConfig('meeting')
@@ -109,24 +127,13 @@ export const ModelDownloadStep: FC<ModelDownloadStepProps> = ({ state, dispatch 
     [downloadedModels]
   )
 
-  const hasGpu = !!(hardwareInfo?.gpu.hasMetal || hardwareInfo?.gpu.hasCuda)
-  const tier: HardwareTier = hardwareInfo?.tier ?? 'low'
-  // Realtime ASR (Qwen3-ASR via MLX) runs on macOS Apple Silicon only
-  const supportsRealtimeAsr =
-    window.platform === 'darwin' && !!hardwareInfo?.cpu.brand.includes('Apple')
-
-  // Resolve curated bundles into actual ModelDefinition lists
   const resolvedFeatures = useMemo<ResolvedFeature[]>(() => {
-    if (!availableModels) return []
-    const byId = new Map(availableModels.map((m) => [m.id, m]))
+    if (!profile) return []
     return FEATURES.map((feature) => ({
       feature,
-      models: feature
-        .resolveModelIds(tier, hasGpu, supportsRealtimeAsr)
-        .map((id) => byId.get(id))
-        .filter((m): m is ModelDefinition => !!m)
+      models: resolveFeatureModels(profile, feature.key)
     }))
-  }, [availableModels, tier, hasGpu, supportsRealtimeAsr])
+  }, [profile])
 
   const isModelComplete = (modelId: string): boolean =>
     downloadedIds.has(modelId) || progress.get(modelId)?.status === 'completed'
@@ -145,6 +152,24 @@ export const ModelDownloadStep: FC<ModelDownloadStepProps> = ({ state, dispatch 
     return false
   }, [progress])
 
+  // Set tier-optimal meeting config as soon as the profile is available
+  useEffect(() => {
+    if (!profile || !meetingConfig) return
+
+    const { whisper, asr } = profile.features.meeting
+    const nextWhisperId = whisper.id
+    const nextAsrId = asr?.id ?? meetingConfig.asrModelId
+
+    if (meetingConfig.whisperModelId === nextWhisperId && meetingConfig.asrModelId === nextAsrId) {
+      return
+    }
+
+    setConfig.mutate({
+      key: 'meeting',
+      value: { ...meetingConfig, whisperModelId: nextWhisperId, asrModelId: nextAsrId }
+    })
+  }, [profile, meetingConfig, setConfig])
+
   // Sync completion state to wizard
   useEffect(() => {
     if (allRequiredDownloaded && !state.models.chatModelDownloaded) {
@@ -152,9 +177,7 @@ export const ModelDownloadStep: FC<ModelDownloadStepProps> = ({ state, dispatch 
     }
   }, [allRequiredDownloaded, state.models.chatModelDownloaded, dispatch])
 
-  // Persist the transcription model choices as their downloads complete.
-  // config:set replaces the whole `meeting` object, so updates are merged
-  // over the current config to avoid clobbering other fields.
+  // Persist transcription model choices as downloads complete
   useEffect(() => {
     const meeting = resolvedFeatures.find((rf) => rf.feature.key === 'meeting')
     if (!meeting || !meetingConfig) return
@@ -182,7 +205,6 @@ export const ModelDownloadStep: FC<ModelDownloadStepProps> = ({ state, dispatch 
     setConfig.mutate({ key: 'meeting', value: { ...meetingConfig, ...updates } })
   }, [progress, resolvedFeatures, meetingConfig, setConfig])
 
-  // Handlers
   const handleDownloadMissing = (ids: string[]): void => {
     for (const id of ids) {
       if (!isModelComplete(id)) download(id)
@@ -205,8 +227,7 @@ export const ModelDownloadStep: FC<ModelDownloadStepProps> = ({ state, dispatch 
   const handleContinue = (): void => dispatch({ type: 'NEXT_STEP' })
   const handleSkip = (): void => dispatch({ type: 'SKIP_MODELS' })
 
-  // Loading state
-  if (isLoadingModels || isLoadingHardware || resolvedFeatures.length === 0) {
+  if (isLoadingModels || isLoadingProfile || resolvedFeatures.length === 0 || !profile) {
     return (
       <div className="flex flex-col items-center space-y-6 text-center">
         <Skeleton className="h-16 w-16 rounded-2xl" />
@@ -223,6 +244,10 @@ export const ModelDownloadStep: FC<ModelDownloadStepProps> = ({ state, dispatch 
     )
   }
 
+  const { hardware } = profile
+  const ramLabel = formatRamGb(hardware.memory.totalBytes)
+  const cpuLabel = hardware.cpu.brand.trim() || 'Unknown CPU'
+
   return (
     <div className="flex flex-col items-center space-y-6 text-center">
       <div className="flex size-16 items-center justify-center rounded-2xl bg-primary/10">
@@ -237,7 +262,23 @@ export const ModelDownloadStep: FC<ModelDownloadStepProps> = ({ state, dispatch 
         </p>
       </div>
 
-      {/* Feature cards */}
+      <Card className="w-full text-left">
+        <CardContent className="flex items-start gap-3 py-4">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+            <Cpu className="size-4 text-primary" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-medium">
+              {formatTierLabel(hardware.tier)} tier · {ramLabel} RAM · {cpuLabel}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Each bundle below includes the optimal model variant for your machine. Only compatible
+              models are offered.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="grid w-full gap-4">
         {resolvedFeatures.map((rf) => (
           <FeatureCard
@@ -254,7 +295,6 @@ export const ModelDownloadStep: FC<ModelDownloadStepProps> = ({ state, dispatch 
         ))}
       </div>
 
-      {/* Warning during download */}
       {isAnyDownloading && (
         <Alert className="text-left">
           <Info className="size-4" />
@@ -264,7 +304,6 @@ export const ModelDownloadStep: FC<ModelDownloadStepProps> = ({ state, dispatch 
         </Alert>
       )}
 
-      {/* Action buttons */}
       <div className="flex items-center gap-3">
         <Button variant="ghost" onClick={handleSkip}>
           Skip for now
@@ -314,7 +353,6 @@ const FeatureCard: FC<FeatureCardProps> = ({
 
   const totalSize = models.reduce((acc, m) => acc + m.sizeBytes, 0)
 
-  // Aggregated progress for any model in this bundle currently downloading/paused
   const activeProgress = useMemo(() => {
     let bytesDownloaded = 0
     let totalBytes = 0
@@ -368,7 +406,6 @@ const FeatureCard: FC<FeatureCardProps> = ({
   return (
     <Card className="text-left">
       <CardContent className="space-y-3 pt-6">
-        {/* Header */}
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-3">
             <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-ai-soft">
@@ -382,6 +419,9 @@ const FeatureCard: FC<FeatureCardProps> = ({
                     Optional
                   </Badge>
                 )}
+                <Badge variant="secondary" className="text-xs">
+                  Recommended for your hardware
+                </Badge>
               </div>
               <p className="text-sm text-muted-foreground">{feature.description}</p>
             </div>
@@ -406,7 +446,6 @@ const FeatureCard: FC<FeatureCardProps> = ({
           </div>
         </div>
 
-        {/* Loses if skipped — only when not complete and not downloading */}
         {!isComplete && !isDownloading && (
           <div className="flex items-start gap-2 rounded-md bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-400">
             <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
@@ -414,7 +453,6 @@ const FeatureCard: FC<FeatureCardProps> = ({
           </div>
         )}
 
-        {/* Bundle model list */}
         <div className="space-y-1 rounded-md border border-border/50 bg-muted/30 p-2">
           {models.map((m) => {
             const done = isModelComplete(m.id)
@@ -441,7 +479,6 @@ const FeatureCard: FC<FeatureCardProps> = ({
           </div>
         </div>
 
-        {/* Aggregated progress */}
         {isDownloading && (
           <div className="space-y-2">
             <Progress value={activeProgress.percentage} />
@@ -490,7 +527,6 @@ const FeatureCard: FC<FeatureCardProps> = ({
           </div>
         )}
 
-        {/* Error state */}
         {showError && (
           <Alert variant="destructive">
             <AlertCircle className="size-4" />

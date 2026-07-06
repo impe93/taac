@@ -70,6 +70,14 @@ export interface AppConfig {
   }
 }
 
+/** Factory defaults for meeting transcription models (lowest common denominator). */
+export const FACTORY_MEETING_WHISPER_ID = 'whisper-base-ggml'
+export const FACTORY_MEETING_ASR_ID = 'qwen3-asr-0.6b-mlx-8bit'
+
+/** Legacy factory defaults from before tier-aware selection. */
+export const LEGACY_FACTORY_MEETING_WHISPER_ID = 'whisper-large-v3-turbo-ggml'
+export const LEGACY_FACTORY_MEETING_ASR_ID = 'qwen3-asr-1.7b-mlx-8bit'
+
 const schema = {
   theme: {
     type: 'string',
@@ -190,18 +198,18 @@ const schema = {
     properties: {
       keepAudioAfterTranscription: { type: 'boolean', default: true },
       defaultRecordingMode: { type: 'string', enum: ['remote', 'in-person'], default: 'remote' },
-      whisperModelId: { type: 'string', default: 'whisper-large-v3-turbo-ggml' },
+      whisperModelId: { type: 'string', default: FACTORY_MEETING_WHISPER_ID },
       defaultLanguage: { type: 'string', default: 'auto' },
       realtimeTranscription: { type: 'string', enum: ['auto', 'off'], default: 'auto' },
-      asrModelId: { type: 'string', default: 'qwen3-asr-1.7b-mlx-8bit' }
+      asrModelId: { type: 'string', default: FACTORY_MEETING_ASR_ID }
     },
     default: {
       keepAudioAfterTranscription: true,
       defaultRecordingMode: 'remote',
-      whisperModelId: 'whisper-large-v3-turbo-ggml',
+      whisperModelId: FACTORY_MEETING_WHISPER_ID,
       defaultLanguage: 'auto',
       realtimeTranscription: 'auto',
-      asrModelId: 'qwen3-asr-1.7b-mlx-8bit'
+      asrModelId: FACTORY_MEETING_ASR_ID
     }
   }
 } as const

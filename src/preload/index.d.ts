@@ -11,6 +11,7 @@ import type {
 import type {
   HardwareInfo,
   ModelRecommendation,
+  ModelProfile,
   ModelDefinition,
   DownloadProgress,
   LoadedModel,
@@ -39,6 +40,7 @@ export type { Note, FolderMetadata, OrderedItem, Asset, AppConfig, Space, MoveFo
 export type {
   HardwareInfo,
   ModelRecommendation,
+  ModelProfile,
   ModelDefinition,
   DownloadProgress,
   LoadedModel,
@@ -206,6 +208,7 @@ export interface AIAPI {
   // Hardware
   getHardwareInfo: () => Promise<HardwareInfo>
   getModelRecommendations: () => Promise<ModelRecommendation[]>
+  getModelProfile: () => Promise<ModelProfile>
 
   // Models
   listAvailableModels: () => Promise<ModelDefinition[]>

@@ -20,7 +20,7 @@ import type {
   ModelRecommendation,
   EstimatedPerformance
 } from './types'
-import { ModelRegistry } from './ModelRegistry'
+import { ModelSelector } from './ModelSelector'
 
 /**
  * Tier score thresholds
@@ -93,31 +93,41 @@ export class HardwareDetector {
    */
   static async getModelRecommendations(): Promise<ModelRecommendation[]> {
     const hardware = await this.detect()
-    const recommendations: ModelRecommendation[] = []
+    const profile = ModelSelector.getModelProfile(hardware)
+    const chatPerf: EstimatedPerformance = hardware.tier === 'low' ? 'fast' : 'very-fast'
 
-    // Get compatible models from registry
-    const compatibleModels = ModelRegistry.getModelsForTier(hardware.tier)
-    const chatModels = compatibleModels.filter((m) => m.capabilities.includes('chat'))
-    const embeddingModels = compatibleModels.filter((m) => m.capabilities.includes('embedding'))
-
-    // Chat model recommendation
-    if (chatModels.find((m) => m.id === 'qwen3-5-2b-q8')) {
-      const perf: EstimatedPerformance = hardware.tier === 'low' ? 'fast' : 'very-fast'
-      recommendations.push({
-        modelId: 'qwen3-5-2b-q8',
+    const recommendations: ModelRecommendation[] = [
+      {
+        modelId: profile.features.chat.id,
         reason: 'Compact chat model with strong reasoning and multilingual capabilities',
-        estimatedPerformance: perf,
+        estimatedPerformance: chatPerf,
         gpuLayersRecommended: -1
-      })
-    }
-
-    // Always recommend embedding model if available
-    if (embeddingModels.length > 0) {
-      const embedModel = embeddingModels[0]
-      recommendations.push({
-        modelId: embedModel.id,
+      },
+      {
+        modelId: profile.features.search.embedding.id,
         reason: 'Required for semantic search and RAG functionality',
         estimatedPerformance: 'fast',
+        gpuLayersRecommended: -1
+      },
+      {
+        modelId: profile.features.search.reranker.id,
+        reason: 'Improves search relevance by re-scoring query/document pairs',
+        estimatedPerformance: 'fast',
+        gpuLayersRecommended: -1
+      },
+      {
+        modelId: profile.features.meeting.whisper.id,
+        reason: 'Optimal transcription model for your hardware tier',
+        estimatedPerformance: 'moderate',
+        gpuLayersRecommended: -1
+      }
+    ]
+
+    if (profile.features.meeting.asr) {
+      recommendations.push({
+        modelId: profile.features.meeting.asr.id,
+        reason: 'Optimal realtime transcription model for your hardware tier',
+        estimatedPerformance: hardware.tier === 'low' ? 'fast' : 'moderate',
         gpuLayersRecommended: -1
       })
     }

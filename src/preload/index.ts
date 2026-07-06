@@ -140,6 +140,8 @@ const aiAPI = {
 
   getModelRecommendations: () => ipcRenderer.invoke('ai:getModelRecommendations'),
 
+  getModelProfile: () => ipcRenderer.invoke('ai:getModelProfile'),
+
   // Models
   listAvailableModels: () => ipcRenderer.invoke('ai:listAvailableModels'),
 

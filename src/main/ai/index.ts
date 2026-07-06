@@ -19,6 +19,8 @@ export { HardwareDetector } from './HardwareDetector'
 
 export { ModelRegistry } from './ModelRegistry'
 
+export { ModelSelector } from './ModelSelector'
+
 export { ModelDownloader } from './ModelDownloader'
 export type { ProgressListener } from './ModelDownloader'
 

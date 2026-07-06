@@ -14,7 +14,14 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { FileSystemManager } from './utils/fileSystem'
 import { SpaceManager } from './utils/spaceManager'
-import { configStore } from './utils/configStore'
+import {
+  configStore,
+  FACTORY_MEETING_ASR_ID,
+  FACTORY_MEETING_WHISPER_ID,
+  LEGACY_FACTORY_MEETING_ASR_ID,
+  LEGACY_FACTORY_MEETING_WHISPER_ID
+} from './utils/configStore'
+import { HardwareDetector, ModelSelector } from './ai'
 import { registerFileHandlers } from './ipc/fileHandlers'
 import { registerConfigHandlers } from './ipc/configHandlers'
 import { registerSpaceHandlers } from './ipc/spaceHandlers'
@@ -22,8 +29,7 @@ import {
   registerAIHandlers,
   notifyNoteSaved,
   notifyFolderMoved,
-  disposeIndexingQueue,
-  cancelBatchIndexing,
+  disposeAISubsystem,
   initializeEmbeddingSubsystem
 } from './ipc/aiHandlers'
 import { registerImportHandlers } from './ipc/importHandlers'
@@ -47,6 +53,8 @@ protocol.registerSchemesAsPrivileged([
 
 let spaceManager: SpaceManager
 const fsManagerMap = new Map<string, FileSystemManager>()
+/** Guards the controlled shutdown path in before-quit (preventDefault → cleanup → quit). */
+let isAppShuttingDown = false
 
 // Get or create FileSystemManager for a specific space
 export function getOrCreateFsManager(spaceId: string): FileSystemManager {
@@ -61,6 +69,33 @@ export function getOrCreateFsManager(spaceId: string): FileSystemManager {
     })
   }
   return fsManagerMap.get(spaceId)!
+}
+
+/**
+ * Patch meeting model IDs when they still match factory defaults (legacy or current).
+ * Ensures tier-optimal IDs before onboarding or first use.
+ */
+async function patchTierAwareMeetingDefaults(): Promise<void> {
+  const meeting = configStore.get('meeting')
+  const isFactoryDefault =
+    (meeting.whisperModelId === FACTORY_MEETING_WHISPER_ID ||
+      meeting.whisperModelId === LEGACY_FACTORY_MEETING_WHISPER_ID) &&
+    (meeting.asrModelId === FACTORY_MEETING_ASR_ID ||
+      meeting.asrModelId === LEGACY_FACTORY_MEETING_ASR_ID)
+
+  if (!isFactoryDefault) return
+
+  const hardware = await HardwareDetector.detect()
+  const profile = ModelSelector.getModelProfile(hardware)
+
+  configStore.set('meeting', {
+    ...meeting,
+    whisperModelId: profile.features.meeting.whisper.id,
+    asrModelId: profile.features.meeting.asr?.id ?? meeting.asrModelId
+  })
+  console.log(
+    `[Main] Patched meeting model defaults for ${hardware.tier} tier: whisper=${profile.features.meeting.whisper.id}`
+  )
 }
 
 function createWindow(): void {
@@ -158,6 +193,8 @@ app.whenReady().then(async () => {
   // Initialize space manager
   spaceManager = new SpaceManager()
   await spaceManager.initialize()
+
+  await patchTierAwareMeetingDefaults()
 
   // Ensure default "Personal" space exists (only for post-onboarding users)
   const spaces = await spaceManager.listSpaces()
@@ -258,12 +295,27 @@ app.on('window-all-closed', () => {
   }
 })
 
-app.on('before-quit', async () => {
-  cancelBatchIndexing()
-  disposeIndexingQueue()
-  // Quit mid-recording must never leave an orphan Python sidecar process
+async function shutdownAppResources(): Promise<void> {
   await RealtimeTranscriptionService.getInstance().abortAll()
   await AudioManager.getInstance().dispose()
+  await disposeAISubsystem()
+}
+
+app.on('before-quit', (event) => {
+  if (isAppShuttingDown) return
+
+  // Electron does not await async before-quit handlers — without preventDefault
+  // the Node environment tears down while llama.cpp async workers are still live.
+  event.preventDefault()
+  isAppShuttingDown = true
+
+  void shutdownAppResources()
+    .catch((error) => {
+      console.error('[Main] Shutdown cleanup failed:', error)
+    })
+    .finally(() => {
+      app.quit()
+    })
 })
 
 // In this file you can include the rest of your app's specific main process

@@ -127,6 +127,14 @@ export class RerankerService {
    */
   async dispose(): Promise<void> {
     this.invalidateContext()
+    if (this.rankingContext && !this.rankingContext.disposed) {
+      try {
+        await this.rankingContext.dispose()
+      } catch (error) {
+        console.error('[RerankerService] Error disposing ranking context:', error)
+      }
+    }
+    this.rankingContext = null
     RerankerService.instance = null
   }
 

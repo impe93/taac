@@ -138,6 +138,31 @@ export interface ModelRecommendation {
 }
 
 /**
+ * Complete hardware-aware model profile for Settings and onboarding.
+ * Built by ModelSelector from detected hardware + curated registry.
+ */
+export interface ModelProfile {
+  hardware: HardwareInfo
+  supportsRealtimeAsr: boolean
+  features: {
+    chat: ModelDefinition
+    search: { embedding: ModelDefinition; reranker: ModelDefinition }
+    meeting: {
+      whisper: ModelDefinition
+      asr?: ModelDefinition
+      vad?: ModelDefinition
+      diarization: ModelDefinition[]
+    }
+  }
+  alternatives: {
+    whisper: ModelDefinition[]
+    asr: ModelDefinition[]
+  }
+  /** Flat list of all models the UI may offer for download on this machine */
+  compatibleModels: ModelDefinition[]
+}
+
+/**
  * Information about a loaded model in memory
  */
 export interface LoadedModel {

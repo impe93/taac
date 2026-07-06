@@ -17,7 +17,8 @@ import {
   Monitor,
   Sun,
   Moon,
-  ChevronDown
+  ChevronDown,
+  Cpu
 } from 'lucide-react'
 import { Card, CardContent } from '@renderer/components/ui/card'
 import { Badge } from '@renderer/components/ui/badge'
@@ -37,39 +38,25 @@ import {
   SelectTrigger,
   SelectValue
 } from '@renderer/components/ui/select'
-import { useAvailableModels, useHardwareInfo } from '@renderer/hooks/useHardware'
+import { useModelProfile } from '@renderer/hooks/useHardware'
 import { useDownloadedModels, useModelDownload, useDeleteModel } from '@renderer/hooks/useModels'
 import { useConfig, useSetConfig } from '@renderer/hooks/useConfig'
 import { formatSize, formatSpeed, formatETA } from '@renderer/lib/format'
-import { getWhisperChoice, getAsrChoice, type ModelChoice } from '@renderer/lib/modelSelection'
-import type { ModelDefinition, DownloadProgress, HardwareTier } from '@main/ai/types'
+import type { ModelDefinition, DownloadProgress, ModelProfile } from '@main/ai/types'
 
 export const Route = createFileRoute('/settings/')({
   component: SettingsPage
 })
 
-interface ModelRowConfig {
-  id: string
+interface CoreModelRow {
+  model: ModelDefinition
   label: string
   icon: FC<{ className?: string }>
 }
 
-const MODEL_ROWS: ModelRowConfig[] = [
-  { id: 'qwen3-5-2b-q8', label: 'AI Chat', icon: Bot },
-  { id: 'embeddinggemma-300m-q8', label: 'Search', icon: Search },
-  { id: 'qwen3-reranker-0.6b-q8', label: 'Reranker', icon: ArrowUpDown }
-]
-
-// Speaker identification always needs segmentation + one embedding model.
-const DIARIZATION_MODEL_IDS = [
-  'sherpa-onnx-pyannote-segmentation',
-  'sherpa-onnx-nemo-titanet-small'
-]
-
 function SettingsPage(): ReactNode {
-  const { data: availableModels } = useAvailableModels()
+  const { data: profile, isLoading: isLoadingProfile } = useModelProfile()
   const { data: downloadedModels } = useDownloadedModels()
-  const { data: hardwareInfo } = useHardwareInfo()
   const { progress, download, pause, resume, cancel } = useModelDownload()
   const deleteModel = useDeleteModel()
 
@@ -78,33 +65,30 @@ function SettingsPage(): ReactNode {
     [downloadedModels]
   )
 
-  const modelsMap = useMemo(() => {
-    const map = new Map<string, ModelDefinition>()
-    for (const m of availableModels ?? []) map.set(m.id, m)
-    return map
-  }, [availableModels])
+  const compatibleModelIds = useMemo(
+    () => new Set(profile?.compatibleModels.map((m) => m.id) ?? []),
+    [profile]
+  )
 
-  const tier: HardwareTier = hardwareInfo?.tier ?? 'low'
-  // Realtime ASR (Qwen3-ASR via MLX) runs on macOS Apple Silicon only.
-  const supportsRealtimeAsr =
-    window.platform === 'darwin' && !!hardwareInfo?.cpu.brand.includes('Apple')
+  const coreModelRows = useMemo((): CoreModelRow[] => {
+    if (!profile) return []
+    return [
+      { model: profile.features.chat, label: 'AI Chat', icon: Bot },
+      { model: profile.features.search.embedding, label: 'Search', icon: Search },
+      { model: profile.features.search.reranker, label: 'Reranker', icon: ArrowUpDown }
+    ]
+  }, [profile])
 
-  // Resolve the optimal transcription/ASR variant for this machine, with
-  // compatible alternatives surfaced behind an "Advanced" toggle.
-  const whisperChoice = useMemo(
-    () => getWhisperChoice(availableModels ?? [], tier),
-    [availableModels, tier]
-  )
-  const asrChoice = useMemo(
-    () => (supportsRealtimeAsr ? getAsrChoice(availableModels ?? [], tier) : null),
-    [availableModels, tier, supportsRealtimeAsr]
-  )
-  const vadModel = modelsMap.get('silero-vad-onnx')
-  const diarizationModels = useMemo(
-    () =>
-      DIARIZATION_MODEL_IDS.map((id) => modelsMap.get(id)).filter((m): m is ModelDefinition => !!m),
-    [modelsMap]
-  )
+  if (isLoadingProfile || !profile) {
+    return (
+      <div className="flex w-full max-w-2xl flex-col mx-auto">
+        <div className="mb-6">
+          <h1 className="font-serif text-4xl font-normal tracking-tight">Settings</h1>
+          <p className="text-muted-foreground">Loading hardware profile…</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex w-full max-w-2xl flex-col mx-auto">
@@ -117,35 +101,30 @@ function SettingsPage(): ReactNode {
 
       <AppearanceSettings />
 
+      <HardwareBanner profile={profile} />
+
       <div className="space-y-3">
-        {MODEL_ROWS.map((row) => {
-          const model = modelsMap.get(row.id)
-          if (!model) return null
-          return (
-            <ModelRow
-              key={row.id}
-              model={model}
-              label={row.label}
-              icon={row.icon}
-              isDownloaded={downloadedModelIds.has(row.id)}
-              downloadProgress={progress.get(row.id)}
-              onDownload={download}
-              onDelete={(id) => deleteModel.mutate(id)}
-              onPause={pause}
-              onResume={resume}
-              onCancel={cancel}
-            />
-          )
-        })}
+        {coreModelRows.map((row) => (
+          <ModelRow
+            key={row.model.id}
+            model={row.model}
+            label={row.label}
+            icon={row.icon}
+            isDownloaded={downloadedModelIds.has(row.model.id)}
+            downloadProgress={progress.get(row.model.id)}
+            onDownload={download}
+            onDelete={(id) => deleteModel.mutate(id)}
+            onPause={pause}
+            onResume={resume}
+            onCancel={cancel}
+          />
+        ))}
       </div>
 
       <SearchSettings />
 
       <MeetingModelsSection
-        whisperChoice={whisperChoice}
-        asrChoice={asrChoice}
-        vadModel={supportsRealtimeAsr ? vadModel : undefined}
-        diarizationModels={diarizationModels}
+        profile={profile}
         downloadedModelIds={downloadedModelIds}
         progress={progress}
         onDownload={download}
@@ -155,7 +134,11 @@ function SettingsPage(): ReactNode {
         onCancel={cancel}
       />
 
-      <MeetingNotesSettings downloadedModels={downloadedModels ?? []} />
+      <MeetingNotesSettings
+        downloadedModels={downloadedModels ?? []}
+        compatibleModelIds={compatibleModelIds}
+        supportsRealtimeAsr={profile.supportsRealtimeAsr}
+      />
     </div>
   )
 }
@@ -193,6 +176,42 @@ const SearchSettings: FC = () => {
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+const formatRamGb = (bytes: number): string => {
+  const gb = bytes / (1024 * 1024 * 1024)
+  return `${Math.round(gb)} GB`
+}
+
+const formatTierLabel = (tier: string): string => tier.charAt(0).toUpperCase() + tier.slice(1)
+
+const HardwareBanner: FC<{ profile: ModelProfile }> = ({ profile }) => {
+  const { hardware } = profile
+  const ramLabel = formatRamGb(hardware.memory.totalBytes)
+  const cpuLabel = hardware.cpu.brand.trim() || 'Unknown CPU'
+  const gpuLabel =
+    hardware.gpu.name !== 'Unknown' ? hardware.gpu.name : 'Integrated / no discrete GPU'
+
+  return (
+    <Card className="mb-6">
+      <CardContent className="flex items-start gap-3 py-4">
+        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+          <Cpu className="size-4 text-primary" />
+        </div>
+        <div className="min-w-0 text-left">
+          <p className="text-sm font-medium">
+            Detected: {formatTierLabel(hardware.tier)} tier · {ramLabel} RAM
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {cpuLabel} · {gpuLabel}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Models below are selected for your hardware. Incompatible variants are hidden.
+          </p>
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 
@@ -259,14 +278,7 @@ const AppearanceSettings: FC = () => {
 }
 
 interface MeetingModelsSectionProps {
-  /** Optimal Whisper (GGML) variant for this machine, plus compatible alternatives. */
-  whisperChoice: ModelChoice | null
-  /** Optimal realtime ASR (MLX) variant — only on Apple Silicon, otherwise null. */
-  asrChoice: ModelChoice | null
-  /** Voice-activity-detection dependency for realtime ASR (undefined when unsupported). */
-  vadModel: ModelDefinition | undefined
-  /** Speaker-identification models (segmentation + embedding). */
-  diarizationModels: ModelDefinition[]
+  profile: ModelProfile
   downloadedModelIds: Set<string>
   progress: Map<string, DownloadProgress>
   onDownload: (id: string) => void
@@ -277,10 +289,7 @@ interface MeetingModelsSectionProps {
 }
 
 const MeetingModelsSection: FC<MeetingModelsSectionProps> = ({
-  whisperChoice,
-  asrChoice,
-  vadModel,
-  diarizationModels,
+  profile,
   downloadedModelIds,
   progress,
   onDownload,
@@ -289,6 +298,9 @@ const MeetingModelsSection: FC<MeetingModelsSectionProps> = ({
   onResume,
   onCancel
 }) => {
+  const { meeting } = profile.features
+  const { whisper: whisperAlternatives, asr: asrAlternatives } = profile.alternatives
+
   const renderRow = (
     model: ModelDefinition,
     label: string,
@@ -322,42 +334,38 @@ const MeetingModelsSection: FC<MeetingModelsSectionProps> = ({
       </div>
 
       <div className="space-y-4">
-        {whisperChoice && (
-          <div>
-            <p className="mb-2 text-sm font-medium text-muted-foreground">
-              Transcription (recommended for your hardware)
-            </p>
-            <div className="space-y-3">
-              {renderRow(whisperChoice.optimal, 'Transcription', Mic)}
-            </div>
-            <AdvancedModels label="other transcription models">
-              {whisperChoice.alternatives.map((m) => renderRow(m, 'Transcription', Mic))}
-            </AdvancedModels>
-          </div>
-        )}
+        <div>
+          <p className="mb-2 text-sm font-medium text-muted-foreground">
+            Transcription (recommended for your hardware)
+          </p>
+          <div className="space-y-3">{renderRow(meeting.whisper, 'Transcription', Mic)}</div>
+          <AdvancedModels label="other transcription models">
+            {whisperAlternatives.map((m) => renderRow(m, 'Transcription', Mic))}
+          </AdvancedModels>
+        </div>
 
-        {asrChoice && (
+        {profile.supportsRealtimeAsr && meeting.asr && (
           <div>
             <p className="mb-2 text-sm font-medium text-muted-foreground">
               Realtime transcription (macOS — live transcript while recording)
             </p>
             <div className="space-y-3">
-              {renderRow(asrChoice.optimal, 'Realtime', Mic)}
-              {vadModel && renderRow(vadModel, 'Voice activity detection', Mic)}
+              {renderRow(meeting.asr, 'Realtime', Mic)}
+              {meeting.vad && renderRow(meeting.vad, 'Voice activity detection', Mic)}
             </div>
             <AdvancedModels label="other realtime models">
-              {asrChoice.alternatives.map((m) => renderRow(m, 'Realtime', Mic))}
+              {asrAlternatives.map((m) => renderRow(m, 'Realtime', Mic))}
             </AdvancedModels>
           </div>
         )}
 
-        {diarizationModels.length > 0 && (
+        {meeting.diarization.length > 0 && (
           <div>
             <p className="mb-2 text-sm font-medium text-muted-foreground">
               Speaker Identification (segmentation + embedding)
             </p>
             <div className="space-y-3">
-              {diarizationModels.map((m) => renderRow(m, 'Diarization', Users))}
+              {meeting.diarization.map((m) => renderRow(m, 'Diarization', Users))}
             </div>
           </div>
         )}
@@ -388,26 +396,38 @@ const AdvancedModels: FC<{ label: string; children: ReactNode }> = ({ label, chi
 
 interface MeetingNotesSettingsProps {
   downloadedModels: ModelDefinition[]
+  compatibleModelIds: Set<string>
+  supportsRealtimeAsr: boolean
 }
 
-const MeetingNotesSettings: FC<MeetingNotesSettingsProps> = ({ downloadedModels }) => {
+const MeetingNotesSettings: FC<MeetingNotesSettingsProps> = ({
+  downloadedModels,
+  compatibleModelIds,
+  supportsRealtimeAsr
+}) => {
   const { data: meetingConfig } = useConfig('meeting')
   const setConfig = useSetConfig<'meeting'>()
 
   const whisperModels = useMemo(
     () =>
       downloadedModels.filter(
-        (m) => m.capabilities.includes('transcription') && m.format === 'ggml'
+        (m) =>
+          compatibleModelIds.has(m.id) &&
+          m.capabilities.includes('transcription') &&
+          m.format === 'ggml'
       ),
-    [downloadedModels]
+    [downloadedModels, compatibleModelIds]
   )
 
   const realtimeAsrModels = useMemo(
     () =>
       downloadedModels.filter(
-        (m) => m.capabilities.includes('transcription') && m.format === 'mlx'
+        (m) =>
+          compatibleModelIds.has(m.id) &&
+          m.capabilities.includes('transcription') &&
+          m.format === 'mlx'
       ),
-    [downloadedModels]
+    [downloadedModels, compatibleModelIds]
   )
 
   if (!meetingConfig) return null
@@ -440,8 +460,6 @@ const MeetingNotesSettings: FC<MeetingNotesSettingsProps> = ({ downloadedModels 
   const handleAsrModelChange = (value: string): void => {
     setConfig.mutate({ key: 'meeting', value: { ...meetingConfig, asrModelId: value } })
   }
-
-  const isMac = window.platform === 'darwin'
 
   return (
     <div className="mt-8">
@@ -515,8 +533,8 @@ const MeetingNotesSettings: FC<MeetingNotesSettingsProps> = ({ downloadedModels 
             </Select>
           </div>
 
-          {/* Realtime transcription (macOS Apple Silicon only) */}
-          {isMac && (
+          {/* Realtime transcription (Apple Silicon macOS only) */}
+          {supportsRealtimeAsr && (
             <>
               <div className="flex items-center justify-between py-4">
                 <div className="flex-1 pr-4">

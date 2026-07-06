@@ -382,42 +382,6 @@ export class ModelRegistry {
   }
 
   /**
-   * Get recommended models for a hardware tier.
-   *
-   * @param tier  Hardware tier for filtering compatible models
-   */
-  static getRecommendedModels(tier: HardwareTier): {
-    chat: ModelDefinition | undefined
-    embedding: ModelDefinition | undefined
-    transcription: ModelDefinition | undefined
-  } {
-    const compatible = this.getModelsForTier(tier)
-    const tierOrder: HardwareTier[] = ['low', 'medium', 'high', 'ultra']
-
-    // Get the most capable compatible chat model (highest tier that fits)
-    const chatModels = compatible
-      .filter((m) => m.capabilities.includes('chat'))
-      .sort((a, b) => tierOrder.indexOf(b.hardwareTier) - tierOrder.indexOf(a.hardwareTier))
-
-    // Get the smallest embedding model (they're all good quality)
-    const embeddingModels = compatible
-      .filter((m) => m.capabilities.includes('embedding'))
-      .sort((a, b) => a.sizeBytes - b.sizeBytes)
-
-    // Transcription is a single whisper.cpp (GGML) engine for both GPU and CPU —
-    // pick the most capable that fits the tier.
-    const transcriptionModels = compatible
-      .filter((m) => m.capabilities.includes('transcription') && m.format === 'ggml')
-      .sort((a, b) => tierOrder.indexOf(b.hardwareTier) - tierOrder.indexOf(a.hardwareTier))
-
-    return {
-      chat: chatModels[0],
-      embedding: embeddingModels[0],
-      transcription: transcriptionModels[0]
-    }
-  }
-
-  /**
    * Check if a model is compatible with a tier
    */
   static isCompatible(modelId: string, tier: HardwareTier): boolean {

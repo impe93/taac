@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import type { HardwareInfo, ModelRecommendation, ModelDefinition } from '@main/ai/types'
+import type { HardwareInfo, ModelProfile } from '@main/ai/types'
 
 /**
  * Query hardware information (CPU, RAM, GPU)
@@ -14,13 +14,13 @@ export const useHardwareInfo = () => {
 }
 
 /**
- * Query model recommendations based on detected hardware
- * Recommendations are based on hardware which doesn't change, so staleTime is Infinity
+ * Query hardware-aware model profile for Settings and onboarding.
+ * Profile is static for the session, so staleTime is Infinity.
  */
-export const useModelRecommendations = () => {
-  return useQuery<ModelRecommendation[]>({
-    queryKey: ['ai', 'recommendations'],
-    queryFn: () => window.ai.getModelRecommendations(),
+export const useModelProfile = () => {
+  return useQuery<ModelProfile>({
+    queryKey: ['ai', 'model-profile'],
+    queryFn: () => window.ai.getModelProfile(),
     staleTime: Infinity
   })
 }
@@ -30,7 +30,7 @@ export const useModelRecommendations = () => {
  * The model registry is static, so staleTime is Infinity
  */
 export const useAvailableModels = () => {
-  return useQuery<ModelDefinition[]>({
+  return useQuery({
     queryKey: ['ai', 'models', 'available'],
     queryFn: () => window.ai.listAvailableModels(),
     staleTime: Infinity

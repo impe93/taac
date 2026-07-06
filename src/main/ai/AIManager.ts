@@ -362,10 +362,14 @@ export class AIManager {
       this.cleanupInterval = null
     }
 
-    // Unload all models
+    // Unload all models — isolate failures so one bad unload doesn't block shutdown
     const modelIds = Array.from(this.loadedModels.keys())
     for (const id of modelIds) {
-      await this.unloadModel(id)
+      try {
+        await this.unloadModel(id)
+      } catch (error) {
+        console.error(`[AIManager] Failed to unload ${id} during dispose:`, error)
+      }
     }
 
     this.initialized = false

@@ -17,6 +17,7 @@ import fs from 'node:fs'
 import {
   HardwareDetector,
   ModelRegistry,
+  ModelSelector,
   ModelDownloader,
   AIManager,
   ConversationManager,
@@ -315,6 +316,51 @@ export function cancelBatchIndexing(): void {
 }
 
 /**
+ * Tear down AI native resources before the Node/Electron environment exits.
+ * Must complete before app.quit() proceeds — llama.cpp async workers crash
+ * if their N-API callbacks fire during FreeEnvironment.
+ */
+export async function disposeAISubsystem(): Promise<void> {
+  if (generationAbort) {
+    generationAbort.abort()
+    generationAbort = null
+  }
+
+  cancelBatchIndexing()
+  disposeIndexingQueue()
+
+  if (rerankerService) {
+    try {
+      await rerankerService.dispose()
+    } catch (error) {
+      console.error('[AI] RerankerService dispose failed:', error)
+    }
+    rerankerService = null
+  }
+
+  const manager = aiManager
+  if (manager?.isInitialized()) {
+    try {
+      await manager.dispose()
+    } catch (error) {
+      console.error('[AI] AIManager dispose failed:', error)
+    }
+  }
+
+  for (const [spaceId, vdb] of vectorDBManagers) {
+    try {
+      await vdb.close()
+    } catch (error) {
+      console.error(`[AI] VectorDB close failed for space ${spaceId}:`, error)
+    }
+  }
+  vectorDBManagers.clear()
+
+  aiManager = null
+  isAIInitialized = false
+}
+
+/**
  * Safely send an IPC event to a webContents sender.
  * Checks if the sender is destroyed before sending to avoid errors
  * when the window is closed during batch processing.
@@ -356,6 +402,18 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
       return await HardwareDetector.detect()
     } catch (error) {
       throw new Error(`Failed to detect hardware: ${(error as Error).message}`)
+    }
+  })
+
+  /**
+   * Get hardware-aware model profile for Settings and onboarding
+   */
+  ipcMain.handle('ai:getModelProfile', async (_event: IpcMainInvokeEvent) => {
+    try {
+      const hardware = await HardwareDetector.detect()
+      return ModelSelector.getModelProfile(hardware)
+    } catch (error) {
+      throw new Error(`Failed to get model profile: ${(error as Error).message}`)
     }
   })
 
