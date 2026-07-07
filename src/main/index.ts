@@ -301,6 +301,11 @@ async function shutdownAppResources(): Promise<void> {
   await disposeAISubsystem()
 }
 
+// Hard cap on the async cleanup so the app always quits, even if a dispose hangs
+// (e.g. a native generation that refuses to settle). Without this, a stuck
+// dispose keeps the process alive burning CPU/GPU after the window is gone.
+const SHUTDOWN_HARD_TIMEOUT_MS = 4000
+
 app.on('before-quit', (event) => {
   if (isAppShuttingDown) return
 
@@ -309,13 +314,22 @@ app.on('before-quit', (event) => {
   event.preventDefault()
   isAppShuttingDown = true
 
-  void shutdownAppResources()
-    .catch((error) => {
+  const hardTimeout = new Promise<void>((resolve) => {
+    const timer = setTimeout(() => {
+      console.error('[Main] Shutdown cleanup timed out — forcing quit')
+      resolve()
+    }, SHUTDOWN_HARD_TIMEOUT_MS)
+    timer.unref?.()
+  })
+
+  void Promise.race([
+    shutdownAppResources().catch((error) => {
       console.error('[Main] Shutdown cleanup failed:', error)
-    })
-    .finally(() => {
-      app.quit()
-    })
+    }),
+    hardTimeout
+  ]).finally(() => {
+    app.quit()
+  })
 })
 
 // In this file you can include the rest of your app's specific main process

@@ -322,7 +322,8 @@ export class EmbeddingService {
   async indexNote(
     note: IndexableNote,
     vectorDB: VectorDBManager,
-    _options: ExtendedChunkingOptions = DEFAULT_EXTENDED_OPTIONS
+    _options: ExtendedChunkingOptions = DEFAULT_EXTENDED_OPTIONS,
+    signal?: AbortSignal
   ): Promise<boolean> {
     try {
       // Ensure the per-space vector DB is initialized. The background indexing
@@ -370,6 +371,13 @@ export class EmbeddingService {
 
       // Generate embeddings and store each chunk
       for (let i = 0; i < chunks.length; i++) {
+        // Stop before starting more (potentially GPU-heavy) work if the queue is
+        // being disposed / the app is shutting down. The content hash is not
+        // committed, so the note is re-indexed on the next real save.
+        if (signal?.aborted) {
+          throw new Error(`Indexing aborted for note ${note.id}`)
+        }
+
         const chunk = chunks[i]
 
         const contextText =

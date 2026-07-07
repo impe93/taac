@@ -445,7 +445,8 @@ export function registerAudioHandlers(): void {
           context.durationSecs,
           context.requestedLanguage,
           (progress: ProcessingProgress) => broadcastProgress(noteId, progress, stages),
-          realtime
+          realtime,
+          activeProcessingAbort.signal
         )
 
         activeProcessingAbort = null
@@ -567,7 +568,9 @@ export function registerAudioHandlers(): void {
           context.recordingDate,
           context.durationSecs,
           context.requestedLanguage,
-          (progress: ProcessingProgress) => broadcastProgress(noteId, progress)
+          (progress: ProcessingProgress) => broadcastProgress(noteId, progress),
+          undefined,
+          activeProcessingAbort.signal
         )
 
         activeProcessingAbort = null

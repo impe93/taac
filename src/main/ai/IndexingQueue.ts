@@ -72,6 +72,10 @@ export class IndexingQueue extends EventEmitter {
   private debounceMs: number
   private disposed = false
   private embeddingAvailable = false
+  // Abort controller for the job currently being indexed, so an in-flight
+  // (possibly long, GPU-heavy) indexNote can be stopped on dispose/shutdown
+  // instead of running to completion after the app is closing.
+  private activeAbort: AbortController | null = null
 
   private embeddingService: EmbeddingService
   private getVectorDB: GetVectorDB
@@ -192,8 +196,15 @@ export class IndexingQueue extends EventEmitter {
         updatedAt: ''
       }
 
-      // indexNote handles content-hash check internally and returns false if skipped
-      const wasIndexed = await this.embeddingService.indexNote(indexableNote, vectorDB)
+      // indexNote handles content-hash check internally and returns false if skipped.
+      // The signal lets a shutdown abort a long, in-flight indexing run.
+      this.activeAbort = new AbortController()
+      const wasIndexed = await this.embeddingService.indexNote(
+        indexableNote,
+        vectorDB,
+        undefined,
+        this.activeAbort.signal
+      )
 
       this.emitProgress({
         spaceId: job.spaceId,
@@ -213,6 +224,7 @@ export class IndexingQueue extends EventEmitter {
         error: (error as Error).message
       })
     } finally {
+      this.activeAbort = null
       this.isProcessing = false
       // Yield to event loop before processing next job
       if (!this.disposed && this.queue.size > 0) {
@@ -255,6 +267,10 @@ export class IndexingQueue extends EventEmitter {
    */
   dispose(): void {
     this.disposed = true
+    // Stop any in-flight indexing run so it doesn't keep the embedding model /
+    // LLM busy on the GPU after the app starts shutting down.
+    this.activeAbort?.abort()
+    this.activeAbort = null
     for (const timer of this.debounceTimers.values()) {
       clearTimeout(timer)
     }

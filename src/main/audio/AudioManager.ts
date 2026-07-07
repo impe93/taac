@@ -76,6 +76,13 @@ export class AudioManager {
   private static readonly IDLE_DISPOSE_MS = 5 * 60 * 1000
   private idleDisposeTimer: NodeJS.Timeout | null = null
 
+  // Abort signal for the in-flight summarization. Set at the boundary of
+  // summarizeTranscript and read by the private summary helpers so a cancelled
+  // or aborted processing job stops the LLM generation instead of running it to
+  // completion on the GPU. Processing jobs are serialized (one active abort
+  // controller in audioHandlers), so a single field is safe.
+  private summaryAbortSignal?: AbortSignal
+
   private constructor() {
     // §3.1 — singleton; use AudioManager.getInstance()
   }
@@ -280,7 +287,8 @@ export class AudioManager {
     durationSecs: number,
     requestedLanguage: string,
     onProgress: (progress: ProcessingProgress) => void,
-    precomputed?: RealtimeSessionResult
+    precomputed?: RealtimeSessionResult,
+    signal?: AbortSignal
   ): Promise<{ metadata: MeetingMetadata; content: string; summarizationError?: string }> {
     await this.initialize({ needsWhisper: !precomputed })
     this.clearIdleDispose()
@@ -418,7 +426,8 @@ export class AudioManager {
       speakers,
       transcriptionSegments,
       resolvedLanguage,
-      onProgress
+      onProgress,
+      signal
     )
 
     onProgress({ stage: 'summarizing', progress: 100, message: 'Summary complete' })
@@ -810,7 +819,8 @@ export class AudioManager {
     speakers: Speaker[],
     transcriptionSegments: TranscriptionSegment[],
     language: string,
-    onProgress: (progress: ProcessingProgress) => void
+    onProgress: (progress: ProcessingProgress) => void,
+    signal?: AbortSignal
   ): Promise<{ content: string; actionItems: ActionItem[]; error?: string }> {
     const transcriptText = this.formatTranscriptForPrompt(transcriptionSegments, speakers)
     const languageName = getLanguageName(language)
@@ -826,6 +836,8 @@ export class AudioManager {
     }
 
     const aiManager = AIManager.getInstance()
+    this.summaryAbortSignal = signal
+    let loadedModelId: string | undefined
 
     try {
       if (!aiManager.isInitialized()) {
@@ -836,6 +848,7 @@ export class AudioManager {
       const modelId = this.getActiveChatModelId()
       // Throws if the chat model is missing/unloadable → surfaced as a clear error.
       await aiManager.loadModel(modelId)
+      loadedModelId = modelId
       console.log(`[AudioManager] Summarizing with model: ${modelId}`)
 
       let summary = await this.generateSummary(
@@ -886,6 +899,19 @@ export class AudioManager {
         ),
         actionItems: [],
         error: msg
+      }
+    } finally {
+      this.summaryAbortSignal = undefined
+      // Free the chat model right after the meeting (success OR failure) so
+      // ~2.7GB of VRAM is not held until the 5-minute idle unload. It is
+      // reloaded lazily on the next chat/summary use.
+      if (loadedModelId) {
+        try {
+          await aiManager.unloadModel(loadedModelId)
+          console.log(`[AudioManager] Unloaded chat model after summarization: ${loadedModelId}`)
+        } catch (e) {
+          console.error('[AudioManager] Failed to unload chat model after summarization:', e)
+        }
       }
     }
   }
@@ -994,23 +1020,35 @@ export class AudioManager {
     progressFrom = 0,
     progressTo = 100
   ): Promise<string> {
+    // Don't start a new (map/collapse/reduce) generation once the job is aborted.
+    if (this.summaryAbortSignal?.aborted) {
+      throw new Error('Summarization aborted')
+    }
+
     const messages: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userMessage }
     ]
 
-    const generator = aiManager.generateChatCompletion(modelId, messages, {
-      isolated: true,
-      maxTokens,
-      contextSize: AudioManager.SUMMARY_CONTEXT_SIZE,
-      // Disable reasoning for summaries: Qwen3.5's default thought budget (~75% of
-      // context) can consume the entire maxTokens allowance before any structured
-      // output is emitted, producing an empty summary. With thinking off the full
-      // budget goes to the actual sections, and generation is deterministic/faster.
-      thoughtTokens: 0,
-      // Lower temperature for stable adherence to the required section format.
-      temperature: 0.3
-    })
+    const generator = aiManager.generateChatCompletion(
+      modelId,
+      messages,
+      {
+        isolated: true,
+        maxTokens,
+        contextSize: AudioManager.SUMMARY_CONTEXT_SIZE,
+        // Disable reasoning for summaries: Qwen3.5's default thought budget (~75% of
+        // context) can consume the entire maxTokens allowance before any structured
+        // output is emitted, producing an empty summary. With thinking off the full
+        // budget goes to the actual sections, and generation is deterministic/faster.
+        thoughtTokens: 0,
+        // Lower temperature for stable adherence to the required section format.
+        temperature: 0.3
+      },
+      // Cancelling the processing job (or app shutdown) stops the native LLM
+      // generation instead of running it to completion on the GPU.
+      this.summaryAbortSignal
+    )
 
     let fullContent = ''
     let chunkCount = 0

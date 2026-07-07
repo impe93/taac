@@ -546,6 +546,18 @@ export class AIManager {
     const chunkQueue: string[] = []
     let generationError: Error | null = null
 
+    // Internal abort controller so native generation is ALWAYS stopped when this
+    // generator finishes for any reason — including early abandonment (consumer
+    // `break`/`return` or an upstream throw) that would otherwise leave
+    // session.prompt() running on the GPU and the isolated context undisposed.
+    // Linked to the caller's signal so external cancellation still propagates.
+    const abortController = new AbortController()
+    const onExternalAbort = (): void => abortController.abort()
+    if (signal) {
+      if (signal.aborted) abortController.abort()
+      else signal.addEventListener('abort', onExternalAbort, { once: true })
+    }
+
     // Start generation without awaiting - this allows chunks to be yielded in real-time
     const generationPromise = session
       .prompt(lastUserText, {
@@ -558,7 +570,7 @@ export class AIManager {
             ? { thoughtTokens: options.thoughtTokens }
             : undefined,
         stopOnAbortSignal: true,
-        signal,
+        signal: abortController.signal,
         onTextChunk: (chunk: string) => {
           fullResponse += chunk
           // If there's a waiting consumer, resolve immediately
@@ -589,38 +601,47 @@ export class AIManager {
         }
       })
 
-    // Yield chunks as they arrive in real-time
-    while (!done || chunkQueue.length > 0) {
-      // If there are queued chunks, yield them immediately
-      if (chunkQueue.length > 0) {
-        yield chunkQueue.shift()!
-      } else if (!done) {
-        // Wait for the next chunk to arrive
-        const chunk = await new Promise<string | null>((resolve) => {
-          resolveChunk = resolve
-        })
-        if (chunk !== null) {
-          yield chunk
+    try {
+      // Yield chunks as they arrive in real-time
+      while (!done || chunkQueue.length > 0) {
+        // If there are queued chunks, yield them immediately
+        if (chunkQueue.length > 0) {
+          yield chunkQueue.shift()!
+        } else if (!done) {
+          // Wait for the next chunk to arrive
+          const chunk = await new Promise<string | null>((resolve) => {
+            resolveChunk = resolve
+          })
+          if (chunk !== null) {
+            yield chunk
+          }
         }
       }
-    }
 
-    // Wait for generation to fully complete and handle any errors
-    await generationPromise
+      // Wait for generation to fully complete and handle any errors
+      await generationPromise
 
-    // Dispose temporary context for isolated sessions
-    if (tempContext) {
-      await tempContext.dispose()
-    }
+      if (generationError) {
+        throw generationError
+      }
 
-    if (generationError) {
-      throw generationError
-    }
-
-    // Return final result with complete response and token usage
-    return {
-      response: fullResponse,
-      tokensUsed: context.contextSize // Approximation - actual usage from metadata if available
+      // Return final result with complete response and token usage
+      return {
+        response: fullResponse,
+        tokensUsed: context.contextSize // Approximation - actual usage from metadata if available
+      }
+    } finally {
+      // Stop native generation if we exited early (abandoned generator) and
+      // detach the external-signal listener.
+      abortController.abort()
+      if (signal) signal.removeEventListener('abort', onExternalAbort)
+      // Let the detached generation settle before disposing its context, so
+      // llama.cpp is not still writing into a context we are freeing.
+      await generationPromise.catch(() => {})
+      // Dispose temporary context for isolated sessions — on every exit path.
+      if (tempContext) {
+        await tempContext.dispose()
+      }
     }
   }
 

@@ -69,8 +69,23 @@ export const MDXNoteEditor: FC<MDXNoteEditorProps> = ({
   const editorRef = useRef<MDXEditorMethods>(null)
   const isDark = resolvedTheme === 'dark'
 
-  // Update editor content when markdown prop changes externally
+  // Whether the user has actually interacted with the editor since the current
+  // note was loaded. MDXEditor emits an onChange on mount / setMarkdown from the
+  // markdown→AST→markdown normalization round-trip, which — if propagated —
+  // triggers a phantom auto-save and a full re-index of the note even though the
+  // user changed nothing. We gate onChange on a real interaction so loading a
+  // note (including large meeting transcripts) never re-saves or re-indexes it.
+  const userInteractedRef = useRef(false)
+
+  const markInteracted = useCallback((): void => {
+    userInteractedRef.current = true
+  }, [])
+
+  // Update editor content when markdown prop changes externally. This is a
+  // programmatic load (note switch, regenerated summary, …), not a user edit, so
+  // reset the interaction flag to keep swallowing the normalization echo.
   useEffect(() => {
+    userInteractedRef.current = false
     if (editorRef.current) {
       const currentMarkdown = editorRef.current.getMarkdown()
       if (currentMarkdown !== markdown) {
@@ -81,6 +96,8 @@ export const MDXNoteEditor: FC<MDXNoteEditorProps> = ({
 
   const handleChange = useCallback(
     (newMarkdown: string): void => {
+      // Ignore normalization echoes emitted before the user actually edits.
+      if (!userInteractedRef.current) return
       onChange(newMarkdown)
     },
     [onChange]
@@ -218,19 +235,30 @@ export const MDXNoteEditor: FC<MDXNoteEditorProps> = ({
   }
 
   return (
-    <MDXEditor
-      ref={editorRef}
-      markdown={markdown}
-      onChange={handleChange}
-      readOnly={readOnly}
-      className={cn('mdx-note-editor', isDark && 'dark-theme dark-editor', className)}
-      contentEditableClassName={cn(
-        'prose prose-sm max-w-none',
-        'dark:prose-invert',
-        'focus:outline-none',
-        'min-h-[300px]'
-      )}
-      plugins={plugins}
-    />
+    // Wrapper is display:contents (no layout box). Capture-phase handlers flag a
+    // real user interaction — typing, pasting, or clicking a toolbar control —
+    // so handleChange can distinguish genuine edits from the mount-time
+    // normalization echo. Events still bubble through a display:contents node.
+    <div
+      className="contents"
+      onKeyDownCapture={markInteracted}
+      onPointerDownCapture={markInteracted}
+      onPasteCapture={markInteracted}
+    >
+      <MDXEditor
+        ref={editorRef}
+        markdown={markdown}
+        onChange={handleChange}
+        readOnly={readOnly}
+        className={cn('mdx-note-editor', isDark && 'dark-theme dark-editor', className)}
+        contentEditableClassName={cn(
+          'prose prose-sm max-w-none',
+          'dark:prose-invert',
+          'focus:outline-none',
+          'min-h-[300px]'
+        )}
+        plugins={plugins}
+      />
+    </div>
   )
 }
