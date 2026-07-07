@@ -15,7 +15,7 @@ const DIARIZATION_IDS = [
   'sherpa-onnx-nemo-titanet-small'
 ] as const
 
-const CHAT_ID = 'qwen3-5-2b-q8'
+const CHAT_ID = 'qwen3-5-4b-q4-k-m'
 const EMBEDDING_ID = 'embeddinggemma-300m-q8'
 const RERANKER_ID = 'qwen3-reranker-0.6b-q8'
 const VAD_ID = 'silero-vad-onnx'

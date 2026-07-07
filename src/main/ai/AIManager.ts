@@ -48,6 +48,12 @@ export interface GenerationOptions {
   isolated?: boolean
   /** Override context size for isolated sessions (default 512). Capped at model's trainContextSize. */
   contextSize?: number
+  /**
+   * Cap on reasoning/thought tokens for reasoning models (e.g. Qwen3.5).
+   * Set to 0 to disable thinking entirely so the full `maxTokens` budget goes to
+   * the actual response. When omitted, node-llama-cpp's default budget applies.
+   */
+  thoughtTokens?: number
 }
 
 /**
@@ -547,6 +553,10 @@ export class AIManager {
         temperature: options?.temperature ?? 0.7,
         topP: options?.topP,
         repeatPenalty: options?.repeatPenalty ? { penalty: options.repeatPenalty } : undefined,
+        budgets:
+          options?.thoughtTokens !== undefined
+            ? { thoughtTokens: options.thoughtTokens }
+            : undefined,
         stopOnAbortSignal: true,
         signal,
         onTextChunk: (chunk: string) => {

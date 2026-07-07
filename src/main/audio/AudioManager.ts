@@ -46,7 +46,7 @@ import type { HardwareInfo } from '../ai/types'
 import { getLanguageName, normalizeLanguageCode, resolveMeetingLanguage } from './language'
 import { isCrossTalkDuplicate } from './crossTalk'
 
-const DEFAULT_CHAT_MODEL_ID = 'qwen3-5-2b-q8'
+const DEFAULT_CHAT_MODEL_ID = 'qwen3-5-4b-q4-k-m'
 
 /**
  * TEMPORARY DEBUG AID — when true, the raw (unprocessed) whisper transcription
@@ -1002,7 +1002,14 @@ export class AudioManager {
     const generator = aiManager.generateChatCompletion(modelId, messages, {
       isolated: true,
       maxTokens,
-      contextSize: AudioManager.SUMMARY_CONTEXT_SIZE
+      contextSize: AudioManager.SUMMARY_CONTEXT_SIZE,
+      // Disable reasoning for summaries: Qwen3.5's default thought budget (~75% of
+      // context) can consume the entire maxTokens allowance before any structured
+      // output is emitted, producing an empty summary. With thinking off the full
+      // budget goes to the actual sections, and generation is deterministic/faster.
+      thoughtTokens: 0,
+      // Lower temperature for stable adherence to the required section format.
+      temperature: 0.3
     })
 
     let fullContent = ''
@@ -1017,6 +1024,11 @@ export class AudioManager {
       }
     }
 
+    // Defensively strip any reasoning blocks a model might leak into the response.
+    // `onTextChunk` already excludes thought segments, but this guards against
+    // regressions (e.g. switching to onResponseChunk) and non-standard templates.
+    fullContent = fullContent.replace(/<think>[\s\S]*?<\/think>/gi, '')
+
     // Strip any Full Transcript section the model might have added on its own.
     const transcriptHeadingIndex = fullContent.indexOf('## Full Transcript')
     if (transcriptHeadingIndex !== -1) {
@@ -1028,10 +1040,12 @@ export class AudioManager {
   /** Whether the summary contains all required sections plus real body content. */
   private isValidSummary(text: string): boolean {
     if (!text) return false
-    const hasAllSections = AudioManager.SUMMARY_SECTIONS.every((h) => text.includes(h))
+    // Ignore any leaked reasoning block so it can't inflate the body-length check.
+    const cleaned = text.replace(/<think>[\s\S]*?<\/think>/gi, '')
+    const hasAllSections = AudioManager.SUMMARY_SECTIONS.every((h) => cleaned.includes(h))
     if (!hasAllSections) return false
     // Ensure there is meaningful content beyond the headings themselves.
-    let body = text
+    let body = cleaned
     for (const h of AudioManager.SUMMARY_SECTIONS) body = body.split(h).join('')
     return body.replace(/[#\s_*\-[\]()]/g, '').length > 40
   }

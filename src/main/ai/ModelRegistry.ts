@@ -49,21 +49,22 @@ function qwen3AsrMlxFiles(repo: string, checkpointFiles: Record<string, number>)
  */
 const CURATED_MODELS: ModelDefinition[] = [
   // ============================================================================
-  // LOW TIER - Compact chat model (~2GB)
+  // CHAT MODEL - Qwen3.5 4B Q4_K_M (~2.74GB), single model for all tiers
   // ============================================================================
   {
-    id: 'qwen3-5-2b-q8',
-    name: 'Qwen3.5 2B (Q8_0)',
+    id: 'qwen3-5-4b-q4-k-m',
+    name: 'Qwen3.5 4B (Q4_K_M)',
     description:
-      'Alibaba Qwen3.5 2B hybrid SSM/attention model with strong reasoning and multilingual capabilities',
-    filename: 'Qwen3.5-2B-Q8_0.gguf',
-    sizeBytes: 2.01 * 1024 * 1024 * 1024, // ~2.01GB
-    layers: 24,
-    quantization: 'Q8_0',
+      'Alibaba Qwen3.5 4B hybrid SSM/attention model (unsloth) with strong reasoning and multilingual capabilities',
+    filename: 'Qwen3.5-4B-Q4_K_M.gguf',
+    sizeBytes: 2.74 * 1024 * 1024 * 1024, // ~2.74GB
+    layers: 32,
+    quantization: 'Q4_K_M',
     contextLength: 65536,
     capabilities: ['chat', 'code', 'reasoning'],
     hardwareTier: 'low',
-    downloadUrl: 'https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q8_0.gguf',
+    downloadUrl:
+      'https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf',
     license: 'Apache 2.0'
   },
 

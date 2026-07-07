@@ -1,4 +1,4 @@
-const CHAT_MODEL_ID = 'qwen3-5-2b-q8'
+const CHAT_MODEL_ID = 'qwen3-5-4b-q4-k-m'
 
 /**
  * Hook to get the default chat model ID

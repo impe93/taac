@@ -1,19 +1,6 @@
 import { type FC, useEffect, useMemo } from 'react'
-import {
-  Bot,
-  Search,
-  Download,
-  Pause,
-  Play,
-  CheckCircle2,
-  AlertCircle,
-  Loader2,
-  Mic,
-  Info,
-  Cpu
-} from 'lucide-react'
-import type { LucideIcon } from 'lucide-react'
-import type { DownloadProgress, ModelDefinition, ModelProfile } from '@main/ai/types'
+import { Download, Pause, Play, CheckCircle2, AlertCircle, Loader2, Info, Cpu } from 'lucide-react'
+import type { DownloadProgress, ModelDefinition } from '@main/ai/types'
 import { Button } from '@renderer/components/ui/button'
 import { Card, CardContent } from '@renderer/components/ui/card'
 import { Progress } from '@renderer/components/ui/progress'
@@ -24,75 +11,13 @@ import { useDownloadedModels, useModelDownload } from '@renderer/hooks/useModels
 import { useModelProfile } from '@renderer/hooks/useHardware'
 import { useConfig, useSetConfig } from '@renderer/hooks/useConfig'
 import { formatSize, formatSpeed, formatETA } from '@renderer/lib/format'
+import {
+  FEATURES,
+  resolveFeatureModels,
+  computeFeatureProgress,
+  type CuratedFeature
+} from '@renderer/lib/modelFeatures'
 import type { OnboardingAction, OnboardingState } from './OnboardingWizard'
-
-// =============================================================================
-// Curated bundles per feature
-// =============================================================================
-
-type FeatureKey = 'chat' | 'search' | 'meeting'
-
-interface CuratedFeature {
-  key: FeatureKey
-  icon: LucideIcon
-  label: string
-  description: string
-  losesIfSkipped: string
-  optional: boolean
-}
-
-const FEATURES: CuratedFeature[] = [
-  {
-    key: 'chat',
-    icon: Bot,
-    label: 'AI Chat',
-    description: 'Converse naturally with an AI assistant that runs entirely on your device.',
-    losesIfSkipped:
-      'Without this model you won’t be able to chat with your notes or generate AI content.',
-    optional: false
-  },
-  {
-    key: 'search',
-    icon: Search,
-    label: 'Semantic Search',
-    description: 'Find your notes by meaning, not just keywords. Powered by local RAG.',
-    losesIfSkipped:
-      'Without these models, advanced search and contextual note retrieval will be disabled.',
-    optional: false
-  },
-  {
-    key: 'meeting',
-    icon: Mic,
-    label: 'Meeting Notes',
-    description:
-      'Record meetings, automatically transcribe audio, and identify different speakers — all offline.',
-    losesIfSkipped:
-      'Without these models you won’t be able to record meetings or generate automatic transcriptions and summaries.',
-    optional: true
-  }
-]
-
-const resolveFeatureModels = (profile: ModelProfile, key: FeatureKey): ModelDefinition[] => {
-  const { features, supportsRealtimeAsr } = profile
-
-  switch (key) {
-    case 'chat':
-      return [features.chat]
-    case 'search':
-      return [features.search.embedding, features.search.reranker]
-    case 'meeting': {
-      const models: ModelDefinition[] = [features.meeting.whisper]
-      if (supportsRealtimeAsr && features.meeting.asr) {
-        models.push(features.meeting.asr)
-      }
-      if (supportsRealtimeAsr && features.meeting.vad) {
-        models.push(features.meeting.vad)
-      }
-      models.push(...features.meeting.diarization)
-      return models
-    }
-  }
-}
 
 const formatRamGb = (bytes: number): string => {
   const gb = bytes / (1024 * 1024 * 1024)
@@ -353,50 +278,10 @@ const FeatureCard: FC<FeatureCardProps> = ({
 
   const totalSize = models.reduce((acc, m) => acc + m.sizeBytes, 0)
 
-  const activeProgress = useMemo(() => {
-    let bytesDownloaded = 0
-    let totalBytes = 0
-    let activeModelId: string | null = null
-    let activeStatus: DownloadProgress['status'] | null = null
-    let activeSpeed = 0
-    let activeEta = 0
-    let lastError: string | null = null
-
-    for (const m of models) {
-      const p = progressMap.get(m.id)
-      if (!p) {
-        if (isModelComplete(m.id)) {
-          bytesDownloaded += m.sizeBytes
-          totalBytes += m.sizeBytes
-        } else {
-          totalBytes += m.sizeBytes
-        }
-        continue
-      }
-      bytesDownloaded += p.bytesDownloaded || (p.status === 'completed' ? m.sizeBytes : 0)
-      totalBytes += p.totalBytes || m.sizeBytes
-      if (p.status === 'downloading' || p.status === 'pending' || p.status === 'paused') {
-        activeModelId = m.id
-        activeStatus = p.status
-        activeSpeed = p.speed
-        activeEta = p.eta
-      }
-      if (p.status === 'error' && p.error) lastError = p.error
-    }
-
-    const percentage = totalBytes > 0 ? (bytesDownloaded / totalBytes) * 100 : 0
-
-    return {
-      bytesDownloaded,
-      totalBytes,
-      percentage,
-      activeModelId,
-      activeStatus,
-      activeSpeed,
-      activeEta,
-      lastError
-    }
-  }, [models, progressMap, isModelComplete])
+  const activeProgress = useMemo(
+    () => computeFeatureProgress(models, progressMap, isModelComplete),
+    [models, progressMap, isModelComplete]
+  )
 
   const isDownloading = activeProgress.activeStatus !== null
   const showError = !!activeProgress.lastError && !isDownloading && !isComplete
