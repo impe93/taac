@@ -329,12 +329,12 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
     scrollToBottom()
   }, [messages, currentResponse, currentThought, scrollToBottom])
 
-  // Clear processing stage when streaming starts (first chunk received)
+  // Clear processing stage once real answer text (or reasoning) starts streaming
   useEffect(() => {
-    if (currentResponse && processingStage) {
+    if ((currentResponse.trim() || currentThought) && processingStage) {
       setProcessingStage(null)
     }
-  }, [currentResponse, processingStage])
+  }, [currentResponse, currentThought, processingStage])
 
   // Notes retrieved via the model's searchNotes tool during the current turn.
   // A ref (not state) so the value is available synchronously when building the
@@ -493,9 +493,15 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
     )
   }
 
+  // Whether the model has produced visible answer text yet. Guards against a
+  // reasoning model emitting leading whitespace/newlines before the real answer,
+  // which would otherwise render an empty bubble with a lone blinking cursor
+  // during the pre-response wait (reprocessing + tool call + reranking).
+  const hasVisibleResponse = currentResponse.trim().length > 0
+
   // Create streaming message for display
   const streamingMessage: ChatMessageType | null =
-    isGenerating && currentResponse
+    isGenerating && hasVisibleResponse
       ? {
           id: 'streaming',
           role: 'assistant',
@@ -638,14 +644,14 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
             ))}
             {/* Reasoning panel: shown while the model thinks and above the answer */}
             {isGenerating && currentThought && (
-              <ThinkingIndicator thought={currentThought} isThinking={!currentResponse} />
+              <ThinkingIndicator thought={currentThought} isThinking={!hasVisibleResponse} />
             )}
             {/* Streaming answer bubble */}
             {streamingMessage && (
               <ChatMessage message={streamingMessage} isStreaming onNoteClick={onNoteClick} />
             )}
-            {/* Loading indicator: processing stages or waiting for first token */}
-            {(processingStage || (isGenerating && !currentResponse && !currentThought)) && (
+            {/* Loading indicator: processing stages or waiting for the first answer token */}
+            {(processingStage || (isGenerating && !hasVisibleResponse && !currentThought)) && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="size-4 animate-spin" />
                 {processingStage ?? (isModelLoaded ? 'Generating response...' : 'Loading model...')}

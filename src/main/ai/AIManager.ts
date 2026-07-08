@@ -688,6 +688,13 @@ export class AIManager {
         throw generationError
       }
 
+      // Diagnostic: reveals whether the model emitted reasoning ("thought")
+      // segments this turn — useful to explain why the thinking panel may not
+      // appear (no thought chars = the model didn't reason as a segment).
+      console.log(
+        `[AIManager] chat generated: thought=${fullThought.length} chars, response=${fullResponse.length} chars`
+      )
+
       // Return final result with complete response and token usage
       return {
         response: fullResponse,

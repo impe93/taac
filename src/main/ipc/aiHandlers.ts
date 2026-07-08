@@ -164,9 +164,9 @@ async function runNoteSearch(
   getFsManager: GetFsManager,
   spaceId: string,
   query: string,
-  opts?: { limit?: number; noteIds?: string[]; expandQuery?: boolean }
+  opts?: { limit?: number; noteIds?: string[]; expandQuery?: boolean; maxCandidates?: number }
 ): Promise<ExpandedResult[]> {
-  const { limit, noteIds, expandQuery = true } = opts ?? {}
+  const { limit, noteIds, expandQuery = true, maxCandidates } = opts ?? {}
 
   // Ensure AIManager is initialized (required for embedding generation)
   const manager = getAIManager()
@@ -203,7 +203,9 @@ async function runNoteSearch(
   // --- Step 2: Multi-query Hybrid Search ---
   // Retrieve a wide candidate pool so the cross-encoder reranker has enough
   // to work with — the reranker is the authority on final precision.
-  const candidateLimit = Math.max(retrievalLimit * 6, 40)
+  // The tool path caps this (maxCandidates) because reranking runs synchronously
+  // while the chat model is paused mid-generation: a smaller pool = shorter wait.
+  const candidateLimit = Math.min(Math.max(retrievalLimit * 6, 40), maxCandidates ?? Infinity)
 
   let allResults: ExpandedResult[]
 
@@ -829,7 +831,9 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
                     noteIds: ragOptions.noteIds,
                     // Skip query expansion in the tool path: it would invoke the chat
                     // model re-entrantly mid-generation (slow on mid-end hardware).
-                    expandQuery: false
+                    expandQuery: false,
+                    // Cap the rerank pool so the mid-generation pause stays short.
+                    maxCandidates: 20
                   }
                 )
                 if (!event.sender.isDestroyed()) {

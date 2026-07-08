@@ -164,5 +164,7 @@ export interface AppConfig {
     realtimeTranscription: 'auto' | 'off'
     /** MLX ASR model for the realtime sidecar (macOS Apple Silicon only) */
     asrModelId: string
+    /** Summary generation budget profile (completeness vs memory/speed on 16GB target) */
+    summaryDepth: 'conservative' | 'balanced' | 'aggressive'
   }
 }

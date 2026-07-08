@@ -524,6 +524,16 @@ const MeetingNotesSettings: FC<MeetingNotesSettingsProps> = ({
     })
   }
 
+  const handleSummaryDepthChange = (value: string): void => {
+    setConfig.mutate({
+      key: 'meeting',
+      value: {
+        ...meetingConfig,
+        summaryDepth: value as 'conservative' | 'balanced' | 'aggressive'
+      }
+    })
+  }
+
   const handleWhisperModelChange = (value: string): void => {
     setConfig.mutate({ key: 'meeting', value: { ...meetingConfig, whisperModelId: value } })
   }
@@ -579,6 +589,30 @@ const MeetingNotesSettings: FC<MeetingNotesSettingsProps> = ({
               <SelectContent>
                 <SelectItem value="remote">Remote</SelectItem>
                 <SelectItem value="in-person">In-person</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Summary depth */}
+          <div className="flex items-center justify-between py-4">
+            <div className="flex-1 pr-4">
+              <p className="text-sm font-medium">Summary depth</p>
+              <p className="text-xs text-muted-foreground">
+                Higher depth gives more detailed summaries of long meetings but uses more memory and
+                takes longer. Balanced is recommended for most machines.
+              </p>
+            </div>
+            <Select
+              value={meetingConfig.summaryDepth ?? 'balanced'}
+              onValueChange={handleSummaryDepthChange}
+            >
+              <SelectTrigger className="w-36">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="conservative">Conservative</SelectItem>
+                <SelectItem value="balanced">Balanced</SelectItem>
+                <SelectItem value="aggressive">Aggressive</SelectItem>
               </SelectContent>
             </Select>
           </div>

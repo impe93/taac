@@ -49,6 +49,23 @@ import { isCrossTalkDuplicate } from './crossTalk'
 const DEFAULT_CHAT_MODEL_ID = 'qwen3-5-4b-q4-k-m'
 
 /**
+ * Token budget for a summarization pass. The context size and output-token
+ * budget are the two levers that decide whether a long meeting summary fits
+ * without being truncated. Chosen per `meeting.summaryDepth` so the user can
+ * trade completeness against memory/speed on the mid-end (16GB) target.
+ */
+interface SummaryBudget {
+  /** Isolated LLM context size (input + output). Capped at the model's trainContextSize. */
+  contextSize: number
+  /** Max output tokens for the final structured summary (reduce / single-pass). */
+  finalOutputTokens: number
+  /** Max output tokens for each intermediate map/collapse note. */
+  mapOutputTokens: number
+}
+
+type SummaryDepth = 'conservative' | 'balanced' | 'aggressive'
+
+/**
  * TEMPORARY DEBUG AID — when true, the raw (unprocessed) whisper transcription
  * is appended at the bottom of every generated meeting note so language
  * detection issues can be diagnosed. Flip to false (or remove the flag, the
@@ -792,17 +809,39 @@ export class AudioManager {
     return actionItems
   }
 
-  // Memory-friendly context for mid-end machines: map-reduce lets us use a small
-  // KV cache instead of a single huge context, avoiding overflow on long meetings.
-  private static readonly SUMMARY_CONTEXT_SIZE = 8192
-  private static readonly SUMMARY_MAX_OUTPUT_TOKENS = 2048
-  private static readonly MAP_MAX_OUTPUT_TOKENS = 1024
+  // Budget profiles for summarization. A larger context + output budget lets long
+  // meetings finish all sections without truncation; map-reduce still keeps every
+  // single LLM call within the chosen context. The context is isolated (created
+  // and disposed per call) and the ASR sidecar is already freed before summarizing,
+  // so even the balanced profile stays within the 16GB target.
+  private static readonly SUMMARY_PROFILES: Record<SummaryDepth, SummaryBudget> = {
+    conservative: { contextSize: 12288, finalOutputTokens: 3072, mapOutputTokens: 1024 },
+    balanced: { contextSize: 16384, finalOutputTokens: 4096, mapOutputTokens: 1536 },
+    aggressive: { contextSize: 24576, finalOutputTokens: 4096, mapOutputTokens: 1536 }
+  }
   private static readonly SUMMARY_SECTIONS = [
     '## Meeting Summary',
     '## Key Topics Discussed',
     '## Key Decisions',
     '## Action Items'
   ]
+
+  /**
+   * Resolve the active summarization budget from the user's `meeting.summaryDepth`
+   * preference. Falls back to the balanced profile if the config is missing or
+   * unreadable, so summarization never breaks on a bad/legacy config value.
+   */
+  private async resolveSummaryBudget(): Promise<SummaryBudget> {
+    try {
+      const { configStore } = await import('../utils/configStore')
+      const depth = configStore.get('meeting')?.summaryDepth as SummaryDepth | undefined
+      return (
+        (depth && AudioManager.SUMMARY_PROFILES[depth]) || AudioManager.SUMMARY_PROFILES.balanced
+      )
+    } catch {
+      return AudioManager.SUMMARY_PROFILES.balanced
+    }
+  }
 
   /**
    * Generate a structured meeting summary from the transcript.
@@ -839,11 +878,32 @@ export class AudioManager {
     this.summaryAbortSignal = signal
     let loadedModelId: string | undefined
 
+    // Keep the summarizing progress bar monotonic: the strict retry re-runs
+    // generateSummary from a low percentage, which would otherwise make the bar
+    // jump backwards from ~95%. Clamp any emitted value to the highest seen.
+    let progressCeiling = 0
+    const monotonicProgress = (progress: ProcessingProgress): void => {
+      if (progress.stage === 'summarizing' && typeof progress.progress === 'number') {
+        if (progress.progress < progressCeiling) {
+          onProgress({ ...progress, progress: progressCeiling })
+          return
+        }
+        progressCeiling = progress.progress
+      }
+      onProgress(progress)
+    }
+
     try {
       if (!aiManager.isInitialized()) {
         console.log('[AudioManager] AIManager not initialized — initializing now...')
         await aiManager.initialize()
       }
+
+      const budget = await this.resolveSummaryBudget()
+      console.log(
+        `[AudioManager] Summary budget — context ${budget.contextSize}, ` +
+          `output ${budget.finalOutputTokens}/${budget.mapOutputTokens}`
+      )
 
       const modelId = this.getActiveChatModelId()
       // Throws if the chat model is missing/unloadable → surfaced as a clear error.
@@ -851,42 +911,62 @@ export class AudioManager {
       loadedModelId = modelId
       console.log(`[AudioManager] Summarizing with model: ${modelId}`)
 
-      let summary = await this.generateSummary(
+      const summary = await this.generateSummary(
         aiManager,
         modelId,
         transcriptText,
         languageName,
-        onProgress,
+        monotonicProgress,
+        budget,
         false
       )
 
-      if (!this.isValidSummary(summary)) {
-        console.warn('[AudioManager] Summary missing required sections — retrying once (strict)')
-        const retry = await this.generateSummary(
-          aiManager,
-          modelId,
-          transcriptText,
-          languageName,
-          onProgress,
-          true
+      if (this.isValidSummary(summary)) {
+        console.log(`[AudioManager] Summarization complete (${summary.length} chars)`)
+        return { content: summary, actionItems: this.parseActionItems(summary) }
+      }
+
+      console.warn('[AudioManager] Summary missing required sections — retrying once (strict)')
+      const retry = await this.generateSummary(
+        aiManager,
+        modelId,
+        transcriptText,
+        languageName,
+        monotonicProgress,
+        budget,
+        true
+      )
+
+      if (this.isValidSummary(retry)) {
+        console.log(`[AudioManager] Summarization complete on retry (${retry.length} chars)`)
+        return { content: retry, actionItems: this.parseActionItems(retry) }
+      }
+
+      // Graceful degradation: rather than discarding a long, mostly-complete
+      // summary and showing an empty "_Not available._" template, keep whatever
+      // the model actually produced (the best of the two attempts). The
+      // structured transcript is preserved independently in MeetingMetadata.
+      const best = this.pickBestSummary(summary, retry)
+      if (this.summaryBodyLength(best) > 40) {
+        console.warn(
+          '[AudioManager] Keeping incomplete summary (some sections missing) instead of discarding'
         )
-        if (this.isValidSummary(retry)) {
-          summary = retry
-        } else {
-          console.error('[AudioManager] Summary still incomplete after retry')
-          return {
-            content: this.buildFallbackContent(
-              transcriptText,
-              'The automatic summary was incomplete. The full transcript is preserved below.'
-            ),
-            actionItems: this.parseActionItems(summary),
-            error: 'Summary was incomplete after retry.'
-          }
+        return {
+          content: best,
+          actionItems: this.parseActionItems(best),
+          error: 'The automatic summary may be incomplete — some sections could be missing.'
         }
       }
 
-      console.log(`[AudioManager] Summarization complete (${summary.length} chars)`)
-      return { content: summary, actionItems: this.parseActionItems(summary) }
+      console.error('[AudioManager] Summary essentially empty after retry — using fallback')
+      return {
+        content: this.buildFallbackContent(
+          transcriptText,
+          'The automatic summary was incomplete. The full transcript is preserved below.'
+        ),
+        actionItems: [],
+        error: 'Summary was incomplete after retry.'
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       const stack = err instanceof Error ? err.stack : ''
@@ -926,29 +1006,38 @@ export class AudioManager {
     transcriptText: string,
     languageName: string,
     onProgress: (progress: ProcessingProgress) => void,
+    budget: SummaryBudget,
     strict: boolean
   ): Promise<string> {
     const model = await aiManager.getModelInstance(modelId)
     const countTokens = (text: string): number => model.tokenize(text).length
 
     const finalSystemPrompt = this.buildSummarySystemPrompt(languageName, strict)
-    const budget = Math.max(
+    // Retry passes flag their progress messages so the frozen bar still tells the
+    // user something is happening (the value itself is clamped monotonic upstream).
+    const retryNote = strict ? ' (retry)' : ''
+    // Token budget available for the prompt INPUT so that input + output + framing
+    // stays within the isolated context and the summary is never truncated.
+    const inputBudget = Math.max(
       1024,
-      AudioManager.SUMMARY_CONTEXT_SIZE -
-        AudioManager.SUMMARY_MAX_OUTPUT_TOKENS -
-        countTokens(finalSystemPrompt) -
-        320 // framing / chat-template overhead margin
+      budget.contextSize - budget.finalOutputTokens - countTokens(finalSystemPrompt) - 320 // framing / chat-template overhead margin
     )
 
     // Fits in one pass → summarize directly.
-    if (countTokens(transcriptText) <= budget) {
+    if (countTokens(transcriptText) <= inputBudget) {
       return this.runSummaryChat(
         aiManager,
         modelId,
         finalSystemPrompt,
         `Here is the meeting transcript:\n\n${transcriptText}`,
-        AudioManager.SUMMARY_MAX_OUTPUT_TOKENS,
-        (p) => onProgress({ stage: 'summarizing', progress: p, message: 'Generating summary...' }),
+        budget.finalOutputTokens,
+        budget.contextSize,
+        (p) =>
+          onProgress({
+            stage: 'summarizing',
+            progress: p,
+            message: `Generating summary${retryNote}...`
+          }),
         10,
         95
       )
@@ -956,7 +1045,7 @@ export class AudioManager {
 
     // ---- Map: summarize each chunk into intermediate notes ----
     const mapSystemPrompt = this.buildMapSystemPrompt(languageName)
-    const chunks = this.splitIntoChunks(transcriptText, budget, countTokens)
+    const chunks = this.splitIntoChunks(transcriptText, inputBudget, countTokens)
     console.log(`[AudioManager] Long transcript — map-reduce over ${chunks.length} chunk(s)`)
 
     let partials: string[] = []
@@ -966,17 +1055,22 @@ export class AudioManager {
         modelId,
         mapSystemPrompt,
         `Meeting transcript part ${i + 1} of ${chunks.length}:\n\n${chunks[i]}`,
-        AudioManager.MAP_MAX_OUTPUT_TOKENS
+        budget.mapOutputTokens,
+        budget.contextSize
       )
       partials.push(partial)
       const pct = Math.round(((i + 1) / chunks.length) * 65)
-      onProgress({ stage: 'summarizing', progress: pct, message: 'Summarizing sections...' })
+      onProgress({
+        stage: 'summarizing',
+        progress: pct,
+        message: `Summarizing sections${retryNote}...`
+      })
     }
 
     // ---- Collapse partials until they fit the budget ----
     let guard = 0
-    while (countTokens(partials.join('\n\n')) > budget && guard++ < 3) {
-      const groups = this.groupByBudget(partials, budget, countTokens)
+    while (countTokens(partials.join('\n\n')) > inputBudget && guard++ < 5) {
+      const groups = this.groupByBudget(partials, inputBudget, countTokens)
       const collapsed: string[] = []
       for (const group of groups) {
         collapsed.push(
@@ -985,7 +1079,8 @@ export class AudioManager {
             modelId,
             mapSystemPrompt,
             `Combine these meeting notes into one set of notes, preserving all decisions and action items:\n\n${group}`,
-            AudioManager.MAP_MAX_OUTPUT_TOKENS
+            budget.mapOutputTokens,
+            budget.contextSize
           )
         )
       }
@@ -993,14 +1088,31 @@ export class AudioManager {
     }
 
     // ---- Reduce: synthesize the final structured summary ----
-    const combined = partials.join('\n\n---\n\n')
+    // Safety net: even if the collapse loop hit its guard, never feed the reduce
+    // more than the context can hold — hard-truncate to the input budget so the
+    // final call cannot overflow (which would fail the whole summary).
+    let combined = partials.join('\n\n---\n\n')
+    if (countTokens(combined) > inputBudget) {
+      const perChar = countTokens(combined) / Math.max(1, combined.length)
+      const maxChars = Math.floor(inputBudget / Math.max(perChar, 1e-6))
+      console.warn(
+        `[AudioManager] Reduce input still over budget after collapse — truncating to fit context`
+      )
+      combined = combined.slice(0, maxChars)
+    }
     return this.runSummaryChat(
       aiManager,
       modelId,
       finalSystemPrompt,
       `Here are notes from consecutive parts of the same meeting, in order. Synthesize them into a single structured summary. Do not lose any decisions or action items:\n\n${combined}`,
-      AudioManager.SUMMARY_MAX_OUTPUT_TOKENS,
-      (p) => onProgress({ stage: 'summarizing', progress: p, message: 'Finalizing summary...' }),
+      budget.finalOutputTokens,
+      budget.contextSize,
+      (p) =>
+        onProgress({
+          stage: 'summarizing',
+          progress: p,
+          message: `Finalizing summary${retryNote}...`
+        }),
       70,
       95
     )
@@ -1016,6 +1128,7 @@ export class AudioManager {
     systemPrompt: string,
     userMessage: string,
     maxTokens: number,
+    contextSize: number,
     onProgress?: (percentage: number) => void,
     progressFrom = 0,
     progressTo = 100
@@ -1036,7 +1149,7 @@ export class AudioManager {
       {
         isolated: true,
         maxTokens,
-        contextSize: AudioManager.SUMMARY_CONTEXT_SIZE,
+        contextSize,
         // Disable reasoning for summaries: Qwen3.5's default thought budget (~75% of
         // context) can consume the entire maxTokens allowance before any structured
         // output is emitted, producing an empty summary. With thinking off the full
@@ -1083,9 +1196,24 @@ export class AudioManager {
     const hasAllSections = AudioManager.SUMMARY_SECTIONS.every((h) => cleaned.includes(h))
     if (!hasAllSections) return false
     // Ensure there is meaningful content beyond the headings themselves.
-    let body = cleaned
+    return this.summaryBodyLength(cleaned) > 40
+  }
+
+  /**
+   * Count real body characters (excluding required headings, markdown symbols and
+   * any leaked reasoning). Used to tell an empty/near-empty summary from one that
+   * has real content but is merely missing a section heading.
+   */
+  private summaryBodyLength(text: string): number {
+    if (!text) return 0
+    let body = text.replace(/<think>[\s\S]*?<\/think>/gi, '')
     for (const h of AudioManager.SUMMARY_SECTIONS) body = body.split(h).join('')
-    return body.replace(/[#\s_*\-[\]()]/g, '').length > 40
+    return body.replace(/[#\s_*\-[\]()]/g, '').length
+  }
+
+  /** Pick the attempt that produced the most real content (used for degradation). */
+  private pickBestSummary(a: string, b: string): string {
+    return this.summaryBodyLength(b) > this.summaryBodyLength(a) ? b : a
   }
 
   /** Split transcript text into token-budgeted chunks at line boundaries. */
@@ -1138,24 +1266,25 @@ export class AudioManager {
   /** System prompt for the final structured summary. */
   private buildSummarySystemPrompt(languageName: string, strict: boolean): string {
     const strictLine = strict
-      ? '\nYou MUST output every section below, each with real content. Do not skip any section.'
+      ? '\nYou MUST output every one of the four sections below, each with real content. Do not skip any section.'
       : ''
-    return `You are a meeting summarizer. Given a timestamped transcript with speaker labels, produce a structured and comprehensive summary in markdown format with the following sections:
+    return `You are a meeting summarizer. Given a timestamped transcript with speaker labels, produce a structured summary in markdown format with EXACTLY these four sections, in this order:
 
 ## Meeting Summary
-A comprehensive and detailed overview of the meeting. Write as many paragraphs as needed to thoroughly capture all important points, context, and nuances discussed. Do not limit yourself to a fixed number of sentences — cover everything that matters.
+A detailed overview of the meeting capturing the important points, context, and nuances discussed.
 
 ## Key Topics Discussed
-Organized by topic. For each topic, provide thorough details including the context, what was discussed, different viewpoints expressed, who contributed, and any conclusions reached. Be comprehensive — do not omit relevant details.
+Organized by topic. For each topic, provide the context, what was discussed, different viewpoints expressed, who contributed, and any conclusions reached.
 
 ## Key Decisions
-Numbered list of decisions made during the meeting. For each decision, include the rationale and any conditions or caveats discussed.
+Numbered list of decisions made during the meeting, each with its rationale and any conditions or caveats. If no decisions were made, write "_None._".
 
 ## Action Items
 Checklist format with assignee and deadline if mentioned:
 - [ ] [Action description] — Assigned to: [Speaker] — Due: [Date if mentioned]
+If no action items were mentioned, write "_None._" under this heading.
 
-Be thorough and detailed in all sections. This summary will serve as a reference document and will be indexed for search, so completeness is more important than brevity.${strictLine}
+CRITICAL — budget your output so that ALL FOUR sections are always produced. Never spend so much detail on the earlier sections that you run out of room before "## Key Decisions" and "## Action Items". Keep each section proportionate; it is far better to be a little more concise everywhere than to omit a later section. The "## Action Items" heading must always be the final section and must always be present.${strictLine}
 
 IMPORTANT: Write ALL content (body text, bullet points, descriptions) in ${languageName}. The section headings (## Meeting Summary, ## Key Topics Discussed, ## Key Decisions, ## Action Items) MUST remain exactly as shown above in English for parsing consistency.
 Do not include any text outside of these sections. Use the exact section headings above. Do NOT include a transcript section.`

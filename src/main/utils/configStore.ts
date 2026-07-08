@@ -69,6 +69,12 @@ export interface AppConfig {
     realtimeTranscription: 'auto' | 'off'
     /** MLX ASR model for the realtime sidecar (macOS Apple Silicon only) */
     asrModelId: string
+    /**
+     * Summary generation budget profile. Trades summary completeness/detail against
+     * memory and speed on the mid-end (16GB) target. Drives the LLM context size and
+     * output-token budget used when summarizing meeting transcripts.
+     */
+    summaryDepth: 'conservative' | 'balanced' | 'aggressive'
   }
 }
 
@@ -207,7 +213,12 @@ const schema = {
       whisperModelId: { type: 'string', default: FACTORY_MEETING_WHISPER_ID },
       defaultLanguage: { type: 'string', default: 'auto' },
       realtimeTranscription: { type: 'string', enum: ['auto', 'off'], default: 'auto' },
-      asrModelId: { type: 'string', default: FACTORY_MEETING_ASR_ID }
+      asrModelId: { type: 'string', default: FACTORY_MEETING_ASR_ID },
+      summaryDepth: {
+        type: 'string',
+        enum: ['conservative', 'balanced', 'aggressive'],
+        default: 'balanced'
+      }
     },
     default: {
       keepAudioAfterTranscription: true,
@@ -215,7 +226,8 @@ const schema = {
       whisperModelId: FACTORY_MEETING_WHISPER_ID,
       defaultLanguage: 'auto',
       realtimeTranscription: 'auto',
-      asrModelId: FACTORY_MEETING_ASR_ID
+      asrModelId: FACTORY_MEETING_ASR_ID,
+      summaryDepth: 'balanced'
     }
   }
 } as const
