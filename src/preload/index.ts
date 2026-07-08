@@ -308,7 +308,7 @@ const aiAPI = {
     }
   },
 
-  // Auto-index progress events from IndexingQueue (per-note background indexing)
+  // Auto-index progress events from the batch-indexing scheduler (background)
   onAutoIndexProgress: (
     callback: (data: {
       spaceId: string

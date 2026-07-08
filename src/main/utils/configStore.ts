@@ -5,7 +5,11 @@ export interface AppConfig {
   editorFontSize: number
   autoSave: boolean
   autoSaveInterval: number
-  autoIndexNotes: boolean
+  /**
+   * Interval (minutes) for the background batch indexing of notes.
+   * 0 = automatic indexing off (manual "Index all notes" only).
+   */
+  indexingIntervalMinutes: number
   /** Opt-in: enrich each chunk with LLM-generated context at index time (Anthropic-style). */
   contextualRetrievalEnabled: boolean
   /** When true, the chat assistant may run several note searches per message; when false, at most one. */
@@ -108,9 +112,10 @@ const schema = {
     maximum: 60000,
     default: 5000
   },
-  autoIndexNotes: {
-    type: 'boolean',
-    default: true
+  indexingIntervalMinutes: {
+    type: 'number',
+    enum: [0, 5, 10, 15, 30, 60, 120],
+    default: 30
   },
   contextualRetrievalEnabled: {
     type: 'boolean',

@@ -101,7 +101,11 @@ export interface AppConfig {
   editorFontSize: number
   autoSave: boolean
   autoSaveInterval: number
-  autoIndexNotes: boolean
+  /**
+   * Interval (minutes) for the background batch indexing of notes.
+   * 0 = automatic indexing off (manual "Index all notes" only).
+   */
+  indexingIntervalMinutes: number
   /** Opt-in: enrich each chunk with LLM-generated context at index time (Anthropic-style). */
   contextualRetrievalEnabled: boolean
   /** When true, the chat assistant may run several note searches per message; when false, at most one. */

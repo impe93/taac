@@ -305,7 +305,7 @@ export interface AIAPI {
   // Embedding model needed event (broadcast at startup if model is missing)
   onEmbeddingModelNeeded: (callback: (data: { modelId: string }) => void) => () => void
 
-  // Auto-index progress events from IndexingQueue (per-note background indexing)
+  // Auto-index progress events from the batch-indexing scheduler (background)
   onAutoIndexProgress: (
     callback: (data: {
       spaceId: string

@@ -23,7 +23,6 @@ import {
   ConversationManager,
   VectorDBManager,
   EmbeddingService,
-  IndexingQueue,
   RerankerService,
   QueryExpander
 } from '../ai'
@@ -54,7 +53,6 @@ let downloader: ModelDownloader | null = null
 let aiManager: AIManager | null = null
 let conversationManager: ConversationManager | null = null
 let embeddingService: EmbeddingService | null = null
-let indexingQueue: IndexingQueue | null = null
 let rerankerService: RerankerService | null = null
 
 // Per-space VectorDBManager instances
@@ -62,6 +60,29 @@ const vectorDBManagers: Map<string, VectorDBManager> = new Map()
 
 // AbortController for batch indexing (ai:indexAllNotes)
 let batchIndexAbort: AbortController | null = null
+
+// ----------------------------------------------------------------------------
+// Batch indexing scheduler state
+//
+// Auto-indexing is batched instead of running on every note save: saving a note
+// only marks its space "dirty"; a periodic scheduler then re-indexes the stale
+// notes of the dirty spaces. This keeps CPU/GPU idle while the user is writing.
+// ----------------------------------------------------------------------------
+
+/** Spaces that changed since the last batch and need a staleness re-check. */
+const dirtySpaces = new Set<string>()
+/** Periodic timer driving the scheduled batch (null when automatic indexing is off). */
+let scheduleTimer: NodeJS.Timeout | null = null
+/** Whether a scheduled batch is currently running (prevents overlap). */
+let scheduledBatchRunning = false
+/** Abort controller for the running scheduled batch (aborted on shutdown / config change). */
+let scheduledAbort: AbortController | null = null
+/** Whether the embedding model is downloaded (gate for the scheduler). */
+let embeddingAvailableForIndexing = false
+/** Captured fs-manager factory used by the scheduler across ticks. */
+let schedulerFsManager: GetFsManager | null = null
+/** Unsubscribe for the config listener that reacts to interval changes. */
+let schedulerConfigUnsub: (() => void) | null = null
 
 // AbortController for active chat generation (ai:generateResponse)
 let generationAbort: AbortController | null = null
@@ -308,32 +329,138 @@ async function runNoteSearch(
 }
 
 /**
- * Get or create the IndexingQueue singleton.
- *
- * The queue requires EmbeddingService and a way to get VectorDBManagers.
- * It won't process jobs until setEmbeddingAvailable(true) is called.
+ * Broadcast a background auto-index progress event to all windows.
+ * Reuses the existing `ai:auto-index-progress` channel consumed by
+ * the `useAutoIndexStatus` hook.
  */
-function getOrCreateIndexingQueue(getFsManager: GetFsManager): IndexingQueue {
-  if (!indexingQueue) {
-    indexingQueue = new IndexingQueue(getEmbeddingService(), (spaceId: string) =>
-      getOrCreateVectorDB(spaceId, getFsManager)
-    )
-
-    // Forward auto-index progress events to all BrowserWindows
-    indexingQueue.on('progress', (event: IndexingProgressEvent) => {
-      const windows = BrowserWindow.getAllWindows()
-      for (const win of windows) {
-        if (!win.webContents.isDestroyed()) {
-          win.webContents.send('ai:auto-index-progress', event)
-        }
-      }
-    })
+function broadcastAutoIndexProgress(event: IndexingProgressEvent): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.webContents.isDestroyed()) {
+      win.webContents.send('ai:auto-index-progress', event)
+    }
   }
-  return indexingQueue
 }
 
 /**
- * Try to enable auto-indexing if the embedding model is downloaded.
+ * Run one scheduled batch: re-index the stale notes of every dirty space.
+ *
+ * Skips when a batch (scheduled or manual) is already running, when the
+ * embedding model is unavailable, or when nothing changed. Spaces that fail
+ * or get aborted are re-marked dirty so the next tick retries them.
+ */
+async function runScheduledBatch(getFsManager: GetFsManager): Promise<void> {
+  if (scheduledBatchRunning || batchIndexAbort || !embeddingAvailableForIndexing) return
+  if (dirtySpaces.size === 0) return
+
+  const spaces = [...dirtySpaces]
+  dirtySpaces.clear()
+
+  scheduledBatchRunning = true
+  scheduledAbort = new AbortController()
+  const { signal } = scheduledAbort
+  let didWork = false
+
+  try {
+    for (const spaceId of spaces) {
+      if (signal.aborted) {
+        dirtySpaces.add(spaceId)
+        continue
+      }
+      try {
+        const result = await runSpaceBatchIndex(spaceId, getFsManager, {
+          signal,
+          onProgress: (p) => {
+            if (p.status !== 'indexing') return
+            didWork = true
+            broadcastAutoIndexProgress({
+              spaceId,
+              noteId: p.noteId ?? '',
+              noteTitle: p.noteTitle ?? '',
+              status: 'indexing',
+              queueSize: Math.max((p.staleCount ?? p.total) - p.current, 0)
+            })
+          }
+        })
+        // Interrupted (e.g. by a manual index): retry this space next tick.
+        if (result.cancelled) dirtySpaces.add(spaceId)
+      } catch (error) {
+        console.error(`[IndexingScheduler] Batch failed for space ${spaceId}:`, error)
+        dirtySpaces.add(spaceId)
+      }
+    }
+  } finally {
+    scheduledBatchRunning = false
+    scheduledAbort = null
+    if (didWork) {
+      broadcastAutoIndexProgress({
+        spaceId: '',
+        noteId: '',
+        noteTitle: '',
+        status: 'completed',
+        queueSize: 0
+      })
+    }
+  }
+}
+
+/**
+ * (Re)configure the periodic timer from the `indexingIntervalMinutes` config.
+ * A value of 0 turns automatic indexing off (manual "Index all notes" only).
+ */
+function restartIndexingScheduler(): void {
+  if (scheduleTimer) {
+    clearInterval(scheduleTimer)
+    scheduleTimer = null
+  }
+
+  const minutes = configStore.get('indexingIntervalMinutes')
+  if (!minutes || minutes <= 0) {
+    console.log('[IndexingScheduler] Automatic indexing off')
+    return
+  }
+
+  const getFsManager = schedulerFsManager
+  if (!getFsManager) return
+
+  scheduleTimer = setInterval(() => {
+    void runScheduledBatch(getFsManager)
+  }, minutes * 60_000)
+  console.log(`[IndexingScheduler] Automatic indexing every ${minutes} min`)
+}
+
+/**
+ * Start the batch-indexing scheduler and subscribe to interval changes so the
+ * cadence updates live when the user edits the setting.
+ */
+function startIndexingScheduler(getFsManager: GetFsManager): void {
+  schedulerFsManager = getFsManager
+  restartIndexingScheduler()
+  if (!schedulerConfigUnsub) {
+    schedulerConfigUnsub = configStore.onDidChange('indexingIntervalMinutes', () => {
+      restartIndexingScheduler()
+    })
+  }
+}
+
+/**
+ * Tear down the scheduler: stop the timer, unsubscribe, abort any running batch.
+ */
+export function disposeIndexingScheduler(): void {
+  if (scheduleTimer) {
+    clearInterval(scheduleTimer)
+    scheduleTimer = null
+  }
+  if (schedulerConfigUnsub) {
+    schedulerConfigUnsub()
+    schedulerConfigUnsub = null
+  }
+  scheduledAbort?.abort()
+  scheduledAbort = null
+  dirtySpaces.clear()
+}
+
+/**
+ * Try to enable batch auto-indexing if the embedding model is downloaded.
  * Called after AI initialization and model downloads.
  */
 async function tryEnableAutoIndexing(getFsManager: GetFsManager): Promise<void> {
@@ -343,14 +470,14 @@ async function tryEnableAutoIndexing(getFsManager: GetFsManager): Promise<void> 
     const dl = await getDownloader()
     const isDownloaded = await dl.isModelDownloaded(modelId)
 
-    const queue = getOrCreateIndexingQueue(getFsManager)
-    queue.setEmbeddingAvailable(isDownloaded)
+    embeddingAvailableForIndexing = isDownloaded
 
     if (isDownloaded) {
-      console.log('[IndexingQueue] Auto-indexing enabled — embedding model available')
+      startIndexingScheduler(getFsManager)
+      console.log('[IndexingScheduler] Batch auto-indexing enabled — embedding model available')
     }
   } catch (error) {
-    console.error('[IndexingQueue] Failed to check embedding model availability:', error)
+    console.error('[IndexingScheduler] Failed to check embedding model availability:', error)
   }
 }
 
@@ -358,8 +485,8 @@ async function tryEnableAutoIndexing(getFsManager: GetFsManager): Promise<void> 
  * Initialize the embedding subsystem at app startup (deferred).
  *
  * Performs a lightweight check: if the embedding model is already downloaded,
- * initializes AIManager and enables the IndexingQueue. If the model is missing,
- * broadcasts 'ai:embedding-model-needed' to prompt the user.
+ * initializes AIManager and starts the batch-indexing scheduler. If the model
+ * is missing, broadcasts 'ai:embedding-model-needed' to prompt the user.
  *
  * Safe to call multiple times — AIManager.initialize() is idempotent.
  */
@@ -384,87 +511,48 @@ export async function initializeEmbeddingSubsystem(getFsManager: GetFsManager): 
     await manager.initialize()
     isAIInitialized = true
 
-    // Enable the indexing queue
+    // Start the batch-indexing scheduler
     await tryEnableAutoIndexing(getFsManager)
 
-    console.log('[EmbeddingInit] Embedding subsystem ready — auto-indexing enabled')
+    console.log('[EmbeddingInit] Embedding subsystem ready — batch auto-indexing enabled')
   } catch (error) {
     console.error('[EmbeddingInit] Failed:', error)
   }
 }
 
 /**
- * Notify that a note was saved. Enqueues background indexing (debounced).
+ * Notify that a note was saved. Marks the note's space dirty so the next
+ * scheduled (or manual) batch re-indexes only the notes that actually changed.
  *
- * This function is non-blocking: it extracts text from the Lexical content
- * and enqueues it for later processing. Returns immediately.
+ * Indexing is intentionally NOT run here: doing embedding work on every save
+ * kept CPU/GPU busy while the user was writing. Staleness is detected later
+ * from the on-disk content hash, so no per-note tracking is needed.
  *
  * Called from fileHandlers after fs:updateNote / fs:createNote.
  */
 export function notifyNoteSaved(
-  noteId: string,
+  _noteId: string,
   spaceId: string,
-  folderId: string,
-  rawContent: unknown,
-  title: string,
-  folderPath?: string
+  _folderId: string,
+  _rawContent: unknown,
+  _title: string,
+  _folderPath?: string
 ): void {
-  if (!indexingQueue) return
-
-  // Check if auto-indexing is enabled in user config
-  if (configStore.get('autoIndexNotes') === false) return
-
-  // Extract text from Lexical editor state
-  const textContent = extractTextFromLexicalContent(rawContent)
-  if (!textContent.trim()) return
-
-  indexingQueue.enqueue(noteId, spaceId, folderId, textContent, title, folderPath)
+  dirtySpaces.add(spaceId)
 }
 
 /**
- * Re-index all notes in a moved folder subtree with their updated folder paths.
- * Called from fileHandlers after fs:moveFolder succeeds.
+ * Notify that a folder was moved. Marks the space dirty: moved notes get a new
+ * folderPath, which changes their content hash, so the next batch re-indexes
+ * them as stale. Called from fileHandlers after fs:moveFolder succeeds.
  */
-export async function notifyFolderMoved(
-  getOrCreateFsManager: GetFsManager,
+export function notifyFolderMoved(
+  _getOrCreateFsManager: GetFsManager,
   spaceId: string,
-  movedFolderId: string
+  _movedFolderId: string
 ): Promise<void> {
-  if (!indexingQueue) return
-
-  const fsManager = getOrCreateFsManager(spaceId)
-  const allNotes: Array<{ note: Note; folderId: string }> = []
-
-  try {
-    await collectNotesRecursively(fsManager, movedFolderId, allNotes)
-  } catch (error) {
-    console.error(`[notifyFolderMoved] Failed to collect notes for folder ${movedFolderId}:`, error)
-    return
-  }
-
-  for (const { note, folderId } of allNotes) {
-    const textContent = extractTextFromLexicalContent(note.content)
-    if (!textContent.trim()) continue
-
-    let folderPath: string | undefined
-    try {
-      folderPath = await fsManager.getFullFolderPath(folderId)
-    } catch {
-      /* ignore */
-    }
-
-    indexingQueue.enqueue(note.id, spaceId, folderId, textContent, note.title, folderPath)
-  }
-}
-
-/**
- * Dispose the IndexingQueue (e.g. when app is closing).
- */
-export function disposeIndexingQueue(): void {
-  if (indexingQueue) {
-    indexingQueue.dispose()
-    indexingQueue = null
-  }
+  dirtySpaces.add(spaceId)
+  return Promise.resolve()
 }
 
 /**
@@ -490,7 +578,7 @@ export async function disposeAISubsystem(): Promise<void> {
   }
 
   cancelBatchIndexing()
-  disposeIndexingQueue()
+  disposeIndexingScheduler()
 
   if (rerankerService) {
     try {
@@ -1060,168 +1148,17 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
    */
   ipcMain.handle('ai:indexAllNotes', async (event: IpcMainInvokeEvent, spaceId: string) => {
     try {
-      // Ensure AIManager is initialized (required for embedding generation)
-      const manager = getAIManager()
-      if (!manager.isInitialized()) {
-        await manager.initialize()
-      }
+      // A user-triggered batch takes priority: abort a running scheduled batch
+      // so it yields the embedding model instead of competing for the GPU.
+      scheduledAbort?.abort()
 
-      // Check if embedding model is available
-      const service = getEmbeddingService()
-      const modelId = service.getEmbeddingModel()
-      const dl = await getDownloader()
-      const isDownloaded = await dl.isModelDownloaded(modelId)
-
-      if (!isDownloaded) {
-        throw new Error(
-          `The embedding model "${modelId}" is not downloaded. Download it before indexing notes.`
-        )
-      }
-
-      const vectorDB = getOrCreateVectorDB(spaceId, getOrCreateFsManager)
-      if (!vectorDB.isInitialized()) {
-        await vectorDB.initialize()
-      }
-
-      const fsManager = getOrCreateFsManager(spaceId)
-
-      // Set up abort controller for this batch
       batchIndexAbort = new AbortController()
-      const { signal } = batchIndexAbort
-
-      // Collect all notes recursively from folder tree
-      const allNotes: Array<{ note: Note; folderId: string }> = []
-      await collectNotesRecursively(fsManager, 'root', allNotes)
-
-      const totalNotes = allNotes.length
-
-      // ================================================================
-      // PHASE 1: Check staleness — extract text + hash check each note
-      // ================================================================
-
-      const staleNotes: Array<{ note: Note; folderId: string; textContent: string }> = []
-
-      for (let i = 0; i < allNotes.length; i++) {
-        if (signal.aborted) break
-
-        const { note, folderId } = allNotes[i]
-
-        safeSend(event.sender, 'ai:indexing-progress', {
-          current: i,
-          total: totalNotes,
-          noteId: note.id,
-          noteTitle: note.title,
-          status: 'checking'
-        })
-
-        try {
-          const textContent = extractTextFromLexicalContent(note.content)
-          if (textContent.trim()) {
-            // Include folder path + contextual flag in hash (must match indexNote)
-            const folderPath = await fsManager.getFullFolderPath(folderId).catch(() => undefined)
-            const hashInput = EmbeddingService.buildStaleHashInput(textContent, folderPath)
-            if (vectorDB.isNoteStale(note.id, hashInput)) {
-              staleNotes.push({ note, folderId, textContent })
-            }
-          }
-        } catch (error) {
-          console.error(`[ai:indexAllNotes] Failed to check note ${note.id}:`, error)
-        }
-      }
-
-      if (signal.aborted) {
-        batchIndexAbort = null
-        return {
-          success: false,
-          totalNotes,
-          indexedNotes: 0,
-          skippedNotes: totalNotes,
-          erroredNotes: 0,
-          cancelled: true
-        }
-      }
-
-      // ================================================================
-      // PHASE 2: Index only stale notes
-      // ================================================================
-
-      const staleCount = staleNotes.length
-      let indexedNotes = 0
-      let erroredNotes = 0
-
-      // Cache full folder paths to avoid redundant reads during batch indexing
-      const folderPathCache = new Map<string, string | undefined>()
-      const getFullFolderPathCached = async (fid: string): Promise<string | undefined> => {
-        if (folderPathCache.has(fid)) return folderPathCache.get(fid)
-        try {
-          const path = await fsManager.getFullFolderPath(fid)
-          folderPathCache.set(fid, path)
-          return path
-        } catch {
-          folderPathCache.set(fid, undefined)
-          return undefined
-        }
-      }
-
-      for (let i = 0; i < staleNotes.length; i++) {
-        if (signal.aborted) break
-
-        const { note, folderId, textContent } = staleNotes[i]
-
-        safeSend(event.sender, 'ai:indexing-progress', {
-          current: i,
-          total: staleCount,
-          noteId: note.id,
-          noteTitle: note.title,
-          status: 'indexing',
-          staleCount
-        })
-
-        try {
-          const folderPath = await getFullFolderPathCached(folderId)
-          const wasIndexed = await service.indexNote(
-            {
-              id: note.id,
-              folderId,
-              folderPath,
-              content: textContent,
-              title: note.title,
-              createdAt: note.createdAt,
-              updatedAt: note.updatedAt
-            },
-            vectorDB
-          )
-
-          if (wasIndexed) {
-            indexedNotes++
-          }
-        } catch (error) {
-          console.error(`[ai:indexAllNotes] Failed to index note ${note.id}:`, error)
-          erroredNotes++
-        }
-      }
-
-      const cancelled = signal.aborted
-      batchIndexAbort = null
-
-      // Send completion event
-      safeSend(event.sender, 'ai:indexing-progress', {
-        current: cancelled ? indexedNotes : staleCount,
-        total: staleCount,
-        noteId: null,
-        noteTitle: null,
-        status: 'complete',
-        staleCount
+      const result = await runSpaceBatchIndex(spaceId, getOrCreateFsManager, {
+        signal: batchIndexAbort.signal,
+        onProgress: (p) => safeSend(event.sender, 'ai:indexing-progress', p)
       })
-
-      return {
-        success: !cancelled,
-        totalNotes,
-        indexedNotes,
-        skippedNotes: totalNotes - staleCount + (staleCount - indexedNotes - erroredNotes),
-        erroredNotes,
-        cancelled
-      }
+      batchIndexAbort = null
+      return result
     } catch (error) {
       batchIndexAbort = null
       throw new Error(`Failed to index all notes: ${(error as Error).message}`)
@@ -1328,26 +1265,6 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
         modelName: 'EmbeddingGemma 300M',
         error: (error as Error).message
       }
-    }
-  })
-
-  /**
-   * Get the current status of the background indexing queue
-   */
-  ipcMain.handle('ai:getIndexingQueueStatus', (_event: IpcMainInvokeEvent) => {
-    if (!indexingQueue) {
-      return {
-        enabled: false,
-        pending: 0,
-        debouncing: 0,
-        processing: false
-      }
-    }
-    return {
-      enabled: indexingQueue.isEmbeddingAvailable(),
-      pending: indexingQueue.pendingCount,
-      debouncing: indexingQueue.debouncingCount,
-      processing: indexingQueue.processing
     }
   })
 
@@ -1533,6 +1450,194 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
+
+/** Progress emitted while a space batch is running. */
+interface BatchIndexProgress {
+  current: number
+  total: number
+  noteId: string | null
+  noteTitle: string | null
+  status: 'checking' | 'indexing' | 'complete'
+  staleCount?: number
+}
+
+/** Result of a single-space batch index. */
+interface BatchIndexResult {
+  success: boolean
+  totalNotes: number
+  indexedNotes: number
+  skippedNotes: number
+  erroredNotes: number
+  cancelled: boolean
+}
+
+/**
+ * Index all notes of a single space (two-phase: hash-check then index stale only).
+ *
+ * Phase 1 (checking): extract text + content-hash check for every note.
+ * Phase 2 (indexing): embed only the stale notes.
+ *
+ * Shared by the `ai:indexAllNotes` IPC handler and the background scheduler.
+ * Cancellation is driven by the caller-provided AbortSignal.
+ */
+async function runSpaceBatchIndex(
+  spaceId: string,
+  getFsManager: GetFsManager,
+  opts: { signal: AbortSignal; onProgress: (p: BatchIndexProgress) => void }
+): Promise<BatchIndexResult> {
+  const { signal, onProgress } = opts
+
+  // Ensure AIManager is initialized (required for embedding generation)
+  const manager = getAIManager()
+  if (!manager.isInitialized()) {
+    await manager.initialize()
+  }
+
+  // Check if embedding model is available
+  const service = getEmbeddingService()
+  const modelId = service.getEmbeddingModel()
+  const dl = await getDownloader()
+  const isDownloaded = await dl.isModelDownloaded(modelId)
+  if (!isDownloaded) {
+    throw new Error(
+      `The embedding model "${modelId}" is not downloaded. Download it before indexing notes.`
+    )
+  }
+
+  const vectorDB = getOrCreateVectorDB(spaceId, getFsManager)
+  if (!vectorDB.isInitialized()) {
+    await vectorDB.initialize()
+  }
+
+  const fsManager = getFsManager(spaceId)
+
+  // Collect all notes recursively from folder tree
+  const allNotes: Array<{ note: Note; folderId: string }> = []
+  await collectNotesRecursively(fsManager, 'root', allNotes)
+  const totalNotes = allNotes.length
+
+  // ====================================================================
+  // PHASE 1: Check staleness — extract text + hash check each note
+  // ====================================================================
+  const staleNotes: Array<{ note: Note; folderId: string; textContent: string }> = []
+
+  for (let i = 0; i < allNotes.length; i++) {
+    if (signal.aborted) break
+
+    const { note, folderId } = allNotes[i]
+
+    onProgress({
+      current: i,
+      total: totalNotes,
+      noteId: note.id,
+      noteTitle: note.title,
+      status: 'checking'
+    })
+
+    try {
+      const textContent = extractTextFromLexicalContent(note.content)
+      if (textContent.trim()) {
+        // Include folder path + contextual flag in hash (must match indexNote)
+        const folderPath = await fsManager.getFullFolderPath(folderId).catch(() => undefined)
+        const hashInput = EmbeddingService.buildStaleHashInput(textContent, folderPath)
+        if (vectorDB.isNoteStale(note.id, hashInput)) {
+          staleNotes.push({ note, folderId, textContent })
+        }
+      }
+    } catch (error) {
+      console.error(`[batchIndex] Failed to check note ${note.id}:`, error)
+    }
+  }
+
+  if (signal.aborted) {
+    return {
+      success: false,
+      totalNotes,
+      indexedNotes: 0,
+      skippedNotes: totalNotes,
+      erroredNotes: 0,
+      cancelled: true
+    }
+  }
+
+  // ====================================================================
+  // PHASE 2: Index only stale notes
+  // ====================================================================
+  const staleCount = staleNotes.length
+  let indexedNotes = 0
+  let erroredNotes = 0
+
+  // Cache full folder paths to avoid redundant reads during batch indexing
+  const folderPathCache = new Map<string, string | undefined>()
+  const getFullFolderPathCached = async (fid: string): Promise<string | undefined> => {
+    if (folderPathCache.has(fid)) return folderPathCache.get(fid)
+    try {
+      const path = await fsManager.getFullFolderPath(fid)
+      folderPathCache.set(fid, path)
+      return path
+    } catch {
+      folderPathCache.set(fid, undefined)
+      return undefined
+    }
+  }
+
+  for (let i = 0; i < staleNotes.length; i++) {
+    if (signal.aborted) break
+
+    const { note, folderId, textContent } = staleNotes[i]
+
+    onProgress({
+      current: i,
+      total: staleCount,
+      noteId: note.id,
+      noteTitle: note.title,
+      status: 'indexing',
+      staleCount
+    })
+
+    try {
+      const folderPath = await getFullFolderPathCached(folderId)
+      const wasIndexed = await service.indexNote(
+        {
+          id: note.id,
+          folderId,
+          folderPath,
+          content: textContent,
+          title: note.title,
+          createdAt: note.createdAt,
+          updatedAt: note.updatedAt
+        },
+        vectorDB,
+        undefined,
+        signal
+      )
+      if (wasIndexed) indexedNotes++
+    } catch (error) {
+      console.error(`[batchIndex] Failed to index note ${note.id}:`, error)
+      erroredNotes++
+    }
+  }
+
+  const cancelled = signal.aborted
+
+  onProgress({
+    current: cancelled ? indexedNotes : staleCount,
+    total: staleCount,
+    noteId: null,
+    noteTitle: null,
+    status: 'complete',
+    staleCount
+  })
+
+  return {
+    success: !cancelled,
+    totalNotes,
+    indexedNotes,
+    skippedNotes: totalNotes - staleCount + (staleCount - indexedNotes - erroredNotes),
+    erroredNotes,
+    cancelled
+  }
+}
 
 /**
  * Recursively collect all notes from a folder and its subfolders

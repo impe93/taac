@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import type { ExpandedResult, IndexingProgress, EmbeddingModelStatus } from '@preload/index.d'
 import { useModelDownload } from './useModels'
 
@@ -84,6 +84,70 @@ export const useIndexAllNotes = (spaceId: string) => {
   return {
     indexAll: mutation.mutate,
     indexAllAsync: mutation.mutateAsync,
+    isIndexing: mutation.isPending,
+    progress
+  }
+}
+
+/**
+ * Hook for indexing all notes across ALL spaces (cross-space) with progress.
+ *
+ * Reuses the per-space `ai:indexAllNotes` handler in sequence, so no new IPC
+ * is needed. Progress reports both the current space (spaceIndex/spaceTotal)
+ * and the per-space note progress relayed via `onIndexingProgress`.
+ */
+export const useIndexAllSpaces = () => {
+  const queryClient = useQueryClient()
+  const [progress, setProgress] = useState<{
+    spaceIndex: number
+    spaceTotal: number
+    current: number
+    total: number
+    noteTitle: string | null
+    status: 'checking' | 'indexing' | 'complete'
+    staleCount?: number
+  } | null>(null)
+
+  // Tracks which space the incoming per-space progress events belong to.
+  const spaceCursor = useRef<{ index: number; total: number }>({ index: 0, total: 0 })
+
+  useEffect(() => {
+    const unsubscribe = window.ai.onIndexingProgress((data: IndexingProgress) => {
+      setProgress({
+        spaceIndex: spaceCursor.current.index,
+        spaceTotal: spaceCursor.current.total,
+        current: data.current,
+        total: data.total,
+        noteTitle: data.noteTitle,
+        status: data.status,
+        staleCount: data.staleCount
+      })
+    })
+
+    return unsubscribe
+  }, [])
+
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const spaces = await window.space.list()
+      spaceCursor.current = { index: 0, total: spaces.length }
+      for (let i = 0; i < spaces.length; i++) {
+        spaceCursor.current = { index: i, total: spaces.length }
+        await window.ai.indexAllNotes(spaces[i].id)
+        queryClient.invalidateQueries({ queryKey: ['ai', 'indexed', spaces[i].id] })
+      }
+    },
+    onSuccess: () => {
+      setProgress(null)
+    },
+    onError: () => {
+      setProgress(null)
+    }
+  })
+
+  return {
+    indexAllSpaces: mutation.mutate,
+    indexAllSpacesAsync: mutation.mutateAsync,
     isIndexing: mutation.isPending,
     progress
   }

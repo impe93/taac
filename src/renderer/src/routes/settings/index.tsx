@@ -16,7 +16,9 @@ import {
   Moon,
   ChevronDown,
   Cpu,
-  Boxes
+  Boxes,
+  Loader2,
+  RefreshCw
 } from 'lucide-react'
 import { Card, CardContent } from '@renderer/components/ui/card'
 import { Badge } from '@renderer/components/ui/badge'
@@ -39,6 +41,7 @@ import {
 import { useModelProfile } from '@renderer/hooks/useHardware'
 import { useDownloadedModels, useModelDownload, useDeleteModel } from '@renderer/hooks/useModels'
 import { useConfig, useSetConfig } from '@renderer/hooks/useConfig'
+import { useIndexAllSpaces } from '@renderer/hooks/useVectorSearch'
 import { formatSize, formatSpeed, formatETA } from '@renderer/lib/format'
 import {
   FEATURES,
@@ -146,14 +149,29 @@ function SettingsPage(): ReactNode {
   )
 }
 
+/** Options for the automatic batch-indexing interval (minutes). 0 = off. */
+const INDEXING_INTERVAL_OPTIONS = [
+  { value: 0, label: 'Off (manual only)' },
+  { value: 5, label: 'Every 5 minutes' },
+  { value: 10, label: 'Every 10 minutes' },
+  { value: 15, label: 'Every 15 minutes' },
+  { value: 30, label: 'Every 30 minutes' },
+  { value: 60, label: 'Every hour' },
+  { value: 120, label: 'Every 2 hours' }
+] as const
+
 /**
- * Search & Retrieval settings — toggle for opt-in contextual retrieval.
+ * Search & Retrieval settings — batch indexing schedule + manual cross-space
+ * re-index, plus toggles for contextual retrieval and multi-search.
  */
 const SearchSettings: FC = () => {
   const { data: contextualEnabled } = useConfig('contextualRetrievalEnabled')
   const setContextualConfig = useSetConfig<'contextualRetrievalEnabled'>()
   const { data: ragMultiSearch } = useConfig('ragMultiSearch')
   const setMultiSearchConfig = useSetConfig<'ragMultiSearch'>()
+  const { data: indexingInterval } = useConfig('indexingIntervalMinutes')
+  const setIndexingInterval = useSetConfig<'indexingIntervalMinutes'>()
+  const { indexAllSpaces, isIndexing, progress } = useIndexAllSpaces()
 
   const handleContextualChange = (checked: boolean): void => {
     setContextualConfig.mutate({ key: 'contextualRetrievalEnabled', value: checked })
@@ -163,6 +181,18 @@ const SearchSettings: FC = () => {
     setMultiSearchConfig.mutate({ key: 'ragMultiSearch', value: checked })
   }
 
+  const handleIntervalChange = (value: string): void => {
+    setIndexingInterval.mutate({ key: 'indexingIntervalMinutes', value: Number(value) })
+  }
+
+  const indexButtonLabel = ((): string => {
+    if (!isIndexing) return 'Index all notes'
+    if (!progress) return 'Starting…'
+    const space = `Space ${progress.spaceIndex + 1}/${progress.spaceTotal}`
+    if (progress.status === 'checking') return `${space} · checking`
+    return `${space} · ${progress.current}/${progress.total}`
+  })()
+
   return (
     <div className="mt-8">
       <div className="mb-4 flex items-center gap-2">
@@ -171,6 +201,50 @@ const SearchSettings: FC = () => {
       </div>
       <Card className="py-0">
         <CardContent className="divide-y py-0">
+          <div className="flex items-center justify-between py-4">
+            <div className="flex-1 pr-4">
+              <p className="text-sm font-medium">Automatic indexing</p>
+              <p className="text-xs text-muted-foreground">
+                Your notes are indexed for search in the background on a schedule instead of while
+                you type — keeping the CPU and GPU idle as you write. Recently edited notes become
+                searchable after the next run. Choose &quot;Off&quot; to only index manually.
+              </p>
+            </div>
+            <Select value={String(indexingInterval ?? 30)} onValueChange={handleIntervalChange}>
+              <SelectTrigger className="w-44">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {INDEXING_INTERVAL_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={String(opt.value)}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center justify-between py-4">
+            <div className="flex-1 pr-4">
+              <p className="text-sm font-medium">Index all notes now</p>
+              <p className="text-xs text-muted-foreground">
+                Re-index every note across all spaces immediately. Only notes that changed since the
+                last run are re-embedded, so this is safe to run anytime.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => indexAllSpaces()}
+              disabled={isIndexing}
+            >
+              {isIndexing ? (
+                <Loader2 className="mr-1.5 size-4 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-1.5 size-4" />
+              )}
+              {indexButtonLabel}
+            </Button>
+          </div>
           <div className="flex items-center justify-between py-4">
             <div className="flex-1 pr-4">
               <p className="text-sm font-medium">Contextual retrieval</p>
