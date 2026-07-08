@@ -151,10 +151,16 @@ function SettingsPage(): ReactNode {
  */
 const SearchSettings: FC = () => {
   const { data: contextualEnabled } = useConfig('contextualRetrievalEnabled')
-  const setConfig = useSetConfig<'contextualRetrievalEnabled'>()
+  const setContextualConfig = useSetConfig<'contextualRetrievalEnabled'>()
+  const { data: ragMultiSearch } = useConfig('ragMultiSearch')
+  const setMultiSearchConfig = useSetConfig<'ragMultiSearch'>()
 
   const handleContextualChange = (checked: boolean): void => {
-    setConfig.mutate({ key: 'contextualRetrievalEnabled', value: checked })
+    setContextualConfig.mutate({ key: 'contextualRetrievalEnabled', value: checked })
+  }
+
+  const handleMultiSearchChange = (checked: boolean): void => {
+    setMultiSearchConfig.mutate({ key: 'ragMultiSearch', value: checked })
   }
 
   return (
@@ -175,6 +181,16 @@ const SearchSettings: FC = () => {
               </p>
             </div>
             <Switch checked={contextualEnabled ?? false} onCheckedChange={handleContextualChange} />
+          </div>
+          <div className="flex items-center justify-between py-4">
+            <div className="flex-1 pr-4">
+              <p className="text-sm font-medium">Multiple note searches per message</p>
+              <p className="text-xs text-muted-foreground">
+                Let the chat assistant run several note searches to refine an answer. Turn off to
+                cap it to a single search per message — faster and lighter on lower-end devices.
+              </p>
+            </div>
+            <Switch checked={ragMultiSearch ?? true} onCheckedChange={handleMultiSearchChange} />
           </div>
         </CardContent>
       </Card>

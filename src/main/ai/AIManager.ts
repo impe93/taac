@@ -19,13 +19,14 @@ import type {
   LlamaRankingContext,
   LlamaChatSession,
   LlamaContextSequence,
-  ChatHistoryItem
+  ChatHistoryItem,
+  LlamaChatResponseChunk
 } from 'node-llama-cpp'
 import { app } from 'electron'
 import { join } from 'path'
 import { HardwareDetector } from './HardwareDetector'
 import { ModelRegistry } from './ModelRegistry'
-import type { HardwareInfo, ModelDefinition, LoadedModel } from './types'
+import type { HardwareInfo, ModelDefinition, LoadedModel, ExpandedResult } from './types'
 import { AINotInitializedError, ModelNotFoundError, ModelLoadError } from './errors'
 
 /**
@@ -54,6 +55,33 @@ export interface GenerationOptions {
    * the actual response. When omitted, node-llama-cpp's default budget applies.
    */
   thoughtTokens?: number
+  /**
+   * RAG retrieval context. When present (and passed through IPC), the chat
+   * handler builds a `ChatRetrievalTool` from it and offers the model a
+   * `searchNotes` tool so it can retrieve notes on demand instead of having
+   * the context injected into every prompt. This field carries only plain,
+   * IPC-serializable data — the actual retrieval function is built in the main
+   * process and passed to `generateChatCompletion` as a separate argument.
+   */
+  rag?: {
+    spaceId: string
+    limit?: number
+    noteIds?: string[]
+  }
+}
+
+/**
+ * On-demand note retrieval for tool-based RAG.
+ *
+ * Built in the main process (it depends on per-space VectorDB/EmbeddingService)
+ * and injected into `generateChatCompletion` as a non-serializable argument, so
+ * `AIManager` stays decoupled from spaces and the vector DB layer.
+ */
+export interface ChatRetrievalTool {
+  /** Run the hybrid search pipeline for a query and return ranked results. */
+  search: (query: string) => Promise<ExpandedResult[]>
+  /** When false, the model may search at most once per message. Default: true. */
+  multiSearch?: boolean
 }
 
 /**
@@ -117,7 +145,11 @@ export class AIManager {
   private constructor() {
     this.config = {
       modelsDir: join(app.getPath('userData'), 'models'),
-      maxContextSize: 4096,
+      // 8192 gives the reasoning model (Qwen3.5) headroom for its thought budget
+      // plus the system prompt, function-call schema and tool results (retrieved
+      // notes) without triggering a context-shift/compression failure. Still
+      // modest for the 16GB mid-end target given the small 4B model.
+      maxContextSize: 8192,
       defaultGpuLayers: 'auto'
     }
   }
@@ -482,7 +514,9 @@ export class AIManager {
     modelId: string,
     messages: ChatMessage[],
     options?: GenerationOptions,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    retrieval?: ChatRetrievalTool,
+    onThought?: (delta: string, full: string) => void
   ): AsyncGenerator<string, ChatCompletionResult> {
     if (!this.nodeLlamaCpp) {
       throw new AINotInitializedError()
@@ -541,6 +575,7 @@ export class AIManager {
 
     // Set up real-time streaming with async queue pattern
     let fullResponse = ''
+    let fullThought = ''
     let resolveChunk: ((value: string | null) => void) | null = null
     let done = false
     const chunkQueue: string[] = []
@@ -558,6 +593,25 @@ export class AIManager {
       else signal.addEventListener('abort', onExternalAbort, { once: true })
     }
 
+    // Build the on-demand RAG tool when a retrieval callback was provided. The
+    // model decides whether/when to call it, so relevant notes only enter the
+    // context when actually needed instead of being injected into every prompt.
+    const functions = retrieval
+      ? { searchNotes: this.buildSearchNotesFunction(retrieval) }
+      : undefined
+
+    // Cap the reasoning budget for interactive chat. node-llama-cpp otherwise
+    // defaults to 75% of the context (50% below 8192 tokens), which on a
+    // reasoning model like Qwen3.5 both slows first-token latency and can crowd
+    // out the system prompt + tool result. Isolated one-off calls keep the
+    // caller-provided budget (or the default) untouched.
+    const thoughtBudget =
+      options?.thoughtTokens !== undefined
+        ? options.thoughtTokens
+        : options?.isolated
+          ? undefined
+          : 1536
+
     // Start generation without awaiting - this allows chunks to be yielded in real-time
     const generationPromise = session
       .prompt(lastUserText, {
@@ -565,21 +619,30 @@ export class AIManager {
         temperature: options?.temperature ?? 0.7,
         topP: options?.topP,
         repeatPenalty: options?.repeatPenalty ? { penalty: options.repeatPenalty } : undefined,
-        budgets:
-          options?.thoughtTokens !== undefined
-            ? { thoughtTokens: options.thoughtTokens }
-            : undefined,
+        budgets: thoughtBudget !== undefined ? { thoughtTokens: thoughtBudget } : undefined,
+        functions,
         stopOnAbortSignal: true,
         signal: abortController.signal,
-        onTextChunk: (chunk: string) => {
-          fullResponse += chunk
-          // If there's a waiting consumer, resolve immediately
-          if (resolveChunk) {
-            resolveChunk(chunk)
-            resolveChunk = null
-          } else {
-            // Otherwise queue the chunk for later consumption
-            chunkQueue.push(chunk)
+        // Use onResponseChunk (segment-aware) so reasoning "thought" segments can
+        // be surfaced separately from the main answer. Main-response chunks
+        // (type === undefined) drive the yielded stream exactly like onTextChunk
+        // did; thought chunks are forwarded to the optional onThought callback.
+        onResponseChunk: (responseChunk: LlamaChatResponseChunk) => {
+          if (responseChunk.type === undefined) {
+            const chunk = responseChunk.text
+            if (!chunk) return
+            fullResponse += chunk
+            // If there's a waiting consumer, resolve immediately
+            if (resolveChunk) {
+              resolveChunk(chunk)
+              resolveChunk = null
+            } else {
+              // Otherwise queue the chunk for later consumption
+              chunkQueue.push(chunk)
+            }
+          } else if (responseChunk.segmentType === 'thought' && responseChunk.text) {
+            fullThought += responseChunk.text
+            onThought?.(responseChunk.text, fullThought)
           }
         }
       })
@@ -695,6 +758,75 @@ export class AIManager {
       }
     }
     return items
+  }
+
+  /**
+   * Build the `searchNotes` chat-session function offered to the model for
+   * on-demand RAG. The model calls it with a query; the handler runs the
+   * injected retrieval pipeline and returns compact, formatted excerpts as the
+   * function result (fed back to the model), rather than pre-injecting context.
+   */
+  private buildSearchNotesFunction(retrieval: ChatRetrievalTool) {
+    if (!this.nodeLlamaCpp) throw new AINotInitializedError()
+    let callCount = 0
+    return this.nodeLlamaCpp.defineChatSessionFunction({
+      description:
+        "Search the user's personal notes and knowledge base for information needed to answer. " +
+        'Call this ONLY when the answer depends on the user’s own notes, meetings or documents. ' +
+        'Answer directly, without calling this, for general questions or when the conversation already ' +
+        'contains the needed context.',
+      params: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'A concise, focused search query describing what to look for in the notes'
+          }
+        }
+      },
+      handler: async ({ query }: { query: string }): Promise<string> => {
+        if (retrieval.multiSearch === false && callCount >= 1) {
+          return 'A note search was already performed for this message. Answer using the notes already retrieved above.'
+        }
+        callCount++
+        try {
+          const results = await retrieval.search(query)
+          return this.formatNotesForModel(results)
+        } catch (error) {
+          // Return text (not a throw) so generation can continue gracefully.
+          return `Note search failed: ${(error as Error).message}. Answer from your own knowledge or say you don't know.`
+        }
+      }
+    })
+  }
+
+  /**
+   * Format ranked note results into compact text for the model to consume as a
+   * function-call result. Kept terse to conserve the small (4096-token) context.
+   */
+  private formatNotesForModel(results: ExpandedResult[]): string {
+    if (results.length === 0) {
+      return 'No relevant notes were found. Tell the user you could not find anything relevant in their notes.'
+    }
+    // Cap the amount of retrieved text fed back to the model: even with an 8192
+    // context, an unbounded tool result (many notes × expanded sections) can
+    // crowd out the system prompt and the response budget. Keep the strongest
+    // matches and trim each excerpt.
+    const MAX_NOTES = 5
+    const MAX_CHARS_PER_NOTE = 1200
+    const blocks = results.slice(0, MAX_NOTES).map((r, i) => {
+      const meta = r.metadata as Record<string, unknown>
+      const folderPath = meta?.folderPath as string | undefined
+      const noteTitle = (meta?.noteTitle as string | undefined) ?? 'Untitled'
+      const header: string[] = [`[${i + 1}] "${noteTitle}"`]
+      if (folderPath) header.push(`in ${folderPath}`)
+      if (r.sectionHeader) header.push(`> ${r.sectionHeader}`)
+      header.push(`(relevance ${r.relevancePercent}%)`)
+      let body = r.expandedContent || r.content
+      if (body.length > MAX_CHARS_PER_NOTE) body = `${body.slice(0, MAX_CHARS_PER_NOTE)}…`
+      return `${header.join(' ')}\n${body}`
+    })
+    return `Retrieved notes (ordered by relevance):\n\n${blocks.join('\n\n---\n\n')}`
   }
 
   /**

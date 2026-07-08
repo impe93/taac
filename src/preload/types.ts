@@ -104,6 +104,8 @@ export interface AppConfig {
   autoIndexNotes: boolean
   /** Opt-in: enrich each chunk with LLM-generated context at index time (Anthropic-style). */
   contextualRetrievalEnabled: boolean
+  /** When true, the chat assistant may run several note searches per message; when false, at most one. */
+  ragMultiSearch: boolean
   lastOpenedFolderId: string | null
   windowBounds: {
     width: number

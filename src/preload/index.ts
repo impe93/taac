@@ -178,15 +178,43 @@ const aiAPI = {
   generateResponse: (
     modelId: string,
     messages: Array<{ role: string; content: string }>,
-    options?: { maxTokens?: number; temperature?: number; repeatPenalty?: number }
+    options?: {
+      maxTokens?: number
+      temperature?: number
+      repeatPenalty?: number
+      rag?: { spaceId: string; limit?: number; noteIds?: string[] }
+    }
   ) => ipcRenderer.invoke('ai:generateResponse', modelId, messages, options),
 
-  onResponseChunk: (callback: (data: { chunk: string; fullResponse: string }) => void) => {
-    const handler = (_: unknown, data: { chunk: string; fullResponse: string }): void =>
-      callback(data)
+  onResponseChunk: (
+    callback: (data: {
+      chunk: string
+      fullResponse: string
+      kind?: 'response' | 'thought'
+      fullThought?: string
+    }) => void
+  ) => {
+    const handler = (
+      _: unknown,
+      data: {
+        chunk: string
+        fullResponse: string
+        kind?: 'response' | 'thought'
+        fullThought?: string
+      }
+    ): void => callback(data)
     ipcRenderer.on('ai:response-chunk', handler)
     return (): void => {
       ipcRenderer.removeListener('ai:response-chunk', handler)
+    }
+  },
+
+  onRagRetrieval: (callback: (data: { query: string; results: unknown[] }) => void) => {
+    const handler = (_: unknown, data: { query: string; results: unknown[] }): void =>
+      callback(data)
+    ipcRenderer.on('ai:rag-retrieval', handler)
+    return (): void => {
+      ipcRenderer.removeListener('ai:rag-retrieval', handler)
     }
   },
 

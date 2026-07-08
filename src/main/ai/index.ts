@@ -13,7 +13,7 @@ export * from './errors'
 
 // Core managers
 export { AIManager } from './AIManager'
-export type { AIManagerConfig } from './AIManager'
+export type { AIManagerConfig, ChatRetrievalTool } from './AIManager'
 
 export { HardwareDetector } from './HardwareDetector'
 

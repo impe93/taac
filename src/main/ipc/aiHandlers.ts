@@ -27,7 +27,12 @@ import {
   RerankerService,
   QueryExpander
 } from '../ai'
-import type { GenerationOptions, ExpandedResult, IndexingProgressEvent } from '../ai'
+import type {
+  GenerationOptions,
+  ExpandedResult,
+  IndexingProgressEvent,
+  ChatRetrievalTool
+} from '../ai'
 import type { FileSystemManager, Note, FolderMetadata } from '../utils/fileSystem'
 import { configStore } from '../utils/configStore'
 
@@ -142,6 +147,162 @@ function getOrCreateVectorDB(spaceId: string, getFsManager: GetFsManager): Vecto
   const instance = VectorDBManager.getInstance(spaceId, dbPath)
   vectorDBManagers.set(spaceId, instance)
   return instance
+}
+
+/**
+ * Run the hybrid RAG search pipeline for a query and return ranked results.
+ *
+ * Pipeline: Query → [Expand] → Multi-query Hybrid Search → RRF Merge → [Rerank] → Results
+ *
+ * Shared by the `ai:searchNotes` IPC handler (renderer-driven search) and the
+ * on-demand `searchNotes` chat tool (model-driven retrieval). The `expandQuery`
+ * flag lets the tool path skip query expansion — expansion invokes the chat
+ * model, which is undesirable (re-entrant + slow) while a generation is in
+ * flight, so the tool path passes `expandQuery: false`.
+ */
+async function runNoteSearch(
+  getFsManager: GetFsManager,
+  spaceId: string,
+  query: string,
+  opts?: { limit?: number; noteIds?: string[]; expandQuery?: boolean }
+): Promise<ExpandedResult[]> {
+  const { limit, noteIds, expandQuery = true } = opts ?? {}
+
+  // Ensure AIManager is initialized (required for embedding generation)
+  const manager = getAIManager()
+  if (!manager.isInitialized()) await manager.initialize()
+
+  const vectorDB = getOrCreateVectorDB(spaceId, getFsManager)
+  if (!vectorDB.isInitialized()) await vectorDB.initialize()
+
+  const service = getEmbeddingService()
+  const retrievalLimit = limit ?? 10
+
+  // --- Step 1: Query Expansion ---
+  // If a chat model is loaded (and expansion is allowed), expand the query for
+  // better recall.
+  let queries = [query]
+  if (expandQuery) {
+    const loadedModels = manager.getLoadedModels()
+    const chatModels = ModelRegistry.getChatModels()
+    const loadedChatModel = loadedModels.find((lm) => chatModels.some((cm) => cm.id === lm.id))
+
+    if (loadedChatModel) {
+      try {
+        const expander = new QueryExpander(manager)
+        queries = await expander.expandQuery(query, loadedChatModel.id)
+        if (queries.length > 1) {
+          console.log(`[RAG] Query expanded: ${queries.length} variants`)
+        }
+      } catch {
+        queries = [query]
+      }
+    }
+  }
+
+  // --- Step 2: Multi-query Hybrid Search ---
+  // Retrieve a wide candidate pool so the cross-encoder reranker has enough
+  // to work with — the reranker is the authority on final precision.
+  const candidateLimit = Math.max(retrievalLimit * 6, 40)
+
+  let allResults: ExpandedResult[]
+
+  if (queries.length === 1) {
+    // Single query — standard path
+    const queryEmbeddingArray = await service.embedQuery(queries[0])
+    const queryEmbedding = new Float32Array(queryEmbeddingArray)
+    allResults = vectorDB.hybridSearch({
+      query: queries[0],
+      queryEmbedding,
+      limit: candidateLimit,
+      noteIds
+    })
+  } else {
+    // Multi-query — search each variant and merge via deduplication
+    const allEmbeddings = await Promise.all(queries.map((q) => service.embedQuery(q)))
+
+    const resultSets = queries.map((q, i) =>
+      vectorDB.hybridSearch({
+        query: q,
+        queryEmbedding: new Float32Array(allEmbeddings[i]),
+        limit: candidateLimit,
+        noteIds
+      })
+    )
+
+    // Merge results: RRF across query variants (deduplicate by chunk ID)
+    const mergedMap = new Map<string, ExpandedResult>()
+    for (const resultSet of resultSets) {
+      for (const result of resultSet) {
+        const existing = mergedMap.get(result.id)
+        if (existing) {
+          // Accumulate RRF scores from multiple queries
+          existing.rrfScore += result.rrfScore
+        } else {
+          mergedMap.set(result.id, { ...result })
+        }
+      }
+    }
+
+    allResults = Array.from(mergedMap.values()).sort((a, b) => b.rrfScore - a.rrfScore)
+  }
+
+  if (allResults.length === 0) return allResults
+
+  // --- Step 3: Cross-encoder Reranking ---
+  const reranker = await getRerankerServiceIfAvailable()
+  if (reranker) {
+    try {
+      // Build enriched content for reranking (include folder path and title metadata)
+      const rerankDocs = allResults.map((r) => {
+        const meta = r.metadata as Record<string, unknown>
+        const folderPath = meta?.folderPath as string | undefined
+        const noteTitle = meta?.noteTitle as string | undefined
+        const parts: string[] = []
+        if (folderPath) parts.push(`Path: "${folderPath}"`)
+        if (noteTitle) parts.push(`Note: "${noteTitle}"`)
+        if (r.sectionHeader) parts.push(`Section: "${r.sectionHeader}"`)
+        parts.push(r.expandedContent || r.content)
+        return { id: r.id, content: parts.join(' | ') }
+      })
+
+      const reranked = await reranker.rerank(query, rerankDocs)
+
+      // Build a score map from reranker results (scores are calibrated 0..1)
+      const rerankerScoreMap = new Map(reranked.map((r) => [r.id, r.score]))
+
+      // The cross-encoder is the authority on final ordering. RRF is kept
+      // only as a tiny tiebreak so equal reranker scores fall back to the
+      // first-stage hybrid ranking.
+      const maxRRF = Math.max(...allResults.map((r) => r.rrfScore), 1e-9)
+      const scored = allResults.map((r) => {
+        const rerankerScore = rerankerScoreMap.get(r.id) ?? 0
+        const finalScore = rerankerScore + 0.001 * (r.rrfScore / maxRRF)
+        return { result: r, rerankerScore, finalScore }
+      })
+
+      scored.sort((a, b) => b.finalScore - a.finalScore)
+
+      // Calibrated relevance: the reranker score is an absolute 0..1
+      // probability — far more meaningful than "% of the best in the set".
+      return scored.slice(0, retrievalLimit).map(({ result, rerankerScore }) => ({
+        ...result,
+        rerankerScore,
+        relevancePercent: Math.round(rerankerScore * 100)
+      }))
+    } catch (rerankError) {
+      // Graceful degradation: if reranking fails, return original results
+      console.error('[RAG] Reranking failed, using RRF results:', rerankError)
+    }
+  }
+
+  // No reranker available — return RRF results with limit
+  const topResults = allResults.slice(0, retrievalLimit)
+  const maxRRF = topResults.length > 0 ? topResults[0].rrfScore : 1
+  return topResults.map((r) => ({
+    ...r,
+    relevancePercent: Math.round((r.rrfScore / maxRRF) * 100)
+  }))
 }
 
 /**
@@ -649,8 +810,58 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
 
         let fullResponse = ''
 
+        // Build the on-demand RAG retrieval tool when the renderer requested it
+        // (RAG enabled + embedding model available). The model decides whether to
+        // call `searchNotes`; each retrieval emits `ai:rag-retrieval` so the
+        // renderer can surface the "searching" stage, the context chips, and
+        // persist the note references on the assistant message.
+        const ragOptions = options?.rag
+        const retrieval: ChatRetrievalTool | undefined = ragOptions
+          ? {
+              multiSearch: configStore.get('ragMultiSearch') !== false,
+              async search(query: string): Promise<ExpandedResult[]> {
+                const results = await runNoteSearch(
+                  getOrCreateFsManager,
+                  ragOptions.spaceId,
+                  query,
+                  {
+                    limit: ragOptions.limit,
+                    noteIds: ragOptions.noteIds,
+                    // Skip query expansion in the tool path: it would invoke the chat
+                    // model re-entrantly mid-generation (slow on mid-end hardware).
+                    expandQuery: false
+                  }
+                )
+                if (!event.sender.isDestroyed()) {
+                  event.sender.send('ai:rag-retrieval', { query, results })
+                }
+                return results
+              }
+            }
+          : undefined
+
+        // Forward reasoning ("thought") segments to the renderer on the same
+        // channel, tagged with kind so the UI can show a collapsible thinking
+        // panel that auto-collapses once the real answer starts streaming.
+        const onThought = (delta: string, fullThought: string): void => {
+          if (signal.aborted || event.sender.isDestroyed()) return
+          event.sender.send('ai:response-chunk', {
+            chunk: delta,
+            fullResponse,
+            kind: 'thought',
+            fullThought
+          })
+        }
+
         // Iterate over the async generator for streaming
-        const generator = manager.generateChatCompletion(modelId, messages, options, signal)
+        const generator = manager.generateChatCompletion(
+          modelId,
+          messages,
+          options,
+          signal,
+          retrieval,
+          onThought
+        )
 
         for await (const chunk of generator) {
           // Check if aborted between chunks
@@ -661,7 +872,8 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
           // Send chunk to renderer via webContents
           event.sender.send('ai:response-chunk', {
             chunk,
-            fullResponse
+            fullResponse,
+            kind: 'response'
           })
         }
 
@@ -1029,138 +1241,7 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
       noteIds?: string[]
     ): Promise<ExpandedResult[]> => {
       try {
-        // Ensure AIManager is initialized (required for embedding generation)
-        const manager = getAIManager()
-        if (!manager.isInitialized()) await manager.initialize()
-
-        const vectorDB = getOrCreateVectorDB(spaceId, getOrCreateFsManager)
-        if (!vectorDB.isInitialized()) await vectorDB.initialize()
-
-        const service = getEmbeddingService()
-        const retrievalLimit = limit ?? 10
-
-        // --- Step 1: Query Expansion ---
-        // If a chat model is loaded, expand the query for better recall
-        let queries = [query]
-        const loadedModels = manager.getLoadedModels()
-        const chatModels = ModelRegistry.getChatModels()
-        const loadedChatModel = loadedModels.find((lm) => chatModels.some((cm) => cm.id === lm.id))
-
-        if (loadedChatModel) {
-          try {
-            const expander = new QueryExpander(manager)
-            queries = await expander.expandQuery(query, loadedChatModel.id)
-            if (queries.length > 1) {
-              console.log(`[RAG] Query expanded: ${queries.length} variants`)
-            }
-          } catch {
-            queries = [query]
-          }
-        }
-
-        // --- Step 2: Multi-query Hybrid Search ---
-        // Retrieve a wide candidate pool so the cross-encoder reranker has enough
-        // to work with — the reranker is the authority on final precision.
-        const candidateLimit = Math.max(retrievalLimit * 6, 40)
-
-        let allResults: ExpandedResult[]
-
-        if (queries.length === 1) {
-          // Single query — standard path
-          const queryEmbeddingArray = await service.embedQuery(queries[0])
-          const queryEmbedding = new Float32Array(queryEmbeddingArray)
-          allResults = vectorDB.hybridSearch({
-            query: queries[0],
-            queryEmbedding,
-            limit: candidateLimit,
-            noteIds
-          })
-        } else {
-          // Multi-query — search each variant and merge via deduplication
-          const allEmbeddings = await Promise.all(queries.map((q) => service.embedQuery(q)))
-
-          const resultSets = queries.map((q, i) =>
-            vectorDB.hybridSearch({
-              query: q,
-              queryEmbedding: new Float32Array(allEmbeddings[i]),
-              limit: candidateLimit,
-              noteIds
-            })
-          )
-
-          // Merge results: RRF across query variants (deduplicate by chunk ID)
-          const mergedMap = new Map<string, ExpandedResult>()
-          for (const resultSet of resultSets) {
-            for (const result of resultSet) {
-              const existing = mergedMap.get(result.id)
-              if (existing) {
-                // Accumulate RRF scores from multiple queries
-                existing.rrfScore += result.rrfScore
-              } else {
-                mergedMap.set(result.id, { ...result })
-              }
-            }
-          }
-
-          allResults = Array.from(mergedMap.values()).sort((a, b) => b.rrfScore - a.rrfScore)
-        }
-
-        if (allResults.length === 0) return allResults
-
-        // --- Step 3: Cross-encoder Reranking ---
-        const reranker = await getRerankerServiceIfAvailable()
-        if (reranker) {
-          try {
-            // Build enriched content for reranking (include folder path and title metadata)
-            const rerankDocs = allResults.map((r) => {
-              const meta = r.metadata as Record<string, unknown>
-              const folderPath = meta?.folderPath as string | undefined
-              const noteTitle = meta?.noteTitle as string | undefined
-              const parts: string[] = []
-              if (folderPath) parts.push(`Path: "${folderPath}"`)
-              if (noteTitle) parts.push(`Note: "${noteTitle}"`)
-              if (r.sectionHeader) parts.push(`Section: "${r.sectionHeader}"`)
-              parts.push(r.expandedContent || r.content)
-              return { id: r.id, content: parts.join(' | ') }
-            })
-
-            const reranked = await reranker.rerank(query, rerankDocs)
-
-            // Build a score map from reranker results (scores are calibrated 0..1)
-            const rerankerScoreMap = new Map(reranked.map((r) => [r.id, r.score]))
-
-            // The cross-encoder is the authority on final ordering. RRF is kept
-            // only as a tiny tiebreak so equal reranker scores fall back to the
-            // first-stage hybrid ranking.
-            const maxRRF = Math.max(...allResults.map((r) => r.rrfScore), 1e-9)
-            const scored = allResults.map((r) => {
-              const rerankerScore = rerankerScoreMap.get(r.id) ?? 0
-              const finalScore = rerankerScore + 0.001 * (r.rrfScore / maxRRF)
-              return { result: r, rerankerScore, finalScore }
-            })
-
-            scored.sort((a, b) => b.finalScore - a.finalScore)
-
-            // Calibrated relevance: the reranker score is an absolute 0..1
-            // probability — far more meaningful than "% of the best in the set".
-            return scored.slice(0, retrievalLimit).map(({ result, rerankerScore }) => ({
-              ...result,
-              rerankerScore,
-              relevancePercent: Math.round(rerankerScore * 100)
-            }))
-          } catch (rerankError) {
-            // Graceful degradation: if reranking fails, return original results
-            console.error('[RAG] Reranking failed, using RRF results:', rerankError)
-          }
-        }
-
-        // No reranker available — return RRF results with limit
-        const topResults = allResults.slice(0, retrievalLimit)
-        const maxRRF = topResults.length > 0 ? topResults[0].rrfScore : 1
-        return topResults.map((r) => ({
-          ...r,
-          relevancePercent: Math.round((r.rrfScore / maxRRF) * 100)
-        }))
+        return await runNoteSearch(getOrCreateFsManager, spaceId, query, { limit, noteIds })
       } catch (error) {
         console.error('[RAG] Search error:', error)
         throw new Error(`Failed to search notes: ${(error as Error).message}`)

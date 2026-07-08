@@ -119,9 +119,16 @@ export interface ChatMessage {
 export const useAIChat = (modelId: string) => {
   const [isGenerating, setIsGenerating] = useState(false)
   const [currentResponse, setCurrentResponse] = useState('')
+  // Accumulated reasoning ("thought") text for the in-flight generation, streamed
+  // separately from the answer so the UI can show a collapsible thinking panel.
+  const [currentThought, setCurrentThought] = useState('')
 
   useEffect(() => {
-    const unsubscribe = window.ai.onResponseChunk(({ fullResponse }) => {
+    const unsubscribe = window.ai.onResponseChunk(({ fullResponse, kind, fullThought }) => {
+      if (kind === 'thought') {
+        if (fullThought !== undefined) setCurrentThought(fullThought)
+        return
+      }
       setCurrentResponse(fullResponse)
     })
 
@@ -135,10 +142,11 @@ export const useAIChat = (modelId: string) => {
   const sendMessage = useCallback(
     async (
       messages: ChatMessage[],
-      options?: Pick<GenerationOptions, 'maxTokens' | 'temperature' | 'repeatPenalty'>
+      options?: Pick<GenerationOptions, 'maxTokens' | 'temperature' | 'repeatPenalty' | 'rag'>
     ): Promise<{ response: string; aborted?: boolean }> => {
       setIsGenerating(true)
       setCurrentResponse('')
+      setCurrentThought('')
 
       try {
         const result: ChatCompletionResult = await window.ai.generateResponse(
@@ -153,6 +161,7 @@ export const useAIChat = (modelId: string) => {
       } finally {
         setIsGenerating(false)
         setCurrentResponse('')
+        setCurrentThought('')
       }
     },
     [modelId]
@@ -162,6 +171,7 @@ export const useAIChat = (modelId: string) => {
     sendMessage,
     abortGeneration,
     isGenerating,
-    currentResponse
+    currentResponse,
+    currentThought
   }
 }

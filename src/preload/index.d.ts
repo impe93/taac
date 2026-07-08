@@ -193,10 +193,36 @@ export interface ChatMessageInput {
   content: string
 }
 
-// Response chunk data for streaming
+// Response chunk data for streaming.
+// `kind` distinguishes the main answer from the model's reasoning ("thought")
+// segments; `fullThought` carries the accumulated reasoning text when kind === 'thought'.
 export interface ResponseChunkData {
   chunk: string
   fullResponse: string
+  kind?: 'response' | 'thought'
+  fullThought?: string
+}
+
+// On-demand RAG options passed to generateResponse. When present, the model can
+// call a `searchNotes` tool to retrieve notes only when needed.
+export interface RagGenerationOptions {
+  spaceId: string
+  limit?: number
+  noteIds?: string[]
+}
+
+// Generation options accepted by generateResponse over IPC
+export interface GenerateResponseOptions {
+  maxTokens?: number
+  temperature?: number
+  repeatPenalty?: number
+  rag?: RagGenerationOptions
+}
+
+// Payload emitted when the model's searchNotes tool retrieves notes mid-generation
+export interface RagRetrievalData {
+  query: string
+  results: ExpandedResult[]
 }
 
 // AI API interface
@@ -230,9 +256,10 @@ export interface AIAPI {
   generateResponse: (
     modelId: string,
     messages: ChatMessageInput[],
-    options?: { maxTokens?: number; temperature?: number; repeatPenalty?: number }
+    options?: GenerateResponseOptions
   ) => Promise<ChatCompletionResult>
   onResponseChunk: (callback: (data: ResponseChunkData) => void) => () => void
+  onRagRetrieval: (callback: (data: RagRetrievalData) => void) => () => void
   stopGeneration: () => Promise<void>
   removeLastMessage: (conversationId: string) => Promise<void>
 

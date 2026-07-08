@@ -237,6 +237,16 @@ export interface GenerationOptions {
   repeatPenalty?: number
   stopSequences?: string[]
   isolated?: boolean
+  /**
+   * On-demand RAG retrieval context (IPC-serializable). When present, the chat
+   * handler offers the model a `searchNotes` tool so notes are retrieved only
+   * when the model asks for them, instead of being injected into every prompt.
+   */
+  rag?: {
+    spaceId: string
+    limit?: number
+    noteIds?: string[]
+  }
 }
 
 /**
