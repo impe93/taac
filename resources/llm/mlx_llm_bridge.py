@@ -214,6 +214,14 @@ class Bridge:
             else:
                 self._requests.put(request)
 
+        # stdin reached EOF — the parent (Electron main) process is gone. Signal
+        # the worker to exit so we never linger as an orphaned process. Without
+        # this the worker would block forever on queue.get() after the pipe
+        # closes (e.g. when the app's hard-timeout forces quit before sending a
+        # graceful shutdown).
+        self._shutdown = True
+        self._requests.put(None)
+
     def _is_cancelled(self, request_id: str) -> bool:
         with self._cancel_lock:
             return request_id in self._cancelled
@@ -312,7 +320,9 @@ class Bridge:
             for response in self._mlx["mlx_lm"].stream_generate(
                 self.model, self.tokenizer, prompt, **gen_kwargs
             ):
-                if self._is_cancelled(request_id):
+                if self._shutdown or self._is_cancelled(request_id):
+                    # Abort on explicit cancel OR parent death (stdin EOF), so an
+                    # in-flight generation cannot keep an orphan alive.
                     finish_reason = "aborted"
                     break
                 parser.feed(response.text)
