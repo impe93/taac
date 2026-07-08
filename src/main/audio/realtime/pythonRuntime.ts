@@ -62,3 +62,39 @@ export function resolveAsrBridgePath(): string {
   const raw = join(app.getAppPath(), 'resources', 'asr', 'qwen3_asr_bridge.py')
   return raw.replace(`app.asar${sep}`, `app.asar.unpacked${sep}`)
 }
+
+/**
+ * Resolve the Python interpreter for the LLM text-generation sidecar.
+ *
+ * Shares the same bundled runtime as the ASR sidecar (both bridges run on the
+ * one packaged `python-runtime/` / dev `.venv-asr`). `TAAC_LLM_PYTHON` overrides
+ * for debugging; otherwise it falls back to the ASR override and the standard
+ * locations. Returns null when no runtime is available.
+ */
+export async function resolveLlmPython(): Promise<string | null> {
+  const candidates: string[] = []
+
+  if (process.env.TAAC_LLM_PYTHON) candidates.push(process.env.TAAC_LLM_PYTHON)
+  if (process.env.TAAC_ASR_PYTHON) candidates.push(process.env.TAAC_ASR_PYTHON)
+
+  if (app.isPackaged) {
+    candidates.push(join(process.resourcesPath, 'python-runtime', 'bin', 'python3'))
+  } else {
+    candidates.push(join(app.getAppPath(), '.venv-asr', 'bin', 'python'))
+  }
+
+  for (const candidate of candidates) {
+    if (await isExecutable(candidate)) return candidate
+  }
+
+  console.log(
+    '[PythonRuntime] No LLM Python runtime found (checked: ' + candidates.join(', ') + ')'
+  )
+  return null
+}
+
+/** Resolve the mlx-lm JSONL bridge script path (resources/llm/). */
+export function resolveLlmBridgePath(): string {
+  const raw = join(app.getAppPath(), 'resources', 'llm', 'mlx_llm_bridge.py')
+  return raw.replace(`app.asar${sep}`, `app.asar.unpacked${sep}`)
+}

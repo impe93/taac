@@ -286,7 +286,7 @@ export class EmbeddingService {
     const loaded = this.aiManager.getLoadedModels()
     const chatModels = ModelRegistry.getChatModels()
     const loadedChat = loaded.find((m) => chatModels.some((cm) => cm.id === m.id))
-    return loadedChat?.id ?? chatModels[0]?.id ?? 'qwen3-5-4b-q4-k-m'
+    return loadedChat?.id ?? this.aiManager.getDefaultChatModelId()
   }
 
   /**

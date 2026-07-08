@@ -19,7 +19,7 @@
     "build:mac": "npm run prepare:asr-runtime && electron-vite build && electron-builder --mac",
     "build:linux": "electron-vite build && electron-builder --linux",
     "prepare:asr-runtime": "bash scripts/prepare-asr-runtime.sh",
-    "setup:asr-dev": "python3 -m venv .venv-asr && .venv-asr/bin/pip install mlx-qwen3-asr==0.3.5",
+    "setup:asr-dev": "python3 -m venv .venv-asr && .venv-asr/bin/pip install mlx-qwen3-asr==0.3.5 mlx-lm==0.31.3 transformers==5.12.1",
     "ui-add": "pnpm dlx shadcn@latest add"
   },
   "dependencies": {

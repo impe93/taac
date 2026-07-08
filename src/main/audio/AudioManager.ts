@@ -46,8 +46,6 @@ import type { HardwareInfo } from '../ai/types'
 import { getLanguageName, normalizeLanguageCode, resolveMeetingLanguage } from './language'
 import { isCrossTalkDuplicate } from './crossTalk'
 
-const DEFAULT_CHAT_MODEL_ID = 'qwen3-5-4b-q4-k-m'
-
 /**
  * Token budget for a summarization pass. The context size and output-token
  * budget are the two levers that decide whether a long meeting summary fits
@@ -745,11 +743,14 @@ export class AudioManager {
    * This ensures we reuse a model already in memory without forcing a load.
    */
   private getActiveChatModelId(): string {
-    const loaded = AIManager.getInstance().getLoadedModels()
+    const aiManager = AIManager.getInstance()
+    const loaded = aiManager.getLoadedModels()
     const chatModel = loaded.find((m) =>
       ModelRegistry.getModel(m.id)?.capabilities.includes('chat')
     )
-    return chatModel?.id ?? DEFAULT_CHAT_MODEL_ID
+    // Fall back to the hardware-resolved default (MLX on Apple Silicon, GGUF
+    // elsewhere) rather than a hardcoded GGUF id.
+    return chatModel?.id ?? aiManager.getDefaultChatModelId()
   }
 
   /**
@@ -1024,6 +1025,28 @@ export class AudioManager {
   }
 
   /**
+   * Build a synchronous token counter for the summary map-reduce, backend-aware:
+   * - GGUF (node-llama-cpp): exact `model.tokenize().length`.
+   * - MLX (Python sidecar): tokenizing every chunk over IPC would be slow, so we
+   *   calibrate a chars-per-token ratio from ONE exact count of the full
+   *   transcript and estimate from string length. The budgeting already carries
+   *   safety margins, so an estimate is sufficient and avoids per-chunk IPC.
+   */
+  private async buildTokenCounter(
+    aiManager: AIManager,
+    modelId: string,
+    calibrationText: string
+  ): Promise<(text: string) => number> {
+    if (ModelRegistry.getModel(modelId)?.format === 'mlx') {
+      const total = await aiManager.countTokens(modelId, calibrationText)
+      const charsPerToken = calibrationText.length / Math.max(1, total)
+      return (text: string): number => Math.ceil(text.length / Math.max(charsPerToken, 1e-6))
+    }
+    const model = await aiManager.getModelInstance(modelId)
+    return (text: string): number => model.tokenize(text).length
+  }
+
+  /**
    * Map-reduce summary generation that keeps every LLM call within the token
    * budget so it never overflows the context window.
    */
@@ -1037,8 +1060,7 @@ export class AudioManager {
     budget: SummaryBudget,
     strict: boolean
   ): Promise<string> {
-    const model = await aiManager.getModelInstance(modelId)
-    const countTokens = (text: string): number => model.tokenize(text).length
+    const countTokens = await this.buildTokenCounter(aiManager, modelId, transcriptText)
 
     const finalSystemPrompt = this.buildSummarySystemPrompt(languageName, strict, contentType)
     // Content-type-aware wording for the user turns (kept in English; the model

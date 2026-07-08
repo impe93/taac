@@ -26,8 +26,32 @@ import { app } from 'electron'
 import { join } from 'path'
 import { HardwareDetector } from './HardwareDetector'
 import { ModelRegistry } from './ModelRegistry'
+import { GGUF_CHAT_ID, resolveChatId, supportsMlx } from './ModelSelector'
+import { MlxLlmBackend } from './llm/MlxLlmBackend'
+import type { LlmToolCall } from './llm/LlmSidecarManager'
 import type { HardwareInfo, ModelDefinition, LoadedModel, ExpandedResult } from './types'
 import { AINotInitializedError, ModelNotFoundError, ModelLoadError } from './errors'
+
+/**
+ * Shared `searchNotes` tool contract offered to the model for on-demand RAG.
+ * Used by both the node-llama-cpp path (defineChatSessionFunction) and the MLX
+ * path (OpenAI-style function tool passed to the sidecar's chat template).
+ */
+const SEARCH_NOTES_DESCRIPTION =
+  "Search the user's personal notes and knowledge base for information needed to answer. " +
+  'Call this ONLY when the answer depends on the user’s own notes, meetings or documents. ' +
+  'Answer directly, without calling this, for general questions or when the conversation already ' +
+  'contains the needed context.'
+
+const SEARCH_NOTES_PARAMS = {
+  type: 'object' as const,
+  properties: {
+    query: {
+      type: 'string' as const,
+      description: 'A concise, focused search query describing what to look for in the notes'
+    }
+  }
+}
 
 /**
  * Chat message format for conversation input
@@ -136,6 +160,10 @@ export class AIManager {
   private hardwareInfo: HardwareInfo | null = null
   private initialized: boolean = false
 
+  // MLX text-generation backend (Python sidecar). Instantiated on Apple Silicon
+  // only; chat models with format 'mlx' are routed here instead of llama.cpp.
+  private mlxBackend: MlxLlmBackend | null = null
+
   // Memory management constants
   private readonly MAX_LOADED_MODELS = 3
   private readonly IDLE_UNLOAD_TIMEOUT = 5 * 60 * 1000 // 5 minutes
@@ -212,6 +240,12 @@ export class AIManager {
       `[AIManager] GPU backend: ${gpuFallback ? 'cpu (fallback)' : gpuBackend || 'cpu'} | GPU: ${hardware.gpu.name} | VRAM: ${vramGB} | RAM: ${ramGB}GB`
     )
 
+    // On Apple Silicon, route MLX chat models through the Python sidecar.
+    if (supportsMlx(hardware)) {
+      this.mlxBackend = new MlxLlmBackend()
+      console.log('[AIManager] MLX LLM backend enabled (Apple Silicon)')
+    }
+
     this.initialized = true
 
     // Start idle model cleanup interval (check every minute)
@@ -233,6 +267,15 @@ export class AIManager {
    * @throws {ModelLoadError} If loading the model fails
    */
   async loadModel(modelId: string): Promise<{ id: string; lastUsed: number; memoryUsage: number }> {
+    // MLX chat models load via the Python sidecar, not llama.cpp.
+    const routedDef = ModelRegistry.getModel(modelId)
+    if (routedDef?.format === 'mlx') {
+      if (!this.mlxBackend) {
+        throw new ModelLoadError(modelId, 'MLX backend unavailable on this platform')
+      }
+      return this.mlxBackend.load(modelId)
+    }
+
     if (!this.llama) {
       throw new AINotInitializedError()
     }
@@ -304,6 +347,13 @@ export class AIManager {
    * @param modelId - The ID of the model to unload
    */
   async unloadModel(modelId: string): Promise<void> {
+    // MLX chat models are owned by the sidecar backend.
+    if (ModelRegistry.getModel(modelId)?.format === 'mlx') {
+      if (this.mlxBackend?.isLoaded(modelId)) await this.mlxBackend.unload()
+      for (const listener of this.modelUnloadListeners) listener(modelId)
+      return
+    }
+
     const loaded = this.loadedModels.get(modelId)
     if (!loaded) return
 
@@ -337,11 +387,12 @@ export class AIManager {
    * Get list of currently loaded models with metadata
    */
   getLoadedModels(): LoadedModel[] {
-    return Array.from(this.loadedModels.values()).map((model) => ({
+    const llama = Array.from(this.loadedModels.values()).map((model) => ({
       id: model.id,
       lastUsed: model.lastUsed,
       memoryUsage: model.memoryUsage
     }))
+    return [...llama, ...(this.mlxBackend?.getLoadedModels() ?? [])]
   }
 
   /**
@@ -368,6 +419,15 @@ export class AIManager {
    */
   getHardwareInfo(): HardwareInfo | null {
     return this.hardwareInfo
+  }
+
+  /**
+   * Resolve the default chat/summary model id for this machine (MLX on Apple
+   * Silicon, GGUF elsewhere). Single source of truth for chat-model consumers
+   * outside the AI subsystem (AudioManager summaries, EmbeddingService context).
+   */
+  getDefaultChatModelId(): string {
+    return this.hardwareInfo ? resolveChatId(this.hardwareInfo) : GGUF_CHAT_ID
   }
 
   /**
@@ -408,6 +468,16 @@ export class AIManager {
       } catch (error) {
         console.error(`[AIManager] Failed to unload ${id} during dispose:`, error)
       }
+    }
+
+    // Dispose the MLX sidecar (frees the Python process + model).
+    if (this.mlxBackend) {
+      try {
+        await this.mlxBackend.dispose()
+      } catch (error) {
+        console.error('[AIManager] Failed to dispose MLX backend during dispose:', error)
+      }
+      this.mlxBackend = null
     }
 
     this.initialized = false
@@ -518,6 +588,18 @@ export class AIManager {
     retrieval?: ChatRetrievalTool,
     onThought?: (delta: string, full: string) => void
   ): AsyncGenerator<string, ChatCompletionResult> {
+    // Route MLX chat models to the Python sidecar backend.
+    if (ModelRegistry.getModel(modelId)?.format === 'mlx') {
+      return yield* this.generateChatCompletionMlx(
+        modelId,
+        messages,
+        options,
+        signal,
+        retrieval,
+        onThought
+      )
+    }
+
     if (!this.nodeLlamaCpp) {
       throw new AINotInitializedError()
     }
@@ -716,6 +798,161 @@ export class AIManager {
   }
 
   /**
+   * MLX variant of generateChatCompletion — streams through the Python sidecar.
+   *
+   * Mirrors the llama.cpp contract (yields response chunks, forwards reasoning
+   * to `onThought`, returns ChatCompletionResult) but implements on-demand RAG
+   * as a main-side agent loop: the first turn offers the `searchNotes` tool; if
+   * the model calls it, the notes are retrieved and a second, tool-free turn
+   * answers using them (template-agnostic, avoids relying on multi-turn tool
+   * message rendering).
+   */
+  private async *generateChatCompletionMlx(
+    modelId: string,
+    messages: ChatMessage[],
+    options?: GenerationOptions,
+    signal?: AbortSignal,
+    retrieval?: ChatRetrievalTool,
+    onThought?: (delta: string, full: string) => void
+  ): AsyncGenerator<string, ChatCompletionResult> {
+    if (!this.mlxBackend) throw new AINotInitializedError()
+
+    const abortController = new AbortController()
+    const onExternalAbort = (): void => abortController.abort()
+    if (signal) {
+      if (signal.aborted) abortController.abort()
+      else signal.addEventListener('abort', onExternalAbort, { once: true })
+    }
+
+    // thoughtTokens === 0 disables reasoning (summaries); isolated one-off tasks
+    // (titles, query expansion, contextualization) also skip reasoning so their
+    // tiny token budgets go to the actual output. Interactive chat reasons.
+    const enableThinking = options?.thoughtTokens === 0 ? false : !options?.isolated
+    const baseMax = options?.maxTokens ?? 2048
+    // mlx-lm's max_tokens caps the WHOLE generation (reasoning + answer), unlike
+    // node-llama-cpp's separate thought budget — give reasoning turns headroom.
+    const maxTokens = baseMax + (enableThinking ? 1536 : 0)
+    const temperature = options?.temperature ?? 0.7
+    const topP = options?.topP
+    const repetitionPenalty = options?.repeatPenalty
+
+    const convo: Array<Record<string, unknown>> = messages.map((m) => ({
+      role: m.role,
+      content: m.content
+    }))
+
+    let fullResponse = ''
+    let fullThought = ''
+    let generationTokens = 0
+
+    const streamTurn = async function* (
+      this: AIManager,
+      turnMessages: Array<Record<string, unknown>>,
+      tools: unknown[] | undefined
+    ): AsyncGenerator<string, LlmToolCall[]> {
+      const gen = this.mlxBackend!.generateStream(
+        modelId,
+        {
+          messages: turnMessages,
+          tools,
+          maxTokens,
+          temperature,
+          topP,
+          repetitionPenalty,
+          enableThinking
+        },
+        abortController.signal
+      )
+      let next = await gen.next()
+      while (!next.done) {
+        const chunk = next.value
+        if (chunk.channel === 'thought') {
+          fullThought += chunk.text
+          onThought?.(chunk.text, fullThought)
+        } else {
+          fullResponse += chunk.text
+          yield chunk.text
+        }
+        next = await gen.next()
+      }
+      generationTokens += next.value.generationTokens
+      return next.value.toolCalls
+    }
+
+    try {
+      const tools = retrieval ? [this.buildSearchNotesToolSchema()] : undefined
+      const toolCalls = yield* streamTurn.call(this, convo, tools)
+
+      // The model requested a note search and produced no direct answer yet →
+      // retrieve, inject as context, and answer in a second tool-free turn.
+      if (retrieval && toolCalls.length > 0 && fullResponse.length === 0) {
+        const blocks: string[] = []
+        for (const call of toolCalls) {
+          const query = call.arguments?.query
+          if (typeof query !== 'string' || query.length === 0) continue
+          try {
+            blocks.push(this.formatNotesForModel(await retrieval.search(query)))
+          } catch (error) {
+            blocks.push(`Note search failed: ${(error as Error).message}.`)
+          }
+          if (retrieval.multiSearch === false) break
+        }
+
+        const notesInstruction =
+          "\n\n# Retrieved notes\nUse these notes from the user's knowledge base to answer their " +
+          "last message. If they don't contain the answer, say so.\n\n" +
+          blocks.join('\n\n')
+        const answerConvo = convo.map((m) => ({ ...m }))
+        const sysIdx = answerConvo.findIndex((m) => m.role === 'system')
+        if (sysIdx >= 0) {
+          answerConvo[sysIdx].content = String(answerConvo[sysIdx].content ?? '') + notesInstruction
+        } else {
+          answerConvo.unshift({ role: 'system', content: notesInstruction.trim() })
+        }
+        yield* streamTurn.call(this, answerConvo, undefined)
+      }
+
+      console.log(
+        `[AIManager] MLX chat generated: thought=${fullThought.length} chars, response=${fullResponse.length} chars`
+      )
+      return {
+        response: fullResponse,
+        tokensUsed: generationTokens,
+        aborted: abortController.signal.aborted || undefined
+      }
+    } finally {
+      abortController.abort()
+      if (signal) signal.removeEventListener('abort', onExternalAbort)
+    }
+  }
+
+  /** OpenAI-style function tool schema for the MLX sidecar's chat template. */
+  private buildSearchNotesToolSchema(): Record<string, unknown> {
+    return {
+      type: 'function',
+      function: {
+        name: 'searchNotes',
+        description: SEARCH_NOTES_DESCRIPTION,
+        parameters: SEARCH_NOTES_PARAMS
+      }
+    }
+  }
+
+  /**
+   * Count tokens for `text` under a model's tokenizer. Backend-agnostic: MLX
+   * models go through the sidecar, GGUF models through the llama.cpp instance.
+   * Used by the summary map-reduce to budget chunks.
+   */
+  async countTokens(modelId: string, text: string): Promise<number> {
+    if (ModelRegistry.getModel(modelId)?.format === 'mlx') {
+      if (!this.mlxBackend) throw new AINotInitializedError()
+      return this.mlxBackend.countTokens(modelId, text)
+    }
+    const model = await this.getModelInstance(modelId)
+    return model.tokenize(text).length
+  }
+
+  /**
    * Reset the chat session for a model
    *
    * Clears the conversation history, allowing a fresh start.
@@ -777,20 +1014,8 @@ export class AIManager {
     if (!this.nodeLlamaCpp) throw new AINotInitializedError()
     let callCount = 0
     return this.nodeLlamaCpp.defineChatSessionFunction({
-      description:
-        "Search the user's personal notes and knowledge base for information needed to answer. " +
-        'Call this ONLY when the answer depends on the user’s own notes, meetings or documents. ' +
-        'Answer directly, without calling this, for general questions or when the conversation already ' +
-        'contains the needed context.',
-      params: {
-        type: 'object',
-        properties: {
-          query: {
-            type: 'string',
-            description: 'A concise, focused search query describing what to look for in the notes'
-          }
-        }
-      },
+      description: SEARCH_NOTES_DESCRIPTION,
+      params: SEARCH_NOTES_PARAMS,
       handler: async ({ query }: { query: string }): Promise<string> => {
         if (retrieval.multiSearch === false && callCount >= 1) {
           return 'A note search was already performed for this message. Answer using the notes already retrieved above.'
@@ -872,6 +1097,10 @@ export class AIManager {
         })
       }
     }
+    // MLX sidecar has its own loaded model — unload it on the same idle policy.
+    this.mlxBackend?.cleanupIdle(this.IDLE_UNLOAD_TIMEOUT).catch((error) => {
+      console.error('[AIManager] Failed to unload idle MLX model:', error)
+    })
   }
 
   /**

@@ -15,7 +15,10 @@ const DIARIZATION_IDS = [
   'sherpa-onnx-nemo-titanet-small'
 ] as const
 
-const CHAT_ID = 'qwen3-5-4b-q4-k-m'
+/** GGUF chat model (node-llama-cpp) — used on Windows/Linux and non-Apple-Silicon. */
+export const GGUF_CHAT_ID = 'qwen3-5-4b-q4-k-m'
+/** MLX chat model (Python sidecar) — preferred on Apple Silicon. Same base model. */
+export const MLX_CHAT_ID = 'qwen3-5-4b-mlx-4bit'
 const EMBEDDING_ID = 'embeddinggemma-300m-q8'
 const RERANKER_ID = 'qwen3-reranker-0.6b-q8'
 const VAD_ID = 'silero-vad-onnx'
@@ -34,9 +37,23 @@ export const pickWhisperId = (tier: HardwareTier): string => {
 export const pickAsrId = (tier: HardwareTier): string =>
   TIER_RANK[tier] >= TIER_RANK['medium'] ? 'qwen3-asr-1.7b-mlx-8bit' : 'qwen3-asr-0.6b-mlx-8bit'
 
-/** Realtime ASR requires macOS on Apple Silicon (same gate as realtime/availability.ts). */
-export const supportsRealtimeAsr = (hardware: HardwareInfo): boolean =>
+/**
+ * MLX inference (Python sidecar) requires macOS on Apple Silicon. Shared gate
+ * for realtime ASR and MLX LLM text generation.
+ */
+export const supportsMlx = (hardware: HardwareInfo): boolean =>
   hardware.platform === 'darwin' && process.arch === 'arm64'
+
+/** Realtime ASR requires macOS on Apple Silicon (same gate as realtime/availability.ts). */
+export const supportsRealtimeAsr = supportsMlx
+
+/**
+ * Resolve the chat/summary model id for this machine. On Apple Silicon the MLX
+ * variant (routed through the LLM sidecar) is used; elsewhere the GGUF variant
+ * (node-llama-cpp). Single source of truth for every chat-model consumer.
+ */
+export const resolveChatId = (hardware: HardwareInfo): string =>
+  supportsMlx(hardware) ? MLX_CHAT_ID : GGUF_CHAT_ID
 
 const requireModel = (id: string): ModelDefinition => {
   const model = ModelRegistry.getModel(id)
@@ -56,10 +73,11 @@ const buildAlternatives = (
 export class ModelSelector {
   static getModelProfile(hardware: HardwareInfo): ModelProfile {
     const tier = hardware.tier
-    const realtimeAsr = supportsRealtimeAsr(hardware)
+    const mlx = supportsMlx(hardware)
+    const realtimeAsr = mlx
     const compatibleModels = ModelRegistry.getModelsForTier(tier)
 
-    const chat = requireModel(CHAT_ID)
+    const chat = requireModel(resolveChatId(hardware))
     const embedding = requireModel(EMBEDDING_ID)
     const reranker = requireModel(RERANKER_ID)
 
@@ -78,7 +96,11 @@ export class ModelSelector {
     const diarization = DIARIZATION_IDS.map((id) => requireModel(id))
 
     const compatibleModelsForUi = compatibleModels.filter((m) => {
-      if (m.format === 'mlx' && !realtimeAsr) return false
+      // MLX models (chat + realtime ASR) require Apple Silicon
+      if (m.format === 'mlx' && !mlx) return false
+      // On Apple Silicon, force the MLX chat variant: the GGUF chat model is
+      // neither downloadable nor used (there is an MLX alternative).
+      if (mlx && m.id === GGUF_CHAT_ID) return false
       return true
     })
 

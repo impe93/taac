@@ -29,19 +29,27 @@ const QWEN3_ASR_SHARED_FILES: Record<string, number> = {
 }
 
 /**
+ * Build a multi-file download list for an mlx-community checkpoint from a
+ * `{ filename: sizeBytes }` map. Weights (`*.safetensors`) get role `weights`,
+ * everything else `config`. Sizes come from the HuggingFace tree API and drive
+ * the downloader's aggregate progress.
+ */
+function mlxCheckpointFiles(repo: string, files: Record<string, number>): ModelFile[] {
+  return Object.entries(files).map(([filename, sizeBytes]) => ({
+    role: filename.endsWith('.safetensors') ? 'weights' : 'config',
+    filename,
+    downloadUrl: `https://huggingface.co/${repo}/resolve/main/${filename}`,
+    sizeBytes
+  }))
+}
+
+/**
  * Build the multi-file list for an mlx-community Qwen3-ASR checkpoint.
  * `checkpointFiles` holds the per-checkpoint entries (weights, index, config)
  * whose sizes differ between the 0.6B and 1.7B variants.
  */
 function qwen3AsrMlxFiles(repo: string, checkpointFiles: Record<string, number>): ModelFile[] {
-  return Object.entries({ ...checkpointFiles, ...QWEN3_ASR_SHARED_FILES }).map(
-    ([filename, sizeBytes]) => ({
-      role: filename === 'model.safetensors' ? 'weights' : 'config',
-      filename,
-      downloadUrl: `https://huggingface.co/${repo}/resolve/main/${filename}`,
-      sizeBytes
-    })
-  )
+  return mlxCheckpointFiles(repo, { ...checkpointFiles, ...QWEN3_ASR_SHARED_FILES })
 }
 
 /**
@@ -65,6 +73,41 @@ const CURATED_MODELS: ModelDefinition[] = [
     hardwareTier: 'low',
     downloadUrl:
       'https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf',
+    license: 'Apache 2.0'
+  },
+
+  // ============================================================================
+  // CHAT MODEL (MLX) - Qwen3.5 4B 4-bit, Apple Silicon only via Python sidecar.
+  // Same base model as the GGUF chat above; on Apple Silicon this MLX variant
+  // replaces it (see ModelSelector.resolveChatId). Multi-file checkpoint loaded
+  // from {userData}/models/{modelId}/ (offline). The repo ships the omni/VL
+  // architecture (Qwen3_5ForConditionalGeneration) but mlx-lm loads the text
+  // decoder only, so runtime RSS stays ~text-weights (~2.2GB).
+  // ============================================================================
+  {
+    id: 'qwen3-5-4b-mlx-4bit',
+    name: 'Qwen3.5 4B (MLX 4-bit)',
+    description:
+      'Alibaba Qwen3.5 4B quantized 4-bit for Apple Silicon — MLX-accelerated chat & summarization with strong reasoning and multilingual capabilities (~3GB)',
+    filename: 'model.safetensors',
+    sizeBytes: 3_061_127_002,
+    layers: 32,
+    quantization: '4-bit',
+    contextLength: 65536,
+    format: 'mlx' as const,
+    capabilities: ['chat', 'code', 'reasoning'],
+    hardwareTier: 'low',
+    downloadUrl:
+      'https://huggingface.co/mlx-community/Qwen3.5-4B-MLX-4bit/resolve/main/model.safetensors',
+    files: mlxCheckpointFiles('mlx-community/Qwen3.5-4B-MLX-4bit', {
+      'model.safetensors': 3_034_300_695,
+      'model.safetensors.index.json': 101_944,
+      'config.json': 3_366,
+      'chat_template.jinja': 7_756,
+      'tokenizer.json': 19_989_343,
+      'tokenizer_config.json': 1_139,
+      'vocab.json': 6_722_759
+    }),
     license: 'Apache 2.0'
   },
 
