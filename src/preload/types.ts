@@ -11,7 +11,13 @@ export interface Note {
 }
 
 export interface MeetingMetadata {
-  recordingMode: 'remote' | 'in-person'
+  recordingMode: 'remote' | 'in-person' | 'system-only'
+  /**
+   * What was recorded: a meeting (default) or listened media (e.g. an online
+   * course). Drives which summary structure was produced. Optional for
+   * backward compatibility with notes recorded before this field existed.
+   */
+  contentType?: 'meeting' | 'media'
   duration: number // Recording duration in seconds
   language: string // ISO 639-1 code (auto-detected)
   recordingDate: string // ISO 8601 timestamp

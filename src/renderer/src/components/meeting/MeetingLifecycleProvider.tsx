@@ -11,6 +11,8 @@ import {
   type MeetingLifecycleContextValue,
   type MeetingRecordingSession,
   type MeetingRecordingMode,
+  type MeetingContentType,
+  type MeetingSummaryDepth,
   type ProcessingJob,
   type ProcessingFailure,
   type RecordingStartFailure
@@ -44,6 +46,8 @@ export const MeetingLifecycleProvider: FC<{ children: ReactNode }> = ({ children
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const durationRef = useRef(0)
   const recordingModeRef = useRef<MeetingRecordingMode>('in-person')
+  const recordingContentTypeRef = useRef<MeetingContentType>('meeting')
+  const recordingSummaryDepthRef = useRef<MeetingSummaryDepth | undefined>(undefined)
   const recordingLanguageRef = useRef<string>('auto')
   const sessionIdsRef = useRef<{
     noteId: string
@@ -268,9 +272,11 @@ export const MeetingLifecycleProvider: FC<{ children: ReactNode }> = ({ children
       spaceId: string
       folderId: string
       mode: MeetingRecordingMode
+      contentType?: MeetingContentType
+      summaryDepth?: MeetingSummaryDepth
       language?: string
     }): Promise<void> => {
-      const { noteId, spaceId, folderId, mode, language } = args
+      const { noteId, spaceId, folderId, mode, contentType, summaryDepth, language } = args
 
       if (recordingStateRef.current !== 'idle') {
         toast.error('A recording is already in progress')
@@ -286,6 +292,8 @@ export const MeetingLifecycleProvider: FC<{ children: ReactNode }> = ({ children
       micChunksRef.current = []
       systemChunksRef.current = []
       recordingModeRef.current = mode
+      recordingContentTypeRef.current = contentType ?? 'meeting'
+      recordingSummaryDepthRef.current = summaryDepth
       recordingLanguageRef.current = language ?? 'auto'
 
       setRecordingSession({
@@ -297,19 +305,11 @@ export const MeetingLifecycleProvider: FC<{ children: ReactNode }> = ({ children
       })
 
       try {
-        const micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
-        micStreamRef.current = micStream
-
-        const micRecorder = new MediaRecorder(micStream, { mimeType: 'audio/webm;codecs=opus' })
-        micRecorder.ondataavailable = (e: BlobEvent): void => {
-          if (e.data.size > 0) micChunksRef.current.push(e.data)
-        }
-        micRecorderRef.current = micRecorder
-
-        if (mode === 'remote') {
+        // Acquire system audio (getDisplayMedia) once, reused for both the
+        // remote second track and the system-only primary track.
+        const acquireSystemStream = async (): Promise<MediaStream> => {
           const displayStream = await navigator.mediaDevices.getDisplayMedia({ audio: true })
           displayStream.getVideoTracks().forEach((track) => track.stop())
-
           const audioTracks = displayStream.getAudioTracks()
           if (audioTracks.length === 0) {
             displayStream.getTracks().forEach((track) => track.stop())
@@ -317,8 +317,27 @@ export const MeetingLifecycleProvider: FC<{ children: ReactNode }> = ({ children
               'System audio capture is not available. Ensure Screen Recording permission is granted in System Settings.'
             )
           }
+          return new MediaStream(audioTracks)
+        }
 
-          const audioOnlyStream = new MediaStream(audioTracks)
+        // Primary track. Microphone for meeting modes; the captured system audio
+        // for system-only (there is no mic). It always lives in the mic refs, so
+        // the recorder / PCM tap ('mic') / saveRecording.micAudio path is uniform.
+        const primaryStream =
+          mode === 'system-only'
+            ? await acquireSystemStream()
+            : await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+        micStreamRef.current = primaryStream
+
+        const micRecorder = new MediaRecorder(primaryStream, { mimeType: 'audio/webm;codecs=opus' })
+        micRecorder.ondataavailable = (e: BlobEvent): void => {
+          if (e.data.size > 0) micChunksRef.current.push(e.data)
+        }
+        micRecorderRef.current = micRecorder
+
+        // Remote also captures a second, separate system track alongside the mic.
+        if (mode === 'remote') {
+          const audioOnlyStream = await acquireSystemStream()
           systemStreamRef.current = audioOnlyStream
 
           const systemRecorder = new MediaRecorder(audioOnlyStream, {
@@ -390,30 +409,25 @@ export const MeetingLifecycleProvider: FC<{ children: ReactNode }> = ({ children
     // Stop the PCM taps before the recorders — no more chunks reach the VAD
     await stopTaps()
 
+    // Wait for whichever recorders are active (mic/primary always; the second
+    // system recorder only in remote mode) to flush their final chunks.
+    const activeRecorders = [micRecorderRef.current, systemRecorderRef.current].filter(
+      (r): r is MediaRecorder => !!r && r.state !== 'inactive'
+    )
     await new Promise<void>((resolve) => {
-      let pendingStops = 1 + (mode === 'remote' ? 1 : 0)
+      if (activeRecorders.length === 0) {
+        resolve()
+        return
+      }
+      let pendingStops = activeRecorders.length
       const handleStop = (): void => {
         pendingStops -= 1
         if (pendingStops === 0) resolve()
       }
-
-      if (micRecorderRef.current && micRecorderRef.current.state !== 'inactive') {
-        micRecorderRef.current.onstop = handleStop
-        micRecorderRef.current.stop()
-      } else {
-        handleStop()
-      }
-
-      if (
-        mode === 'remote' &&
-        systemRecorderRef.current &&
-        systemRecorderRef.current.state !== 'inactive'
-      ) {
-        systemRecorderRef.current.onstop = handleStop
-        systemRecorderRef.current.stop()
-      } else if (mode === 'remote') {
-        handleStop()
-      }
+      activeRecorders.forEach((recorder) => {
+        recorder.onstop = handleStop
+        recorder.stop()
+      })
     })
 
     stopAllStreams()
@@ -429,10 +443,12 @@ export const MeetingLifecycleProvider: FC<{ children: ReactNode }> = ({ children
     setLiveTranscriptionStatus('idle')
 
     try {
+      // Primary track (mic for meeting modes; system audio for system-only).
       const micBlob = new Blob(micChunksRef.current, { type: 'audio/webm' })
       const micBuffer = await micBlob.arrayBuffer()
       const micAudio = new Uint8Array(micBuffer)
 
+      // Second system track exists only in remote mode.
       let systemAudio: Uint8Array | undefined
       if (mode === 'remote' && systemChunksRef.current.length > 0) {
         const systemBlob = new Blob(systemChunksRef.current, { type: 'audio/webm' })
@@ -444,6 +460,8 @@ export const MeetingLifecycleProvider: FC<{ children: ReactNode }> = ({ children
         micAudio,
         systemAudio,
         mode,
+        contentType: recordingContentTypeRef.current,
+        summaryDepth: recordingSummaryDepthRef.current,
         durationSecs: durationRef.current,
         language: recordingLanguageRef.current
       })

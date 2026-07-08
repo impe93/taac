@@ -1,5 +1,15 @@
 import { type FC, useState, useCallback, useMemo } from 'react'
-import { Mic, Pause, Play, Square, Wifi, Users } from 'lucide-react'
+import {
+  Mic,
+  Pause,
+  Play,
+  Square,
+  Wifi,
+  Users,
+  MonitorSpeaker,
+  Presentation,
+  GraduationCap
+} from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { Card, CardContent } from '@renderer/components/ui/card'
 import { ToggleGroup, ToggleGroupItem } from '@renderer/components/ui/toggle-group'
@@ -11,11 +21,21 @@ import {
   SelectValue
 } from '@renderer/components/ui/select'
 import { cn } from '@renderer/lib/utils'
-import { useMeetingLifecycle } from '@renderer/hooks/useMeetingLifecycle'
+import {
+  useMeetingLifecycle,
+  type MeetingRecordingMode,
+  type MeetingContentType
+} from '@renderer/hooks/useMeetingLifecycle'
 import { useConfig } from '@renderer/hooks/useConfig'
+import { useModelProfile } from '@renderer/hooks/useHardware'
 import { MEETING_LANGUAGE_OPTIONS } from '@renderer/lib/meetingLanguages'
-
-type RecordingMode = 'remote' | 'in-person'
+import {
+  SUMMARY_DEPTH_OPTIONS,
+  isDetailedSummaryAvailable,
+  detailedUnavailableReason,
+  resolveSelectableDepth,
+  type SummaryDepth
+} from '@renderer/lib/meetingSummary'
 
 interface MeetingRecorderProps {
   noteId: string
@@ -38,7 +58,14 @@ export const MeetingRecorder: FC<MeetingRecorderProps> = ({
   className
 }) => {
   const { data: meetingConfig } = useConfig('meeting')
-  const [mode, setMode] = useState<RecordingMode>(meetingConfig?.defaultRecordingMode ?? 'remote')
+  const { data: profile } = useModelProfile()
+  const [mode, setMode] = useState<MeetingRecordingMode>(
+    meetingConfig?.defaultRecordingMode ?? 'remote'
+  )
+  const [contentType, setContentType] = useState<MeetingContentType>('meeting')
+  const [summaryDepth, setSummaryDepth] = useState<SummaryDepth>(
+    (meetingConfig?.summaryDepth as SummaryDepth) ?? 'balanced'
+  )
   const [language, setLanguage] = useState<string>(meetingConfig?.defaultLanguage ?? 'auto')
   const {
     recordingSession,
@@ -51,6 +78,18 @@ export const MeetingRecorder: FC<MeetingRecorderProps> = ({
     clearRecordingStartFailure
   } = useMeetingLifecycle()
 
+  const detailedAvailable = isDetailedSummaryAvailable(profile)
+  const detailedReason = detailedUnavailableReason(profile)
+  const isMediaAllowed = mode === 'system-only'
+
+  // Media content requires system-only capture — reset to meeting whenever the
+  // source changes to a mic-based mode.
+  const handleModeChange = useCallback((value: string): void => {
+    const next = value as MeetingRecordingMode
+    setMode(next)
+    if (next !== 'system-only') setContentType('meeting')
+  }, [])
+
   const isThisNoteRecording =
     recordingSession !== null &&
     recordingSession.noteId === noteId &&
@@ -59,10 +98,30 @@ export const MeetingRecorder: FC<MeetingRecorderProps> = ({
   const isBlockedByOtherRecording =
     isRecordingBusy && recordingSession !== null && recordingSession.noteId !== noteId
 
+  const effectiveDepth = resolveSelectableDepth(summaryDepth, detailedAvailable)
+
   const handleStart = useCallback(async (): Promise<void> => {
     if (!spaceId) return
-    await startRecording({ noteId, spaceId, folderId, mode, language })
-  }, [noteId, spaceId, folderId, mode, language, startRecording])
+    await startRecording({
+      noteId,
+      spaceId,
+      folderId,
+      mode,
+      contentType: mode === 'system-only' ? contentType : 'meeting',
+      summaryDepth: resolveSelectableDepth(summaryDepth, detailedAvailable),
+      language
+    })
+  }, [
+    noteId,
+    spaceId,
+    folderId,
+    mode,
+    contentType,
+    summaryDepth,
+    detailedAvailable,
+    language,
+    startRecording
+  ])
 
   const handleStop = useCallback(async (): Promise<void> => {
     await stopRecording()
@@ -99,16 +158,16 @@ export const MeetingRecorder: FC<MeetingRecorderProps> = ({
                 </div>
                 <p className="text-lg font-semibold">Ready to Record</p>
                 <p className="text-sm text-muted-foreground text-center">
-                  Select your recording mode and start capturing the meeting
+                  Choose your audio source and start capturing
                 </p>
               </div>
 
               <div className="flex flex-col items-center gap-2 w-full">
-                <span className="text-sm font-medium text-muted-foreground">Recording Mode</span>
+                <span className="text-sm font-medium text-muted-foreground">Audio Source</span>
                 <ToggleGroup
                   type="single"
                   value={mode}
-                  onValueChange={(v) => v && setMode(v as RecordingMode)}
+                  onValueChange={(v) => v && handleModeChange(v)}
                   className="w-full"
                 >
                   <ToggleGroupItem value="remote" className="flex-1 gap-2" aria-label="Remote mode">
@@ -123,11 +182,56 @@ export const MeetingRecorder: FC<MeetingRecorderProps> = ({
                     <Users className="size-4" />
                     In-person
                   </ToggleGroupItem>
+                  <ToggleGroupItem
+                    value="system-only"
+                    className="flex-1 gap-2"
+                    aria-label="System audio only mode"
+                  >
+                    <MonitorSpeaker className="size-4" />
+                    System
+                  </ToggleGroupItem>
                 </ToggleGroup>
                 <p className="text-xs text-muted-foreground text-center">
                   {mode === 'remote'
                     ? 'Captures microphone + system audio (Zoom, Teams, Meet)'
-                    : 'Captures microphone only (all participants in same room)'}
+                    : mode === 'in-person'
+                      ? 'Captures microphone only (all participants in same room)'
+                      : 'Captures system audio only — no microphone (media or broadcast)'}
+                </p>
+              </div>
+
+              <div className="flex flex-col items-center gap-2 w-full">
+                <span className="text-sm font-medium text-muted-foreground">Content Type</span>
+                <ToggleGroup
+                  type="single"
+                  value={contentType}
+                  onValueChange={(v) => v && setContentType(v as MeetingContentType)}
+                  className="w-full"
+                >
+                  <ToggleGroupItem
+                    value="meeting"
+                    className="flex-1 gap-2"
+                    aria-label="Meeting content"
+                  >
+                    <Presentation className="size-4" />
+                    Meeting
+                  </ToggleGroupItem>
+                  <ToggleGroupItem
+                    value="media"
+                    className="flex-1 gap-2"
+                    aria-label="Media content"
+                    disabled={!isMediaAllowed}
+                  >
+                    <GraduationCap className="size-4" />
+                    Media
+                  </ToggleGroupItem>
+                </ToggleGroup>
+                <p className="text-xs text-muted-foreground text-center">
+                  {!isMediaAllowed
+                    ? 'Media summaries are available with the System audio source only'
+                    : contentType === 'media'
+                      ? 'Learning notes of listened media (e.g. an online course)'
+                      : 'Meeting summary with decisions and action items'}
                 </p>
               </div>
 
@@ -149,6 +253,32 @@ export const MeetingRecorder: FC<MeetingRecorderProps> = ({
                   {language === 'auto'
                     ? 'The spoken language is detected automatically'
                     : 'Transcription and summary will use the selected language'}
+                </p>
+              </div>
+
+              <div className="flex flex-col items-center gap-2 w-full">
+                <span className="text-sm font-medium text-muted-foreground">Summary Length</span>
+                <ToggleGroup
+                  type="single"
+                  value={effectiveDepth}
+                  onValueChange={(v) => v && setSummaryDepth(v as SummaryDepth)}
+                  className="w-full"
+                >
+                  {SUMMARY_DEPTH_OPTIONS.map((opt) => (
+                    <ToggleGroupItem
+                      key={opt.value}
+                      value={opt.value}
+                      className="flex-1"
+                      aria-label={`${opt.label} summary`}
+                      disabled={opt.value === 'aggressive' && !detailedAvailable}
+                    >
+                      {opt.label}
+                    </ToggleGroupItem>
+                  ))}
+                </ToggleGroup>
+                <p className="text-xs text-muted-foreground text-center">
+                  {SUMMARY_DEPTH_OPTIONS.find((o) => o.value === effectiveDepth)?.description}
+                  {!detailedAvailable && ` ${detailedReason}`}
                 </p>
               </div>
 

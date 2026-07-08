@@ -50,6 +50,7 @@ export const MeetingReprocessDialog: FC<MeetingReprocessDialogProps> = ({
     try {
       const result = await window.audio.reprocessFromDisk(noteId, spaceId, {
         mode: metadata.recordingMode,
+        contentType: metadata.contentType ?? 'meeting',
         recordingDate: metadata.recordingDate,
         durationSecs: metadata.duration,
         language

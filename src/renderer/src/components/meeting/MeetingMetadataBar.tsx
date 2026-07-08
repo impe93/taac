@@ -85,7 +85,8 @@ export const MeetingMetadataBar: FC<MeetingMetadataBarProps> = ({
       const result = await window.audio.regenerateSummary({
         speakers: metadata.speakers,
         transcription: metadata.transcription,
-        language: newLanguage
+        language: newLanguage,
+        contentType: metadata.contentType ?? 'meeting'
       })
 
       await dispatch(

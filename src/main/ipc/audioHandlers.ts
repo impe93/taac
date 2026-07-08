@@ -36,7 +36,11 @@ interface RecordingContext {
   systemWavPath?: string
   micWebmPath: string
   systemWebmPath?: string
-  mode: 'remote' | 'in-person'
+  mode: 'remote' | 'in-person' | 'system-only'
+  /** Meeting (default) or listened media — drives the summary structure. */
+  contentType: 'meeting' | 'media'
+  /** Per-recording summary length override; undefined → global meeting.summaryDepth. */
+  summaryDepth?: 'conservative' | 'balanced' | 'aggressive'
   recordingDate: string
   durationSecs: number
   /** Requested spoken language: 'auto' or an ISO 639-1 code */
@@ -80,7 +84,9 @@ async function prepareRecordingContextFromDisk(
   noteId: string,
   spaceId: string,
   options: {
-    mode: 'remote' | 'in-person'
+    mode: 'remote' | 'in-person' | 'system-only'
+    contentType: 'meeting' | 'media'
+    summaryDepth?: 'conservative' | 'balanced' | 'aggressive'
     recordingDate: string
     durationSecs: number
     requestedLanguage: string
@@ -124,6 +130,8 @@ async function prepareRecordingContextFromDisk(
     micWebmPath,
     systemWebmPath,
     mode: options.mode,
+    contentType: options.contentType,
+    summaryDepth: options.summaryDepth,
     recordingDate: options.recordingDate,
     durationSecs,
     requestedLanguage: options.requestedLanguage
@@ -330,9 +338,11 @@ export function registerAudioHandlers(): void {
       noteId: string,
       spaceId: string,
       data: {
-        micAudio: Uint8Array
+        micAudio?: Uint8Array
         systemAudio?: Uint8Array
-        mode: 'remote' | 'in-person'
+        mode: 'remote' | 'in-person' | 'system-only'
+        contentType?: 'meeting' | 'media'
+        summaryDepth?: 'conservative' | 'balanced' | 'aggressive'
         durationSecs?: number
         /** Requested spoken language: 'auto' or an ISO 639-1 code */
         language?: string
@@ -353,15 +363,25 @@ export function registerAudioHandlers(): void {
 
         await fs.mkdir(audioDir, { recursive: true })
 
-        // --- Microphone track ---
+        // --- Primary track ---
+        // Always carried in `micAudio`. For meeting modes this is the microphone;
+        // for system-only the renderer captures the system audio into the same
+        // primary slot (there is no mic), so the whole downstream mono-track
+        // pipeline (diarization on the primary WAV) works unchanged. The primary
+        // file is always named mic.* on disk.
+        const primaryAudio = data.micAudio
+        if (!primaryAudio) {
+          throw new Error('No primary audio captured for this recording.')
+        }
+
         const micPath = join(audioDir, 'mic.webm')
-        await fs.writeFile(micPath, data.micAudio)
-        console.log(`[AudioHandlers] Saved mic audio → ${micPath}`)
+        await fs.writeFile(micPath, primaryAudio)
+        console.log(`[AudioHandlers] Saved primary (${data.mode}) audio → ${micPath}`)
 
         const micWavPath = join(audioDir, 'mic.wav')
         await convertToWav(micPath, micWavPath)
 
-        // --- System audio track (remote mode only) ---
+        // --- Second system audio track (remote mode only, alongside the mic) ---
         let systemPath: string | undefined
         let systemWavPath: string | undefined
 
@@ -381,6 +401,8 @@ export function registerAudioHandlers(): void {
           micWebmPath: micPath,
           systemWebmPath: systemPath,
           mode: data.mode,
+          contentType: data.contentType ?? 'meeting',
+          summaryDepth: data.summaryDepth,
           recordingDate: new Date().toISOString(),
           durationSecs: data.durationSecs ?? (await getWavDurationSecs(micWavPath)),
           requestedLanguage: data.language ?? 'auto'
@@ -444,6 +466,8 @@ export function registerAudioHandlers(): void {
           context.recordingDate,
           context.durationSecs,
           context.requestedLanguage,
+          context.contentType,
+          context.summaryDepth,
           (progress: ProcessingProgress) => broadcastProgress(noteId, progress, stages),
           realtime,
           activeProcessingAbort.signal
@@ -527,7 +551,9 @@ export function registerAudioHandlers(): void {
       noteId: string,
       spaceId: string,
       options: {
-        mode: 'remote' | 'in-person'
+        mode: 'remote' | 'in-person' | 'system-only'
+        contentType?: 'meeting' | 'media'
+        summaryDepth?: 'conservative' | 'balanced' | 'aggressive'
         recordingDate: string
         durationSecs: number
         language: string
@@ -545,6 +571,8 @@ export function registerAudioHandlers(): void {
           spaceId,
           {
             mode: options.mode,
+            contentType: options.contentType ?? 'meeting',
+            summaryDepth: options.summaryDepth,
             recordingDate: options.recordingDate,
             durationSecs: options.durationSecs,
             requestedLanguage: options.language
@@ -568,6 +596,8 @@ export function registerAudioHandlers(): void {
           context.recordingDate,
           context.durationSecs,
           context.requestedLanguage,
+          context.contentType,
+          context.summaryDepth,
           (progress: ProcessingProgress) => broadcastProgress(noteId, progress),
           undefined,
           activeProcessingAbort.signal
@@ -593,7 +623,13 @@ export function registerAudioHandlers(): void {
     'audio:regenerateSummary',
     async (
       _event,
-      payload: { speakers: Speaker[]; transcription: TranscriptionSegment[]; language: string }
+      payload: {
+        speakers: Speaker[]
+        transcription: TranscriptionSegment[]
+        language: string
+        contentType?: 'meeting' | 'media'
+        summaryDepth?: 'conservative' | 'balanced' | 'aggressive'
+      }
     ): Promise<{
       content: string
       actionItems: ActionItem[]
@@ -604,7 +640,9 @@ export function registerAudioHandlers(): void {
         return await AudioManager.getInstance().regenerateSummary(
           payload.speakers,
           payload.transcription,
-          payload.language
+          payload.language,
+          payload.contentType ?? 'meeting',
+          payload.summaryDepth
         )
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)

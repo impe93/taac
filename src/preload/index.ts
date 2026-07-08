@@ -369,9 +369,11 @@ const audioAPI = {
     noteId: string,
     spaceId: string,
     data: {
-      micAudio: Uint8Array
+      micAudio?: Uint8Array
       systemAudio?: Uint8Array
-      mode: 'remote' | 'in-person'
+      mode: 'remote' | 'in-person' | 'system-only'
+      contentType?: 'meeting' | 'media'
+      summaryDepth?: 'conservative' | 'balanced' | 'aggressive'
       durationSecs?: number
       language?: string
     }
@@ -396,6 +398,8 @@ const audioAPI = {
     speakers: import('./types').Speaker[]
     transcription: import('./types').TranscriptionSegment[]
     language: string
+    contentType?: 'meeting' | 'media'
+    summaryDepth?: 'conservative' | 'balanced' | 'aggressive'
   }) => ipcRenderer.invoke('audio:regenerateSummary', payload),
 
   hasStoredRecording: (noteId: string, spaceId: string) =>
@@ -405,7 +409,9 @@ const audioAPI = {
     noteId: string,
     spaceId: string,
     options: {
-      mode: 'remote' | 'in-person'
+      mode: 'remote' | 'in-person' | 'system-only'
+      contentType?: 'meeting' | 'media'
+      summaryDepth?: 'conservative' | 'balanced' | 'aggressive'
       recordingDate: string
       durationSecs: number
       language: string

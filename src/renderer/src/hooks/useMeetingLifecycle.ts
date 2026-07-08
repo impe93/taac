@@ -1,7 +1,13 @@
 import { createContext, useContext } from 'react'
 import type { ProcessingProgress, RealtimeSegment } from '@preload/index.d'
 
-export type MeetingRecordingMode = 'remote' | 'in-person'
+export type MeetingRecordingMode = 'remote' | 'in-person' | 'system-only'
+
+/** What is being recorded — drives the summary structure. */
+export type MeetingContentType = 'meeting' | 'media'
+
+/** Per-recording summary length override (internal enum; UI relabels it). */
+export type MeetingSummaryDepth = 'conservative' | 'balanced' | 'aggressive'
 
 export interface MeetingRecordingSession {
   noteId: string
@@ -47,6 +53,10 @@ export interface MeetingLifecycleContextValue {
     spaceId: string
     folderId: string
     mode: MeetingRecordingMode
+    /** Meeting (default) or listened media. Media requires system-only mode. */
+    contentType?: MeetingContentType
+    /** Per-recording summary length override; falls back to meeting.summaryDepth. */
+    summaryDepth?: MeetingSummaryDepth
     /** Preferred spoken language: 'auto' (detect) or an ISO 639-1 code */
     language?: string
   }) => Promise<void>

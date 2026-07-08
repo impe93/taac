@@ -66,6 +66,13 @@ interface SummaryBudget {
 type SummaryDepth = 'conservative' | 'balanced' | 'aggressive'
 
 /**
+ * What was recorded. Drives the summary structure: a `meeting` produces the
+ * classic decisions/action-items summary; `media` (e.g. an online course being
+ * listened to) produces a learning-oriented notes structure.
+ */
+type SummaryContentType = 'meeting' | 'media'
+
+/**
  * TEMPORARY DEBUG AID — when true, the raw (unprocessed) whisper transcription
  * is appended at the bottom of every generated meeting note so language
  * detection issues can be diagnosed. Flip to false (or remove the flag, the
@@ -285,11 +292,14 @@ export class AudioManager {
    *
    * @param noteId        Unique note identifier
    * @param spaceId       Space identifier (used for path construction / cleanup)
-   * @param micWavPath    Absolute path to the 16 kHz mono WAV for the mic track
-   * @param systemWavPath Absolute path to the 16 kHz mono WAV for the system track (remote only)
-   * @param mode          Recording mode ('remote' | 'in-person')
+   * @param micWavPath    Absolute path to the 16 kHz mono WAV for the primary track
+   *                      (mic for meeting modes; the captured system audio for system-only)
+   * @param systemWavPath Absolute path to the 16 kHz mono WAV for the second system track (remote only)
+   * @param mode          Recording mode ('remote' | 'in-person' | 'system-only')
    * @param recordingDate ISO 8601 timestamp of when the recording started
    * @param durationSecs  Duration of the recording in seconds
+   * @param contentType   'meeting' or 'media' — drives the summary structure
+   * @param summaryDepth  Per-recording summary length override (undefined → global config)
    * @param onProgress    Progress callback; called at each pipeline stage
    * @param precomputed   Transcripts produced live during recording (realtime
    *                      path) — when present, whisper transcription is skipped
@@ -299,10 +309,12 @@ export class AudioManager {
     spaceId: string,
     micWavPath: string,
     systemWavPath: string | undefined,
-    mode: 'remote' | 'in-person',
+    mode: 'remote' | 'in-person' | 'system-only',
     recordingDate: string,
     durationSecs: number,
     requestedLanguage: string,
+    contentType: SummaryContentType,
+    summaryDepth: SummaryDepth | undefined,
     onProgress: (progress: ProcessingProgress) => void,
     precomputed?: RealtimeSessionResult,
     signal?: AbortSignal
@@ -443,8 +455,10 @@ export class AudioManager {
       speakers,
       transcriptionSegments,
       resolvedLanguage,
+      contentType,
       onProgress,
-      signal
+      signal,
+      summaryDepth
     )
 
     onProgress({ stage: 'summarizing', progress: 100, message: 'Summary complete' })
@@ -455,6 +469,7 @@ export class AudioManager {
     // ------------------------------------------------------------------
     const metadata: MeetingMetadata = {
       recordingMode: mode,
+      contentType,
       duration: durationSecs,
       language: resolvedLanguage,
       recordingDate,
@@ -520,7 +535,9 @@ export class AudioManager {
   async regenerateSummary(
     speakers: Speaker[],
     transcriptionSegments: TranscriptionSegment[],
-    requestedLanguage: string
+    requestedLanguage: string,
+    contentType: SummaryContentType = 'meeting',
+    summaryDepth?: SummaryDepth
   ): Promise<{
     content: string
     actionItems: ActionItem[]
@@ -533,13 +550,18 @@ export class AudioManager {
       configStore.get('meeting').defaultLanguage,
       app.getLocale()
     )
-    console.log(`[AudioManager] Regenerating summary — language: ${resolvedLanguage}`)
+    console.log(
+      `[AudioManager] Regenerating summary — language: ${resolvedLanguage}, type: ${contentType}`
+    )
 
     const { content, actionItems, error } = await this.summarizeTranscript(
       speakers,
       transcriptionSegments,
       resolvedLanguage,
-      () => {}
+      contentType,
+      () => {},
+      undefined,
+      summaryDepth
     )
     return { content, actionItems, language: resolvedLanguage, summarizationError: error }
   }
@@ -560,7 +582,7 @@ export class AudioManager {
    *   - Single mic track, all identified speakers → "Speaker 1", "Speaker 2", …
    */
   private buildTimeline(
-    mode: 'remote' | 'in-person',
+    mode: 'remote' | 'in-person' | 'system-only',
     micTranscription: TranscriptionResult,
     micDiarization: DiarizationResult,
     systemTranscription: TranscriptionResult | null,
@@ -574,6 +596,9 @@ export class AudioManager {
         systemDiarization
       )
     } else {
+      // in-person and system-only are both single-track: label speakers
+      // generically as "Speaker N" (for system-only the single track holds the
+      // captured system audio).
       return this.buildInPersonTimeline(micTranscription, micDiarization)
     }
   }
@@ -757,29 +782,19 @@ export class AudioManager {
    * Preserves the raw transcript so the user never loses their meeting content,
    * and states the reason so the failure is visible rather than silent.
    */
-  private buildFallbackContent(transcriptText: string, reason: string): string {
+  private buildFallbackContent(
+    transcriptText: string,
+    reason: string,
+    contentType: SummaryContentType
+  ): string {
     const transcriptBlock = transcriptText.trim() ? transcriptText.trim() : '_No speech detected._'
-    return [
-      '## Meeting Summary',
-      '',
-      `_${reason}_`,
-      '',
-      '## Key Topics Discussed',
-      '',
-      '_Not available._',
-      '',
-      '## Key Decisions',
-      '',
-      '_Not available._',
-      '',
-      '## Action Items',
-      '',
-      '_Not available._',
-      '',
-      '## Full Transcript',
-      '',
-      transcriptBlock
-    ].join('\n')
+    const sections = AudioManager.SUMMARY_SECTIONS[contentType]
+    const lines: string[] = []
+    sections.forEach((heading, index) => {
+      lines.push(heading, '', index === 0 ? `_${reason}_` : '_Not available._', '')
+    })
+    lines.push('## Full Transcript', '', transcriptBlock)
+    return lines.join('\n')
   }
 
   /**
@@ -819,19 +834,25 @@ export class AudioManager {
     balanced: { contextSize: 16384, finalOutputTokens: 4096, mapOutputTokens: 1536 },
     aggressive: { contextSize: 24576, finalOutputTokens: 4096, mapOutputTokens: 1536 }
   }
-  private static readonly SUMMARY_SECTIONS = [
-    '## Meeting Summary',
-    '## Key Topics Discussed',
-    '## Key Decisions',
-    '## Action Items'
-  ]
+  private static readonly SUMMARY_SECTIONS: Record<SummaryContentType, string[]> = {
+    meeting: [
+      '## Meeting Summary',
+      '## Key Topics Discussed',
+      '## Key Decisions',
+      '## Action Items'
+    ],
+    media: ['## Overview', '## Key Concepts', '## Important Points', '## Takeaways']
+  }
 
   /**
    * Resolve the active summarization budget from the user's `meeting.summaryDepth`
    * preference. Falls back to the balanced profile if the config is missing or
    * unreadable, so summarization never breaks on a bad/legacy config value.
    */
-  private async resolveSummaryBudget(): Promise<SummaryBudget> {
+  private async resolveSummaryBudget(override?: SummaryDepth): Promise<SummaryBudget> {
+    if (override && AudioManager.SUMMARY_PROFILES[override]) {
+      return AudioManager.SUMMARY_PROFILES[override]
+    }
     try {
       const { configStore } = await import('../utils/configStore')
       const depth = configStore.get('meeting')?.summaryDepth as SummaryDepth | undefined
@@ -858,8 +879,10 @@ export class AudioManager {
     speakers: Speaker[],
     transcriptionSegments: TranscriptionSegment[],
     language: string,
+    contentType: SummaryContentType,
     onProgress: (progress: ProcessingProgress) => void,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    summaryDepth?: SummaryDepth
   ): Promise<{ content: string; actionItems: ActionItem[]; error?: string }> {
     const transcriptText = this.formatTranscriptForPrompt(transcriptionSegments, speakers)
     const languageName = getLanguageName(language)
@@ -868,7 +891,7 @@ export class AudioManager {
       const reason = 'No speech was detected in this recording.'
       console.warn('[AudioManager] Empty transcript — skipping summarization')
       return {
-        content: this.buildFallbackContent('', reason),
+        content: this.buildFallbackContent('', reason, contentType),
         actionItems: [],
         error: reason
       }
@@ -899,9 +922,9 @@ export class AudioManager {
         await aiManager.initialize()
       }
 
-      const budget = await this.resolveSummaryBudget()
+      const budget = await this.resolveSummaryBudget(summaryDepth)
       console.log(
-        `[AudioManager] Summary budget — context ${budget.contextSize}, ` +
+        `[AudioManager] Summary budget — type ${contentType}, context ${budget.contextSize}, ` +
           `output ${budget.finalOutputTokens}/${budget.mapOutputTokens}`
       )
 
@@ -916,14 +939,15 @@ export class AudioManager {
         modelId,
         transcriptText,
         languageName,
+        contentType,
         monotonicProgress,
         budget,
         false
       )
 
-      if (this.isValidSummary(summary)) {
+      if (this.isValidSummary(summary, contentType)) {
         console.log(`[AudioManager] Summarization complete (${summary.length} chars)`)
-        return { content: summary, actionItems: this.parseActionItems(summary) }
+        return { content: summary, actionItems: this.extractActionItems(summary, contentType) }
       }
 
       console.warn('[AudioManager] Summary missing required sections — retrying once (strict)')
@@ -932,28 +956,29 @@ export class AudioManager {
         modelId,
         transcriptText,
         languageName,
+        contentType,
         monotonicProgress,
         budget,
         true
       )
 
-      if (this.isValidSummary(retry)) {
+      if (this.isValidSummary(retry, contentType)) {
         console.log(`[AudioManager] Summarization complete on retry (${retry.length} chars)`)
-        return { content: retry, actionItems: this.parseActionItems(retry) }
+        return { content: retry, actionItems: this.extractActionItems(retry, contentType) }
       }
 
       // Graceful degradation: rather than discarding a long, mostly-complete
       // summary and showing an empty "_Not available._" template, keep whatever
       // the model actually produced (the best of the two attempts). The
       // structured transcript is preserved independently in MeetingMetadata.
-      const best = this.pickBestSummary(summary, retry)
-      if (this.summaryBodyLength(best) > 40) {
+      const best = this.pickBestSummary(summary, retry, contentType)
+      if (this.summaryBodyLength(best, contentType) > 40) {
         console.warn(
           '[AudioManager] Keeping incomplete summary (some sections missing) instead of discarding'
         )
         return {
           content: best,
-          actionItems: this.parseActionItems(best),
+          actionItems: this.extractActionItems(best, contentType),
           error: 'The automatic summary may be incomplete — some sections could be missing.'
         }
       }
@@ -962,7 +987,8 @@ export class AudioManager {
       return {
         content: this.buildFallbackContent(
           transcriptText,
-          'The automatic summary was incomplete. The full transcript is preserved below.'
+          'The automatic summary was incomplete. The full transcript is preserved below.',
+          contentType
         ),
         actionItems: [],
         error: 'Summary was incomplete after retry.'
@@ -975,7 +1001,8 @@ export class AudioManager {
       return {
         content: this.buildFallbackContent(
           transcriptText,
-          `Automatic summarization failed: ${msg}. The full transcript is preserved below.`
+          `Automatic summarization failed: ${msg}. The full transcript is preserved below.`,
+          contentType
         ),
         actionItems: [],
         error: msg
@@ -1005,6 +1032,7 @@ export class AudioManager {
     modelId: string,
     transcriptText: string,
     languageName: string,
+    contentType: SummaryContentType,
     onProgress: (progress: ProcessingProgress) => void,
     budget: SummaryBudget,
     strict: boolean
@@ -1012,7 +1040,14 @@ export class AudioManager {
     const model = await aiManager.getModelInstance(modelId)
     const countTokens = (text: string): number => model.tokenize(text).length
 
-    const finalSystemPrompt = this.buildSummarySystemPrompt(languageName, strict)
+    const finalSystemPrompt = this.buildSummarySystemPrompt(languageName, strict, contentType)
+    // Content-type-aware wording for the user turns (kept in English; the model
+    // writes the body in `languageName`).
+    const sourceLabel = contentType === 'media' ? 'recording' : 'meeting'
+    const preserveClause =
+      contentType === 'media'
+        ? 'Do not lose any key concepts or important points'
+        : 'Do not lose any decisions or action items'
     // Retry passes flag their progress messages so the frozen bar still tells the
     // user something is happening (the value itself is clamped monotonic upstream).
     const retryNote = strict ? ' (retry)' : ''
@@ -1029,7 +1064,7 @@ export class AudioManager {
         aiManager,
         modelId,
         finalSystemPrompt,
-        `Here is the meeting transcript:\n\n${transcriptText}`,
+        `Here is the ${sourceLabel} transcript:\n\n${transcriptText}`,
         budget.finalOutputTokens,
         budget.contextSize,
         (p) =>
@@ -1044,7 +1079,7 @@ export class AudioManager {
     }
 
     // ---- Map: summarize each chunk into intermediate notes ----
-    const mapSystemPrompt = this.buildMapSystemPrompt(languageName)
+    const mapSystemPrompt = this.buildMapSystemPrompt(languageName, contentType)
     const chunks = this.splitIntoChunks(transcriptText, inputBudget, countTokens)
     console.log(`[AudioManager] Long transcript — map-reduce over ${chunks.length} chunk(s)`)
 
@@ -1054,7 +1089,7 @@ export class AudioManager {
         aiManager,
         modelId,
         mapSystemPrompt,
-        `Meeting transcript part ${i + 1} of ${chunks.length}:\n\n${chunks[i]}`,
+        `${sourceLabel === 'meeting' ? 'Meeting' : 'Recording'} transcript part ${i + 1} of ${chunks.length}:\n\n${chunks[i]}`,
         budget.mapOutputTokens,
         budget.contextSize
       )
@@ -1078,7 +1113,7 @@ export class AudioManager {
             aiManager,
             modelId,
             mapSystemPrompt,
-            `Combine these meeting notes into one set of notes, preserving all decisions and action items:\n\n${group}`,
+            `Combine these ${sourceLabel} notes into one set of notes. ${preserveClause}:\n\n${group}`,
             budget.mapOutputTokens,
             budget.contextSize
           )
@@ -1104,7 +1139,7 @@ export class AudioManager {
       aiManager,
       modelId,
       finalSystemPrompt,
-      `Here are notes from consecutive parts of the same meeting, in order. Synthesize them into a single structured summary. Do not lose any decisions or action items:\n\n${combined}`,
+      `Here are notes from consecutive parts of the same ${sourceLabel}, in order. Synthesize them into a single structured summary. ${preserveClause}:\n\n${combined}`,
       budget.finalOutputTokens,
       budget.contextSize,
       (p) =>
@@ -1189,14 +1224,15 @@ export class AudioManager {
   }
 
   /** Whether the summary contains all required sections plus real body content. */
-  private isValidSummary(text: string): boolean {
+  private isValidSummary(text: string, contentType: SummaryContentType): boolean {
     if (!text) return false
     // Ignore any leaked reasoning block so it can't inflate the body-length check.
     const cleaned = text.replace(/<think>[\s\S]*?<\/think>/gi, '')
-    const hasAllSections = AudioManager.SUMMARY_SECTIONS.every((h) => cleaned.includes(h))
+    const sections = AudioManager.SUMMARY_SECTIONS[contentType]
+    const hasAllSections = sections.every((h) => cleaned.includes(h))
     if (!hasAllSections) return false
     // Ensure there is meaningful content beyond the headings themselves.
-    return this.summaryBodyLength(cleaned) > 40
+    return this.summaryBodyLength(cleaned, contentType) > 40
   }
 
   /**
@@ -1204,16 +1240,24 @@ export class AudioManager {
    * any leaked reasoning). Used to tell an empty/near-empty summary from one that
    * has real content but is merely missing a section heading.
    */
-  private summaryBodyLength(text: string): number {
+  private summaryBodyLength(text: string, contentType: SummaryContentType): number {
     if (!text) return 0
     let body = text.replace(/<think>[\s\S]*?<\/think>/gi, '')
-    for (const h of AudioManager.SUMMARY_SECTIONS) body = body.split(h).join('')
+    for (const h of AudioManager.SUMMARY_SECTIONS[contentType]) body = body.split(h).join('')
     return body.replace(/[#\s_*\-[\]()]/g, '').length
   }
 
   /** Pick the attempt that produced the most real content (used for degradation). */
-  private pickBestSummary(a: string, b: string): string {
-    return this.summaryBodyLength(b) > this.summaryBodyLength(a) ? b : a
+  private pickBestSummary(a: string, b: string, contentType: SummaryContentType): string {
+    return this.summaryBodyLength(b, contentType) > this.summaryBodyLength(a, contentType) ? b : a
+  }
+
+  /**
+   * Action items only exist for meetings. Media summaries have no
+   * "## Action Items" section, so they never carry action items.
+   */
+  private extractActionItems(markdown: string, contentType: SummaryContentType): ActionItem[] {
+    return contentType === 'meeting' ? this.parseActionItems(markdown) : []
   }
 
   /** Split transcript text into token-budgeted chunks at line boundaries. */
@@ -1264,7 +1308,14 @@ export class AudioManager {
   }
 
   /** System prompt for the final structured summary. */
-  private buildSummarySystemPrompt(languageName: string, strict: boolean): string {
+  private buildSummarySystemPrompt(
+    languageName: string,
+    strict: boolean,
+    contentType: SummaryContentType
+  ): string {
+    if (contentType === 'media') {
+      return this.buildMediaSummarySystemPrompt(languageName, strict)
+    }
     const strictLine = strict
       ? '\nYou MUST output every one of the four sections below, each with real content. Do not skip any section.'
       : ''
@@ -1290,8 +1341,45 @@ IMPORTANT: Write ALL content (body text, bullet points, descriptions) in ${langu
 Do not include any text outside of these sections. Use the exact section headings above. Do NOT include a transcript section.`
   }
 
+  /**
+   * System prompt for the final learning summary of listened media (e.g. an
+   * online course). Same anti-overflow discipline as the meeting prompt, but a
+   * learning-oriented structure instead of decisions/action items.
+   */
+  private buildMediaSummarySystemPrompt(languageName: string, strict: boolean): string {
+    const strictLine = strict
+      ? '\nYou MUST output every one of the four sections below, each with real content. Do not skip any section.'
+      : ''
+    return `You are summarizing media content (such as an online course, lecture, talk or video) that the user listened to. Given the transcript, produce structured learning notes in markdown format with EXACTLY these four sections, in this order:
+
+## Overview
+A concise overview of what the content covered, its purpose and the main thread of the argument or lesson.
+
+## Key Concepts
+The core concepts, definitions and ideas presented, each briefly explained so the notes stand on their own without the original media.
+
+## Important Points
+The most important points, arguments, examples, data or steps worth remembering. Use a bullet or numbered list.
+
+## Takeaways
+The practical takeaways, conclusions or things to remember/apply. If the content suggests exercises or next steps, list them here. If there are none, write "_None._".
+
+CRITICAL — budget your output so that ALL FOUR sections are always produced. Never spend so much detail on the earlier sections that you run out of room before "## Important Points" and "## Takeaways". Keep each section proportionate; it is far better to be a little more concise everywhere than to omit a later section. The "## Takeaways" heading must always be the final section and must always be present.${strictLine}
+
+IMPORTANT: Write ALL content (body text, bullet points, descriptions) in ${languageName}. The section headings (## Overview, ## Key Concepts, ## Important Points, ## Takeaways) MUST remain exactly as shown above in English for parsing consistency.
+Do not include any text outside of these sections. Use the exact section headings above. Do NOT include a transcript section.`
+  }
+
   /** System prompt for the map step (per-chunk intermediate notes). */
-  private buildMapSystemPrompt(languageName: string): string {
+  private buildMapSystemPrompt(languageName: string, contentType: SummaryContentType): string {
+    if (contentType === 'media') {
+      return `You are taking notes on part of a media transcript (e.g. an online course or lecture). Extract, in ${languageName}:
+- the key concepts and ideas presented
+- important points, arguments, examples or steps
+- any practical takeaways or conclusions
+
+Be faithful and concise. Do not invent information. Output plain notes in ${languageName} — no preamble, no headings required. This is an intermediate note that will be merged with notes from other parts of the same recording.`
+    }
     return `You are taking notes on part of a meeting transcript. Extract, in ${languageName}:
 - the key points and context discussed
 - any decisions made (with rationale)

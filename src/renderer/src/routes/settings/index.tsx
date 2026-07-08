@@ -51,6 +51,13 @@ import {
   type CuratedFeature
 } from '@renderer/lib/modelFeatures'
 import type { ModelDefinition, DownloadProgress, ModelProfile } from '@main/ai/types'
+import {
+  SUMMARY_DEPTH_OPTIONS,
+  isDetailedSummaryAvailable,
+  detailedUnavailableReason,
+  resolveSelectableDepth,
+  type SummaryDepth
+} from '@renderer/lib/meetingSummary'
 
 export const Route = createFileRoute('/settings/')({
   component: SettingsPage
@@ -142,6 +149,7 @@ function SettingsPage(): ReactNode {
         downloadedModels={downloadedModels ?? []}
         compatibleModelIds={compatibleModelIds}
         supportsRealtimeAsr={profile.supportsRealtimeAsr}
+        profile={profile}
       />
 
       <AppearanceSettings />
@@ -550,12 +558,14 @@ interface MeetingNotesSettingsProps {
   downloadedModels: ModelDefinition[]
   compatibleModelIds: Set<string>
   supportsRealtimeAsr: boolean
+  profile: ModelProfile
 }
 
 const MeetingNotesSettings: FC<MeetingNotesSettingsProps> = ({
   downloadedModels,
   compatibleModelIds,
-  supportsRealtimeAsr
+  supportsRealtimeAsr,
+  profile
 }) => {
   const { data: meetingConfig } = useConfig('meeting')
   const setConfig = useSetConfig<'meeting'>()
@@ -582,6 +592,9 @@ const MeetingNotesSettings: FC<MeetingNotesSettingsProps> = ({
     [downloadedModels, compatibleModelIds]
   )
 
+  const detailedAvailable = isDetailedSummaryAvailable(profile)
+  const detailedReason = detailedUnavailableReason(profile)
+
   if (!meetingConfig) return null
 
   const handleKeepAudioChange = (checked: boolean): void => {
@@ -603,7 +616,7 @@ const MeetingNotesSettings: FC<MeetingNotesSettingsProps> = ({
       key: 'meeting',
       value: {
         ...meetingConfig,
-        summaryDepth: value as 'conservative' | 'balanced' | 'aggressive'
+        summaryDepth: value as SummaryDepth
       }
     })
   }
@@ -670,23 +683,30 @@ const MeetingNotesSettings: FC<MeetingNotesSettingsProps> = ({
           {/* Summary depth */}
           <div className="flex items-center justify-between py-4">
             <div className="flex-1 pr-4">
-              <p className="text-sm font-medium">Summary depth</p>
+              <p className="text-sm font-medium">Summary length</p>
               <p className="text-xs text-muted-foreground">
-                Higher depth gives more detailed summaries of long meetings but uses more memory and
-                takes longer. Balanced is recommended for most machines.
+                Default length for meeting and media summaries. Longer summaries capture more detail
+                but use more memory and take longer. Balanced is recommended for most machines.
+                {!detailedAvailable && ` ${detailedReason}`}
               </p>
             </div>
             <Select
-              value={meetingConfig.summaryDepth ?? 'balanced'}
+              value={resolveSelectableDepth(meetingConfig.summaryDepth, detailedAvailable)}
               onValueChange={handleSummaryDepthChange}
             >
               <SelectTrigger className="w-36">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="conservative">Conservative</SelectItem>
-                <SelectItem value="balanced">Balanced</SelectItem>
-                <SelectItem value="aggressive">Aggressive</SelectItem>
+                {SUMMARY_DEPTH_OPTIONS.map((opt) => (
+                  <SelectItem
+                    key={opt.value}
+                    value={opt.value}
+                    disabled={opt.value === 'aggressive' && !detailedAvailable}
+                  >
+                    {opt.label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>

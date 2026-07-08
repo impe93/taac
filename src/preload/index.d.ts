@@ -374,9 +374,14 @@ export interface AudioAPI {
     noteId: string,
     spaceId: string,
     data: {
-      micAudio: Uint8Array
+      /** Primary track. Microphone for meeting modes; omitted for system-only. */
+      micAudio?: Uint8Array
       systemAudio?: Uint8Array
-      mode: 'remote' | 'in-person'
+      mode: 'remote' | 'in-person' | 'system-only'
+      /** Meeting (default) or listened media. Media requires system-only mode. */
+      contentType?: 'meeting' | 'media'
+      /** Per-recording summary length override; falls back to meeting.summaryDepth. */
+      summaryDepth?: 'conservative' | 'balanced' | 'aggressive'
       durationSecs?: number
       /** Preferred spoken language: 'auto' (detect) or an ISO 639-1 code */
       language?: string
@@ -397,6 +402,8 @@ export interface AudioAPI {
     speakers: import('./types').Speaker[]
     transcription: import('./types').TranscriptionSegment[]
     language: string
+    contentType?: 'meeting' | 'media'
+    summaryDepth?: 'conservative' | 'balanced' | 'aggressive'
   }) => Promise<{
     content: string
     actionItems: import('./types').ActionItem[]
@@ -408,7 +415,9 @@ export interface AudioAPI {
     noteId: string,
     spaceId: string,
     options: {
-      mode: 'remote' | 'in-person'
+      mode: 'remote' | 'in-person' | 'system-only'
+      contentType?: 'meeting' | 'media'
+      summaryDepth?: 'conservative' | 'balanced' | 'aggressive'
       recordingDate: string
       durationSecs: number
       language: string
