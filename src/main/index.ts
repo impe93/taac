@@ -98,14 +98,27 @@ async function patchTierAwareMeetingDefaults(): Promise<void> {
   )
 }
 
+// Floor for the window size. Prevents a corrupted/degenerate persisted size
+// (e.g. 1px) from producing an invisible window on next launch, and stops the
+// user/app from shrinking below a usable layout.
+const MIN_WINDOW_WIDTH = 800
+const MIN_WINDOW_HEIGHT = 600
+
 function createWindow(): void {
   const savedBounds = configStore.get('windowBounds')
   const savedIsMaximized = configStore.get('isMaximized')
 
+  // Sanitize persisted bounds before applying them, in case a previous close
+  // wrote degenerate values.
+  const width = Math.max(savedBounds.width, MIN_WINDOW_WIDTH)
+  const height = Math.max(savedBounds.height, MIN_WINDOW_HEIGHT)
+
   // Create the browser window.
   const mainWindow = new BrowserWindow({
-    width: savedBounds.width,
-    height: savedBounds.height,
+    width,
+    height,
+    minWidth: MIN_WINDOW_WIDTH,
+    minHeight: MIN_WINDOW_HEIGHT,
     ...(savedBounds.x !== undefined && savedBounds.y !== undefined
       ? { x: savedBounds.x, y: savedBounds.y }
       : {}),
@@ -135,7 +148,12 @@ function createWindow(): void {
     const isMaximized = mainWindow.isMaximized()
     configStore.set('isMaximized', isMaximized)
     if (!isMaximized) {
-      configStore.set('windowBounds', mainWindow.getBounds())
+      const bounds = mainWindow.getBounds()
+      // Guard against degenerate bounds sometimes returned during transitions
+      // (hide/animations): never persist a size below the usable floor.
+      if (bounds.width >= MIN_WINDOW_WIDTH && bounds.height >= MIN_WINDOW_HEIGHT) {
+        configStore.set('windowBounds', bounds)
+      }
     }
   })
 
