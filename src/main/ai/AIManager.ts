@@ -885,7 +885,9 @@ export class AIManager {
 
       // The model requested a note search and produced no direct answer yet →
       // retrieve, inject as context, and answer in a second tool-free turn.
-      if (retrieval && toolCalls.length > 0 && fullResponse.length === 0) {
+      // Use trim(): a reasoning turn leaks a newline or two into the response
+      // channel before the tool call, which must not block retrieval.
+      if (retrieval && toolCalls.length > 0 && fullResponse.trim().length === 0) {
         const blocks: string[] = []
         for (const call of toolCalls) {
           const query = call.arguments?.query

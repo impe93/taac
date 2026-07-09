@@ -31,6 +31,7 @@ The protocol is engine-agnostic: swapping the LLM library only touches this file
 import json
 import os
 import queue
+import re
 import sys
 import threading
 import time
@@ -42,8 +43,13 @@ os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 
 THINK_OPEN = "<think>"
 THINK_CLOSE = "</think>"
+# Qwen3.5 emits tool calls either Hermes-style (<tool_call>{json}</tool_call>) or
+# in the XML function-call form (<function=NAME><parameter=KEY>value</parameter>
+# </function>), sometimes wrapped in <tool_call>. We detect both openers.
 TOOL_OPEN = "<tool_call>"
 TOOL_CLOSE = "</tool_call>"
+FUNC_OPEN = "<function="
+FUNC_CLOSE = "</function>"
 
 _stdout_lock = threading.Lock()
 
@@ -80,8 +86,11 @@ class StreamParser:
         self.buf = ""  # held-back tail that may be a partial delimiter
         self.in_tool = False
         self.tool_buf = ""
+        self.tool_close = TOOL_CLOSE  # closer for the current tool region
         self.tool_calls: list = []
-        self._max_delim = max(len(THINK_CLOSE), len(TOOL_OPEN), len(TOOL_CLOSE))
+        self._max_delim = max(
+            len(THINK_CLOSE), len(TOOL_OPEN), len(TOOL_CLOSE), len(FUNC_OPEN), len(FUNC_CLOSE)
+        )
 
     def _emit_response(self, text: str) -> None:
         if text:
@@ -112,16 +121,16 @@ class StreamParser:
         # unless a full delimiter is already present.
         while True:
             if self.in_tool:
-                close = self.buf.find(TOOL_CLOSE)
+                close = self.buf.find(self.tool_close)
                 if close == -1:
-                    # Keep accumulating tool JSON; retain a tail for a split tag.
+                    # Keep accumulating the tool body; retain a tail for a split tag.
                     keep = self._max_delim - 1
                     if len(self.buf) > keep:
                         self.tool_buf += self.buf[:-keep]
                         self.buf = self.buf[-keep:]
                     return
                 self.tool_buf += self.buf[:close]
-                self.buf = self.buf[close + len(TOOL_CLOSE):]
+                self.buf = self.buf[close + len(self.tool_close):]
                 self._finish_tool_call()
                 self.in_tool = False
                 continue
@@ -137,16 +146,32 @@ class StreamParser:
                 self._flush_partial(self._emit_thought)
                 return
 
-            # response channel: watch for a tool-call opener
-            tool_open = self.buf.find(TOOL_OPEN)
-            if tool_open != -1:
-                self._emit_response(self.buf[:tool_open])
-                self.buf = self.buf[tool_open + len(TOOL_OPEN):]
+            # response channel: watch for a tool-call opener (either form)
+            pos, opener = self._find_tool_opener()
+            if pos != -1:
+                self._emit_response(self.buf[:pos])
+                if opener == TOOL_OPEN:
+                    # Strip the <tool_call> wrapper; body may hold JSON or <function=>.
+                    self.buf = self.buf[pos + len(TOOL_OPEN):]
+                    self.tool_close = TOOL_CLOSE
+                else:
+                    # Bare <function=…>; keep the opener so the parser sees the name.
+                    self.buf = self.buf[pos:]
+                    self.tool_close = FUNC_CLOSE
                 self.in_tool = True
                 self.tool_buf = ""
                 continue
             self._flush_partial(self._emit_response)
             return
+
+    def _find_tool_opener(self):
+        """Return (index, opener) of the earliest tool-call opener in buf, or (-1, None)."""
+        best, best_op = -1, None
+        for op in (TOOL_OPEN, FUNC_OPEN):
+            i = self.buf.find(op)
+            if i != -1 and (best == -1 or i < best):
+                best, best_op = i, op
+        return best, best_op
 
     def _flush_partial(self, emit_fn) -> None:
         """Emit everything except a trailing tail that might be a partial
@@ -159,11 +184,46 @@ class StreamParser:
     def _finish_tool_call(self) -> None:
         raw = self.tool_buf.strip()
         self.tool_buf = ""
-        try:
-            parsed = json.loads(raw)
+        parsed = self._parse_tool_call(raw)
+        if parsed is not None:
             self.tool_calls.append(parsed)
-        except json.JSONDecodeError:
+        else:
             log(f"Discarding unparseable tool_call block: {raw[:200]!r}")
+
+    @staticmethod
+    def _parse_tool_call(raw: str):
+        """Parse a tool-call body in either Hermes JSON or Qwen XML function form.
+
+        Returns {"name": str, "arguments": dict} or None.
+        """
+        # 1) Hermes JSON: {"name": "...", "arguments": {...}}
+        try:
+            obj = json.loads(raw)
+            if isinstance(obj, dict) and "name" in obj:
+                args = obj.get("arguments")
+                if args is None:
+                    args = obj.get("parameters", {})
+                if isinstance(args, str):
+                    try:
+                        args = json.loads(args)
+                    except json.JSONDecodeError:
+                        args = {}
+                return {"name": obj["name"], "arguments": args if isinstance(args, dict) else {}}
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        # 2) Qwen XML: <function=NAME><parameter=KEY>VALUE</parameter>…</function>
+        name_match = re.search(r"<function=([^>\s]+)", raw)
+        if name_match:
+            args = {
+                key: value.strip()
+                for key, value in re.findall(
+                    r"<parameter=([^>\s]+)>(.*?)</parameter>", raw, re.DOTALL
+                )
+            }
+            return {"name": name_match.group(1), "arguments": args}
+
+        return None
 
     def finalize(self) -> None:
         """Flush any remaining buffered text at end of generation."""
