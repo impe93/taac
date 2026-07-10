@@ -13,7 +13,7 @@ import { MeetingRecordingSidebarPanel } from './meeting/MeetingRecordingSidebarP
 
 export function AppSidebar(): ReactElement {
   return (
-    <Sidebar resizable>
+    <Sidebar resizable className="top-10 h-[calc(100svh-2.5rem)] border-r-0">
       <DndProvider>
         <SidebarHeader>
           <SpaceHeader />

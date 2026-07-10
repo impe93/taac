@@ -1,5 +1,2 @@
-export {
-  WindowDragBorder,
-  WINDOW_BORDER_WIDTH,
-  WINDOW_TRAFFIC_LIGHTS_HEIGHT
-} from './window-drag-border'
+export { AppTopBar } from './app-top-bar'
+export { WINDOW_TOPBAR_HEIGHT } from './constants'
