@@ -47,14 +47,31 @@ mac:
   extraResources:
     - from: python-runtime
       to: python-runtime
-  entitlementsInherit: build/entitlements.mac.plist
+  target:
+    - dmg
+    - zip
+  # Hardened Runtime is mandatory for notarization. The entitlements below relax
+  # it enough for node-llama-cpp (JIT) and the embedded Python/MLX sidecar
+  # (library validation must be disabled to load the unsigned bundled dylibs).
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.inherit.plist
   extendInfo:
     - NSCameraUsageDescription: Application requests access to the device's camera.
     - NSMicrophoneUsageDescription: 'TaacNotes needs microphone access to record meeting audio.'
     - NSAudioCaptureUsageDescription: 'TaacNotes needs audio capture access to record system audio during meetings.'
     - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
     - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
-  notarize: false
+  # Notarization uses electron-builder's built-in flow; credentials are read from
+  # the environment (APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID).
+  # Stapling of the ticket happens automatically. The nested Python runtime is
+  # deep-signed beforehand by scripts/afterPack.mjs.
+  notarize: true
+afterPack: scripts/afterPack.mjs
+# electron-builder notarizes the .app but not the .dmg container; this hook
+# submits + staples each produced .dmg so it is Gatekeeper-verifiable offline.
+afterAllArtifactBuild: scripts/afterAllArtifactBuild.mjs
 dmg:
   artifactName: ${name}-${version}.${ext}
 linux:

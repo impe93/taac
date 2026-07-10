@@ -625,6 +625,33 @@ Three tsconfig files:
 - macOS entitlements for JIT compilation and unsigned executable memory (required by `node-llama-cpp`).
 - Custom `taac-asset://` protocol for serving local assets.
 
+### macOS Code Signing & Notarization
+
+Distribution builds (`pnpm build:mac`) are signed with a **Developer ID Application**
+certificate and **notarized** by Apple, so Gatekeeper opens the app without the
+"unidentified developer / unable to verify for malware" warning on first launch.
+
+- **Hardened Runtime** is enabled (`mac.hardenedRuntime: true`) — mandatory for
+  notarization. `build/entitlements.mac.plist` (app) and
+  `build/entitlements.mac.inherit.plist` (child processes) relax it just enough:
+  `allow-jit` + `allow-unsigned-executable-memory` for `node-llama-cpp`, and
+  `disable-library-validation` so the embedded Python/MLX interpreter can load its
+  bundled (non-Apple-signed) dylibs. The inherit plist is what lets the Python
+  sidecar and native worker processes run under Hardened Runtime.
+- **Nested Python runtime signing** (`scripts/afterPack.mjs`): the CPython + MLX
+  runtime shipped via `mac.extraResources` is NOT reliably signed by
+  electron-builder's own pass, and notarization rejects any unsigned Mach-O. This
+  `afterPack` hook deep-signs every real Mach-O under
+  `Contents/Resources/python-runtime` before the bundle is signed.
+- **Credentials** are read from the environment (`APPLE_ID`,
+  `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`); `mac.notarize: true` triggers
+  notarization and stapling automatically. See `.env.example`. electron-builder
+  does not auto-load `.env`, so export first:
+  `set -a && source .env && set +a && pnpm build:mac`.
+- **Verify** a build: `spctl -a -vvv -t install dist/mac-arm64/Taac.app` (expect
+  "accepted, source=Notarized Developer ID") and
+  `xcrun stapler validate dist/Taac-<ver>.dmg`.
+
 ---
 
 ## 16. File System Layout

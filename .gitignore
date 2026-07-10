@@ -5,6 +5,13 @@ out
 .eslintcache
 *.log*
 
+# Local signing / notarization credentials (Apple ID, app-specific password, certs)
+.env
+.env.*
+!.env.example
+*.p8
+*.p12
+
 # Realtime ASR (Qwen3-ASR MLX sidecar)
 .venv-asr/
 python-runtime/
