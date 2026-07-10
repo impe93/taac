@@ -3,7 +3,7 @@ import '@fontsource/instrument-serif'
 import '@fontsource/instrument-serif/400-italic.css'
 import '@fontsource-variable/jetbrains-mono'
 import '../assets/global.css'
-import { type FC } from 'react'
+import { type FC, useEffect, useState } from 'react'
 import { createRootRoute, Outlet, useNavigate } from '@tanstack/react-router'
 import { Providers } from '@renderer/components/providers'
 import { SidebarTrigger } from '@renderer/components/ui/sidebar'
@@ -18,16 +18,30 @@ import {
   WINDOW_BORDER_WIDTH,
   WINDOW_TRAFFIC_LIGHTS_HEIGHT
 } from '@renderer/components/window'
-import { Bot, Settings } from 'lucide-react'
+import { Bot, Search, Settings } from 'lucide-react'
 import { cn } from '@renderer/lib/utils'
 import { useConfig } from '@renderer/hooks/useConfig'
 import { IndexingStatusIndicator } from '@renderer/components/ai/IndexingStatusIndicator'
+import { SearchCommandDialog } from '@renderer/components/search/SearchCommandDialog'
 
 const RootLayout: FC = () => {
   const isMacOS = window.platform === 'darwin'
   const { isOpen, toggle } = useAIChatPanel()
   const navigate = useNavigate()
   const { data: onboardingDone, isLoading } = useConfig('onboardingCompleted')
+  const [searchOpen, setSearchOpen] = useState(false)
+
+  // Global ⌘K / Ctrl+K to open the search modal.
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent): void => {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setSearchOpen((prev) => !prev)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
 
   // Show minimal layout during onboarding or while loading config
   if (isLoading || !onboardingDone) {
@@ -83,6 +97,19 @@ const RootLayout: FC = () => {
                   </TooltipContent>
                 </Tooltip>
               </div>
+              {/* Global search trigger */}
+              <button
+                type="button"
+                onClick={() => setSearchOpen(true)}
+                aria-label="Search notes"
+                className="mx-2 hidden h-8 w-full max-w-sm items-center gap-2 rounded-md border bg-background/40 px-3 text-sm text-muted-foreground transition-colors hover:bg-accent md:flex"
+              >
+                <Search className="size-4 shrink-0" />
+                <span className="flex-1 text-left">Search notes…</span>
+                <kbd className="pointer-events-none inline-flex h-5 select-none items-center rounded border bg-muted px-1.5 font-mono text-[10px] font-medium">
+                  ⌘K
+                </kbd>
+              </button>
               {/* Indexing status + AI Panel toggle */}
               <div className="hidden items-center gap-2 px-4 md:flex">
                 <IndexingStatusIndicator />
@@ -116,6 +143,7 @@ const RootLayout: FC = () => {
           </SidebarInset>
         </div>
       </div>
+      <SearchCommandDialog open={searchOpen} onOpenChange={setSearchOpen} />
     </>
   )
 }

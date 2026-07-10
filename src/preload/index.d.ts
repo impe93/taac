@@ -20,6 +20,7 @@ import type {
   SearchResult,
   RankedResult,
   ExpandedResult,
+  SpaceScopedSearchResult,
   Conversation,
   ConversationSummary,
   NoteReference,
@@ -49,6 +50,7 @@ export type {
   SearchResult,
   RankedResult,
   ExpandedResult,
+  SpaceScopedSearchResult,
   Conversation,
   ConversationSummary,
   NoteReference,
@@ -273,6 +275,7 @@ export interface AIAPI {
     limit?: number,
     noteIds?: string[]
   ) => Promise<ExpandedResult[]>
+  searchAllSpaces: (query: string, limit?: number) => Promise<SpaceScopedSearchResult[]>
   getIndexedNotes: (spaceId: string) => Promise<string[]>
   deleteNoteIndex: (spaceId: string, noteId: string) => Promise<void>
   getEmbeddingModelStatus: () => Promise<EmbeddingModelStatus>

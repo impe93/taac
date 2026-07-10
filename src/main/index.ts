@@ -29,6 +29,7 @@ import {
   registerAIHandlers,
   notifyNoteSaved,
   notifyFolderMoved,
+  notifyNoteDeleted,
   disposeAISubsystem,
   initializeEmbeddingSubsystem
 } from './ipc/aiHandlers'
@@ -240,11 +241,14 @@ app.whenReady().then(async () => {
 
   // Register IPC handlers
   registerSpaceHandlers(spaceManager)
-  registerFileHandlers(getOrCreateFsManager, notifyNoteSaved, (spaceId, folderId) =>
-    notifyFolderMoved(getOrCreateFsManager, spaceId, folderId)
+  registerFileHandlers(
+    getOrCreateFsManager,
+    notifyNoteSaved,
+    (spaceId, folderId) => notifyFolderMoved(getOrCreateFsManager, spaceId, folderId),
+    (spaceId, noteIds) => notifyNoteDeleted(getOrCreateFsManager, spaceId, noteIds)
   )
   registerConfigHandlers()
-  registerAIHandlers(getOrCreateFsManager)
+  registerAIHandlers(getOrCreateFsManager, () => spaceManager.listSpaces())
   registerImportHandlers(spaceManager, getOrCreateFsManager)
   registerAudioHandlers()
 

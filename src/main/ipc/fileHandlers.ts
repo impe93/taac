@@ -19,10 +19,35 @@ export type OnNoteSaved = (
 
 export type OnFolderMoved = (spaceId: string, folderId: string) => Promise<void>
 
+/**
+ * Callback invoked after one or more notes are deleted (single note or every
+ * note under a deleted folder). Used to purge their embeddings from the vector
+ * DB so deleted notes don't linger as orphaned search results.
+ */
+export type OnNotesDeleted = (spaceId: string, noteIds: string[]) => Promise<void>
+
+/**
+ * Collect the ids of every note under a folder subtree (inclusive), by walking
+ * folder metadata. Used before deleting a folder so its notes can be purged
+ * from the vector index.
+ */
+async function collectNoteIdsRecursively(
+  fsManager: FileSystemManager,
+  folderId: string,
+  acc: string[]
+): Promise<void> {
+  const meta = await fsManager.readFolderMetadata(folderId)
+  acc.push(...meta.noteIds)
+  for (const childId of meta.children) {
+    await collectNoteIdsRecursively(fsManager, childId, acc)
+  }
+}
+
 export function registerFileHandlers(
   getOrCreateFsManager: GetFsManager,
   onNoteSaved?: OnNoteSaved,
-  onFolderMoved?: OnFolderMoved
+  onFolderMoved?: OnFolderMoved,
+  onNotesDeleted?: OnNotesDeleted
 ): void {
   // Note operations
   ipcMain.handle(
@@ -111,6 +136,8 @@ export function registerFileHandlers(
       try {
         const fsManager = getOrCreateFsManager(spaceId)
         await fsManager.deleteNote(folderId, noteId)
+        // Purge the deleted note's embeddings so it can't resurface in search.
+        await onNotesDeleted?.(spaceId, [noteId])
       } catch (error) {
         throw new Error(`Failed to delete note: ${(error as Error).message}`)
       }
@@ -176,7 +203,18 @@ export function registerFileHandlers(
     async (_event: IpcMainInvokeEvent, spaceId: string, folderId: string) => {
       try {
         const fsManager = getOrCreateFsManager(spaceId)
+        // Collect the subtree's note ids BEFORE deleting so we can purge their
+        // embeddings afterwards.
+        const deletedNoteIds: string[] = []
+        if (onNotesDeleted) {
+          try {
+            await collectNoteIdsRecursively(fsManager, folderId, deletedNoteIds)
+          } catch {
+            // If enumeration fails the batch orphan-prune will still clean up.
+          }
+        }
         await fsManager.deleteFolder(folderId)
+        await onNotesDeleted?.(spaceId, deletedNoteIds)
       } catch (error) {
         throw new Error(`Failed to delete folder: ${(error as Error).message}`)
       }

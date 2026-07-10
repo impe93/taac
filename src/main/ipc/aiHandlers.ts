@@ -30,12 +30,24 @@ import type {
   GenerationOptions,
   ExpandedResult,
   IndexingProgressEvent,
-  ChatRetrievalTool
+  ChatRetrievalTool,
+  SpaceScopedSearchResult
 } from '../ai'
 import type { FileSystemManager, Note, FolderMetadata } from '../utils/fileSystem'
+import type { Space } from '../utils/spaceManager'
 import { configStore } from '../utils/configStore'
 
 type GetFsManager = (spaceId: string) => FileSystemManager
+type ListSpaces = () => Promise<Space[]>
+
+/** Cached note-title index per space, for the title-match safety net. */
+interface TitleIndexEntry {
+  noteId: string
+  folderId: string
+  title: string
+}
+const titleIndexCache = new Map<string, { entries: TitleIndexEntry[]; expiresAt: number }>()
+const TITLE_INDEX_TTL_MS = 5_000
 
 function writeAILog(message: string): void {
   try {
@@ -329,6 +341,169 @@ async function runNoteSearch(
 }
 
 /**
+ * Cheap check that the default embedding model is downloaded, without loading
+ * it. Used to decide whether cross-space search can run its semantic stage.
+ */
+async function isEmbeddingModelReady(): Promise<boolean> {
+  try {
+    const service = getEmbeddingService()
+    const modelId = service.getEmbeddingModel()
+    const dl = await getDownloader()
+    return await dl.isModelDownloaded(modelId)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Get (cached) the note-title index for a space.
+ *
+ * Walks all notes once and caches the {noteId, folderId, title} list for a
+ * short TTL so rapid keystrokes during a search session don't re-read files.
+ */
+async function getSpaceTitleIndex(
+  spaceId: string,
+  getFsManager: GetFsManager
+): Promise<TitleIndexEntry[]> {
+  const cached = titleIndexCache.get(spaceId)
+  if (cached && cached.expiresAt > Date.now()) return cached.entries
+
+  const fsManager = getFsManager(spaceId)
+  const collected: Array<{ note: Note; folderId: string }> = []
+  await collectNotesRecursively(fsManager, 'root', collected)
+  const entries: TitleIndexEntry[] = collected.map(({ note, folderId }) => ({
+    noteId: note.id,
+    folderId,
+    title: note.title
+  }))
+  titleIndexCache.set(spaceId, { entries, expiresAt: Date.now() + TITLE_INDEX_TTL_MS })
+  return entries
+}
+
+/** Collapse whitespace and truncate a chunk into a compact snippet. */
+function makeSnippet(text: string, maxLength = 160): string {
+  const normalized = text.replace(/\s+/g, ' ').trim()
+  if (normalized.length <= maxLength) return normalized
+  return normalized.slice(0, maxLength).trim() + '…'
+}
+
+/**
+ * Lightweight cross-space search powering the global search modal.
+ *
+ * Unlike {@link runNoteSearch} it deliberately skips query expansion and
+ * cross-encoder reranking so it stays responsive on every debounced keystroke.
+ * It embeds the query once, runs the synchronous hybridSearch against every
+ * space's vector DB, dedupes to one entry per note, and merges a title-substring
+ * safety net so freshly created (not-yet-indexed) notes remain findable by name.
+ * If the embedding model is unavailable it degrades gracefully to title-only.
+ */
+async function runCrossSpaceSearch(
+  getFsManager: GetFsManager,
+  listSpaces: ListSpaces,
+  query: string,
+  opts?: { limit?: number }
+): Promise<SpaceScopedSearchResult[]> {
+  const trimmed = query.trim()
+  if (trimmed.length === 0) return []
+
+  const perSpaceLimit = opts?.limit ?? 8
+  const lowerQuery = trimmed.toLowerCase()
+  const spaces = await listSpaces()
+
+  // --- Embed the query once (shared across all spaces). ---
+  let queryEmbedding: Float32Array | null = null
+  if (await isEmbeddingModelReady()) {
+    try {
+      const manager = getAIManager()
+      if (!manager.isInitialized()) await manager.initialize()
+      const service = getEmbeddingService()
+      queryEmbedding = new Float32Array(await service.embedQuery(trimmed))
+    } catch (error) {
+      console.error('[RAG] Cross-space embed failed, falling back to title-only:', error)
+      queryEmbedding = null
+    }
+  }
+
+  const results: SpaceScopedSearchResult[] = []
+
+  for (const space of spaces) {
+    // Best result per note within this space (dedupe chunks → one row per note).
+    const perNote = new Map<string, SpaceScopedSearchResult>()
+
+    // --- Semantic stage (skipped if no embedding). ---
+    if (queryEmbedding) {
+      try {
+        const vectorDB = getOrCreateVectorDB(space.id, getFsManager)
+        if (!vectorDB.isInitialized()) await vectorDB.initialize()
+        const hits = vectorDB.hybridSearch({
+          query: trimmed,
+          queryEmbedding,
+          limit: perSpaceLimit * 4
+        })
+        for (const hit of hits) {
+          const existing = perNote.get(hit.noteId)
+          if (existing && existing.relevancePercent >= hit.relevancePercent) continue
+          const meta = hit.metadata as Record<string, unknown>
+          const title = (typeof meta?.noteTitle === 'string' && meta.noteTitle) || 'Untitled Note'
+          const folderId = typeof meta?.folderId === 'string' ? meta.folderId : 'root'
+          perNote.set(hit.noteId, {
+            spaceId: space.id,
+            spaceName: space.name,
+            noteId: hit.noteId,
+            folderId,
+            title,
+            snippet: makeSnippet(hit.expandedContent || hit.content),
+            relevancePercent: hit.relevancePercent,
+            matchedBy: 'semantic'
+          })
+        }
+      } catch (error) {
+        console.error(`[RAG] Cross-space semantic search skipped space ${space.id}:`, error)
+      }
+    }
+
+    // --- Title safety net (covers not-yet-indexed notes). ---
+    try {
+      const titleIndex = await getSpaceTitleIndex(space.id, getFsManager)
+      for (const entry of titleIndex) {
+        const lowerTitle = entry.title.toLowerCase()
+        if (!lowerTitle.includes(lowerQuery)) continue
+        const titleRelevance =
+          lowerTitle === lowerQuery ? 100 : lowerTitle.startsWith(lowerQuery) ? 95 : 90
+        const existing = perNote.get(entry.noteId)
+        if (existing) {
+          // Already found semantically — promote ranking if the title match is
+          // stronger, but keep the richer semantic snippet.
+          if (titleRelevance > existing.relevancePercent) {
+            existing.relevancePercent = titleRelevance
+          }
+          continue
+        }
+        perNote.set(entry.noteId, {
+          spaceId: space.id,
+          spaceName: space.name,
+          noteId: entry.noteId,
+          folderId: entry.folderId,
+          title: entry.title || 'Untitled Note',
+          snippet: '',
+          relevancePercent: titleRelevance,
+          matchedBy: 'title'
+        })
+      }
+    } catch (error) {
+      console.error(`[RAG] Title index failed for space ${space.id}:`, error)
+    }
+
+    const spaceResults = Array.from(perNote.values())
+      .sort((a, b) => b.relevancePercent - a.relevancePercent)
+      .slice(0, perSpaceLimit)
+    results.push(...spaceResults)
+  }
+
+  return results
+}
+
+/**
  * Broadcast a background auto-index progress event to all windows.
  * Reuses the existing `ai:auto-index-progress` channel consumed by
  * the `useAutoIndexStatus` hook.
@@ -556,6 +731,36 @@ export function notifyFolderMoved(
 }
 
 /**
+ * Notify that one or more notes were deleted. Immediately removes their
+ * embeddings from the space's vector DB so deleted notes don't linger as
+ * orphaned "ghost" search results (semantic search reads the vector DB, which
+ * is otherwise never pruned on deletion).
+ *
+ * Best-effort: never throws — the note file is already gone by the time this
+ * runs, and the batch orphan-prune is a backstop for anything missed here.
+ * Called from fileHandlers after fs:deleteNote / fs:deleteFolder succeed.
+ */
+export async function notifyNoteDeleted(
+  getOrCreateFsManager: GetFsManager,
+  spaceId: string,
+  noteIds: string[]
+): Promise<void> {
+  if (noteIds.length === 0) return
+  try {
+    const vectorDB = getOrCreateVectorDB(spaceId, getOrCreateFsManager)
+    if (!vectorDB.isInitialized()) await vectorDB.initialize()
+    for (const noteId of noteIds) {
+      await vectorDB.deleteDocumentsForNote(noteId)
+    }
+    // Invalidate the cached title index so a re-search can't resurface the
+    // just-deleted note via the title safety net during its TTL window.
+    titleIndexCache.delete(spaceId)
+  } catch (error) {
+    console.error(`[RAG] notifyNoteDeleted failed for space ${spaceId}:`, error)
+  }
+}
+
+/**
  * Cancel any running batch indexing (ai:indexAllNotes).
  * Safe to call even if no batch is running.
  */
@@ -637,7 +842,10 @@ function setupProgressForwarding(dl: ModelDownloader): void {
 /**
  * Register AI-related IPC handlers
  */
-export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
+export function registerAIHandlers(
+  getOrCreateFsManager: GetFsManager,
+  listSpaces: ListSpaces
+): void {
   // Initialize downloader and setup progress forwarding
   getDownloader().then(setupProgressForwarding).catch(console.error)
 
@@ -1191,6 +1399,29 @@ export function registerAIHandlers(getOrCreateFsManager: GetFsManager): void {
   )
 
   /**
+   * Lightweight cross-space search for the global search modal.
+   *
+   * Embeds the query once and runs hybrid search against every space's vector
+   * DB (no query expansion, no reranker), merged with a title-substring safety
+   * net. Returns flattened, per-note results tagged with their owning space.
+   */
+  ipcMain.handle(
+    'ai:searchAllSpaces',
+    async (
+      _event: IpcMainInvokeEvent,
+      query: string,
+      limit?: number
+    ): Promise<SpaceScopedSearchResult[]> => {
+      try {
+        return await runCrossSpaceSearch(getOrCreateFsManager, listSpaces, query, { limit })
+      } catch (error) {
+        console.error('[RAG] Cross-space search error:', error)
+        throw new Error(`Failed to search all spaces: ${(error as Error).message}`)
+      }
+    }
+  )
+
+  /**
    * Get list of indexed note IDs for a space
    */
   ipcMain.handle(
@@ -1515,6 +1746,28 @@ async function runSpaceBatchIndex(
   const allNotes: Array<{ note: Note; folderId: string }> = []
   await collectNotesRecursively(fsManager, 'root', allNotes)
   const totalNotes = allNotes.length
+
+  // ====================================================================
+  // PHASE 0: Prune orphaned embeddings — notes indexed in the vector DB
+  // that no longer exist on disk (deleted notes, deleted folders, or
+  // deletions that happened while immediate cleanup was unavailable).
+  // Self-healing backstop that also cleans up DBs polluted before the
+  // deletion→index wiring existed.
+  // ====================================================================
+  try {
+    const indexedIds = await vectorDB.getIndexedNoteIds()
+    const liveIds = new Set(allNotes.map(({ note }) => note.id))
+    const orphanIds = indexedIds.filter((id) => !liveIds.has(id))
+    for (const orphanId of orphanIds) {
+      if (signal.aborted) break
+      await vectorDB.deleteDocumentsForNote(orphanId)
+    }
+    if (orphanIds.length > 0) {
+      console.log(`[batchIndex] Pruned ${orphanIds.length} orphaned note(s) from space ${spaceId}`)
+    }
+  } catch (error) {
+    console.error(`[batchIndex] Orphan prune failed for space ${spaceId}:`, error)
+  }
 
   // ====================================================================
   // PHASE 1: Check staleness — extract text + hash check each note

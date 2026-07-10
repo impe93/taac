@@ -234,6 +234,9 @@ const aiAPI = {
   searchNotes: (spaceId: string, query: string, limit?: number, noteIds?: string[]) =>
     ipcRenderer.invoke('ai:searchNotes', spaceId, query, limit, noteIds),
 
+  searchAllSpaces: (query: string, limit?: number) =>
+    ipcRenderer.invoke('ai:searchAllSpaces', query, limit),
+
   getIndexedNotes: (spaceId: string) => ipcRenderer.invoke('ai:getIndexedNotes', spaceId),
 
   deleteNoteIndex: (spaceId: string, noteId: string) =>

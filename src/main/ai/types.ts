@@ -397,6 +397,26 @@ export interface ExpandedResult extends RankedResult {
 }
 
 /**
+ * A flattened, UI-ready search result scoped to a specific space.
+ *
+ * Produced by the lightweight cross-space search (`ai:searchAllSpaces`) that
+ * powers the global search modal. Unlike {@link ExpandedResult} it carries no
+ * chunk/embedding internals — one entry per note, tagged with its owning space
+ * so the modal can group results and switch space on open.
+ */
+export interface SpaceScopedSearchResult {
+  spaceId: string
+  spaceName: string
+  noteId: string
+  folderId: string
+  title: string
+  snippet: string
+  /** 0-100. Per-space (from hybridSearch); 100 for exact title matches. */
+  relevancePercent: number
+  matchedBy: 'semantic' | 'title'
+}
+
+/**
  * Result from embedding generation
  */
 export interface EmbeddingResult {
