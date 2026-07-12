@@ -50,12 +50,12 @@ export const AppTopBar: FC<AppTopBarProps> = ({
 
   return (
     <div
-      className="fixed inset-x-0 top-0 z-40 grid grid-cols-[1fr_2fr_1fr] items-center border-b bg-background px-2"
+      className="fixed inset-x-0 top-0 z-40 grid grid-cols-[1fr_minmax(0,42rem)_1fr] items-center gap-2 border-b bg-background px-2"
       style={{ ...dragStyle, height: TOPBAR_HEIGHT }}
     >
       {/* Left: traffic-light reserve (macOS) + sidebar trigger + settings */}
       <div
-        className="flex items-center gap-1"
+        className="flex items-center gap-1 md:justify-end"
         style={{ paddingLeft: isMacOS ? TRAFFIC_LIGHTS_RESERVE : 0 }}
       >
         <div style={noDragStyle}>
@@ -85,7 +85,7 @@ export const AppTopBar: FC<AppTopBarProps> = ({
         onClick={onOpenSearch}
         aria-label="Search notes"
         style={noDragStyle}
-        className="mx-auto hidden h-7 w-full max-w-2xl items-center gap-2 rounded-md border bg-background/40 px-3 text-sm text-muted-foreground transition-colors hover:bg-accent md:flex"
+        className="hidden h-7 w-full max-w-2xl items-center gap-2 rounded-md border bg-background/40 px-3 text-sm text-muted-foreground transition-colors hover:bg-accent md:flex"
       >
         <Search className="size-4 shrink-0" />
         <span className="flex-1 text-left">Search notes…</span>
@@ -94,21 +94,15 @@ export const AppTopBar: FC<AppTopBarProps> = ({
         </kbd>
       </button>
 
-      {/* Right: indexing status + AI panel toggle */}
-      <div className="flex items-center justify-self-end gap-1">
-        <div style={noDragStyle}>
-          <ModelDownloadIndicator />
-        </div>
-        <div style={noDragStyle}>
-          <IndexingStatusIndicator />
-        </div>
+      {/* Right: AI panel toggle (nearest search, mirrors Settings) + background indicators */}
+      <div className="flex items-center justify-self-end gap-1 md:justify-self-start">
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
               variant="ghost"
               size="icon"
               className={cn(
-                'size-7 text-muted-foreground',
+                'size-7',
                 aiOpen && 'border border-ai/30 bg-ai-soft text-ai hover:bg-ai-soft hover:text-ai'
               )}
               style={noDragStyle}
@@ -118,10 +112,16 @@ export const AppTopBar: FC<AppTopBarProps> = ({
             </Button>
           </TooltipTrigger>
           <TooltipContent side="bottom">
-            <p>{aiOpen ? 'Close' : 'Open'} AI Assistant</p>
+            <p>AI Assistant</p>
             <p className="text-xs text-muted-foreground">⌘⇧A</p>
           </TooltipContent>
         </Tooltip>
+        <div style={noDragStyle}>
+          <ModelDownloadIndicator />
+        </div>
+        <div style={noDragStyle}>
+          <IndexingStatusIndicator />
+        </div>
       </div>
     </div>
   )
