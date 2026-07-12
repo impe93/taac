@@ -149,6 +149,8 @@ const aiAPI = {
 
   isModelDownloaded: (modelId: string) => ipcRenderer.invoke('ai:isModelDownloaded', modelId),
 
+  getActiveDownloads: () => ipcRenderer.invoke('ai:getActiveDownloads'),
+
   downloadModel: (modelId: string) => ipcRenderer.invoke('ai:downloadModel', modelId),
 
   pauseDownload: (modelId: string) => ipcRenderer.invoke('ai:pauseDownload', modelId),

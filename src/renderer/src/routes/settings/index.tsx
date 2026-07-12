@@ -3,34 +3,20 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useTheme } from 'next-themes'
 import {
   Search,
-  Download,
-  Trash2,
-  CheckCircle2,
-  Pause,
-  Play,
-  X,
   Mic,
   Palette,
   Monitor,
   Sun,
   Moon,
-  ChevronDown,
   Cpu,
   Boxes,
   Loader2,
   RefreshCw
 } from 'lucide-react'
 import { Card, CardContent } from '@renderer/components/ui/card'
-import { Badge } from '@renderer/components/ui/badge'
 import { Button } from '@renderer/components/ui/button'
-import { Progress } from '@renderer/components/ui/progress'
 import { Switch } from '@renderer/components/ui/switch'
 import { ToggleGroup, ToggleGroupItem } from '@renderer/components/ui/toggle-group'
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger
-} from '@renderer/components/ui/collapsible'
 import {
   Select,
   SelectContent,
@@ -42,15 +28,14 @@ import { useModelProfile } from '@renderer/hooks/useHardware'
 import { useDownloadedModels, useModelDownload, useDeleteModel } from '@renderer/hooks/useModels'
 import { useConfig, useSetConfig } from '@renderer/hooks/useConfig'
 import { useIndexAllSpaces } from '@renderer/hooks/useVectorSearch'
-import { formatSize, formatSpeed, formatETA } from '@renderer/lib/format'
+import { ModelFeatureCard } from '@renderer/components/models/ModelFeatureCard'
 import {
   FEATURES,
   resolveFeatureModels,
   resolveFeatureAlternatives,
-  computeFeatureProgress,
   type CuratedFeature
 } from '@renderer/lib/modelFeatures'
-import type { ModelDefinition, DownloadProgress, ModelProfile } from '@main/ai/types'
+import type { ModelDefinition, ModelProfile } from '@main/ai/types'
 import {
   SUMMARY_DEPTH_OPTIONS,
   isDetailedSummaryAvailable,
@@ -131,7 +116,9 @@ function SettingsPage(): ReactNode {
         {resolvedFeatures.map((rf) => (
           <ModelFeatureCard
             key={rf.feature.key}
-            resolved={rf}
+            feature={rf.feature}
+            recommended={rf.recommended}
+            alternatives={rf.alternatives}
             downloadedModelIds={downloadedModelIds}
             progress={progress}
             onDownload={download}
@@ -378,182 +365,6 @@ const AppearanceSettings: FC = () => {
   )
 }
 
-/**
- * Short capability label shown as a badge next to each model in a feature card.
- */
-const modelLabel = (model: ModelDefinition): string => {
-  const caps = model.capabilities
-  if (caps.includes('chat')) return 'Chat'
-  if (caps.includes('embedding')) return 'Search'
-  if (caps.includes('reranking')) return 'Reranker'
-  if (caps.includes('transcription')) return model.format === 'mlx' ? 'Realtime' : 'Transcription'
-  if (caps.includes('vad')) return 'Voice activity'
-  if (caps.includes('diarization')) return 'Diarization'
-  return 'Model'
-}
-
-interface ModelFeatureCardProps {
-  resolved: ResolvedFeature
-  downloadedModelIds: Set<string>
-  progress: Map<string, DownloadProgress>
-  onDownload: (id: string) => void
-  onDelete: (id: string) => void
-  onPause: (id: string) => void
-  onResume: (id: string) => void
-  onCancel: (id: string) => void
-}
-
-/**
- * Feature-grouped card mirroring the onboarding UX: shows the aggregate status
- * of a feature bundle, hides the individual models behind a "Show details"
- * accordion, and nests the non-recommended (more/less powerful) variants behind
- * a further "Advanced" toggle.
- */
-const ModelFeatureCard: FC<ModelFeatureCardProps> = ({
-  resolved,
-  downloadedModelIds,
-  progress,
-  onDownload,
-  onDelete,
-  onPause,
-  onResume,
-  onCancel
-}) => {
-  const { feature, recommended, alternatives } = resolved
-  const Icon = feature.icon
-  const [detailsOpen, setDetailsOpen] = useState(false)
-
-  const isComplete = (id: string): boolean =>
-    downloadedModelIds.has(id) || progress.get(id)?.status === 'completed'
-
-  const allComplete = recommended.length > 0 && recommended.every((m) => isComplete(m.id))
-  const missingIds = recommended.filter((m) => !isComplete(m.id)).map((m) => m.id)
-
-  const agg = useMemo(
-    () => computeFeatureProgress(recommended, progress, isComplete),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [recommended, progress, downloadedModelIds]
-  )
-  const isDownloading = agg.activeStatus !== null
-
-  const renderRow = (model: ModelDefinition): ReactNode => (
-    <ModelRow
-      key={model.id}
-      model={model}
-      label={modelLabel(model)}
-      icon={Icon}
-      isDownloaded={downloadedModelIds.has(model.id)}
-      downloadProgress={progress.get(model.id)}
-      onDownload={onDownload}
-      onDelete={onDelete}
-      onPause={onPause}
-      onResume={onResume}
-      onCancel={onCancel}
-    />
-  )
-
-  return (
-    <Card className="py-4 text-left">
-      <CardContent className="space-y-3">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-start gap-3">
-            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-ai-soft">
-              <Icon className="size-5 text-ai" />
-            </div>
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="font-semibold">{feature.label}</p>
-                {feature.optional && (
-                  <Badge variant="outline" className="text-xs">
-                    Optional
-                  </Badge>
-                )}
-                <Badge variant="secondary" className="text-xs">
-                  Recommended for your hardware
-                </Badge>
-              </div>
-              <p className="text-sm text-muted-foreground">{feature.description}</p>
-            </div>
-          </div>
-
-          <div className="shrink-0">
-            {allComplete ? (
-              <Badge variant="secondary" className="gap-1">
-                <CheckCircle2 className="size-3" />
-                Ready
-              </Badge>
-            ) : !isDownloading ? (
-              <Button
-                size="sm"
-                variant={feature.optional ? 'outline' : 'default'}
-                onClick={() => missingIds.forEach(onDownload)}
-              >
-                <Download className="size-3.5" />
-                Download
-              </Button>
-            ) : null}
-          </div>
-        </div>
-
-        {isDownloading && (
-          <div className="space-y-2">
-            <Progress value={agg.percentage} />
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>
-                {formatSize(agg.bytesDownloaded)} / {formatSize(agg.totalBytes)}
-                {agg.activeStatus === 'downloading' && agg.activeSpeed > 0 && (
-                  <>
-                    {' '}
-                    &middot; {formatSpeed(agg.activeSpeed)} &middot; ~{formatETA(agg.activeEta)}
-                  </>
-                )}
-                {agg.activeStatus === 'paused' && ' · Paused'}
-                {agg.activeStatus === 'pending' && ' · Preparing...'}
-              </span>
-              <span>{Math.round(agg.percentage)}%</span>
-            </div>
-          </div>
-        )}
-
-        <Collapsible open={detailsOpen} onOpenChange={setDetailsOpen}>
-          <CollapsibleTrigger className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground">
-            <ChevronDown
-              className={`size-3.5 transition-transform ${detailsOpen ? 'rotate-180' : ''}`}
-            />
-            {detailsOpen ? 'Hide details' : 'Show details'}
-          </CollapsibleTrigger>
-          <CollapsibleContent className="mt-3 space-y-2">
-            {recommended.map(renderRow)}
-            <AdvancedModels label="more/less powerful models">
-              {alternatives.map(renderRow)}
-            </AdvancedModels>
-          </CollapsibleContent>
-        </Collapsible>
-      </CardContent>
-    </Card>
-  )
-}
-
-/**
- * Collapsible container for non-optimal but compatible model variants.
- * Renders nothing when there are no alternatives to show.
- */
-const AdvancedModels: FC<{ label: string; children: ReactNode }> = ({ label, children }) => {
-  const [open, setOpen] = useState(false)
-  const items = Array.isArray(children) ? children.filter(Boolean) : children
-  if (Array.isArray(items) && items.length === 0) return null
-
-  return (
-    <Collapsible open={open} onOpenChange={setOpen} className="mt-2">
-      <CollapsibleTrigger className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground">
-        <ChevronDown className={`size-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
-        {open ? `Hide ${label}` : `Show ${label}`}
-      </CollapsibleTrigger>
-      <CollapsibleContent className="mt-2 space-y-2">{items}</CollapsibleContent>
-    </Collapsible>
-  )
-}
-
 interface MeetingNotesSettingsProps {
   downloadedModels: ModelDefinition[]
   compatibleModelIds: Set<string>
@@ -788,147 +599,6 @@ const MeetingNotesSettings: FC<MeetingNotesSettingsProps> = ({
           )}
         </CardContent>
       </Card>
-    </div>
-  )
-}
-
-interface ModelRowProps {
-  model: ModelDefinition
-  label: string
-  icon: FC<{ className?: string }>
-  isDownloaded: boolean
-  downloadProgress?: DownloadProgress
-  onDownload: (id: string) => void
-  onDelete: (id: string) => void
-  onPause: (id: string) => void
-  onResume: (id: string) => void
-  onCancel: (id: string) => void
-}
-
-const ModelRow: FC<ModelRowProps> = ({
-  model,
-  label,
-  icon: Icon,
-  isDownloaded,
-  downloadProgress,
-  onDownload,
-  onDelete,
-  onPause,
-  onResume,
-  onCancel
-}) => {
-  const isDownloading = downloadProgress?.status === 'downloading'
-  const isPaused = downloadProgress?.status === 'paused'
-  const hasError = downloadProgress?.status === 'error'
-  const isInProgress = isDownloading || isPaused
-
-  return (
-    <div className="space-y-2 rounded-md border border-border/50 bg-muted/30 p-2.5">
-      {/* Top row: icon + name + size */}
-      <div className="flex items-center gap-2">
-        <Icon className="size-4 shrink-0 text-muted-foreground" />
-        <span className="truncate text-sm font-medium">{model.name}</span>
-        <Badge variant="outline" className="shrink-0 text-[10px]">
-          {label}
-        </Badge>
-        <div className="flex-1" />
-        <span className="shrink-0 text-xs text-muted-foreground">
-          {formatSize(model.sizeBytes)}
-        </span>
-      </div>
-
-      {/* Download progress */}
-      {isInProgress && downloadProgress && (
-        <div className="space-y-1">
-          <Progress value={downloadProgress.percentage} className="h-1.5" />
-          <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-            <span>{downloadProgress.percentage.toFixed(0)}%</span>
-            {isDownloading && (
-              <span>
-                {formatSpeed(downloadProgress.speed)} · ~{formatETA(downloadProgress.eta)}
-              </span>
-            )}
-            {isPaused && <span>Paused</span>}
-          </div>
-        </div>
-      )}
-
-      {hasError && downloadProgress && (
-        <p className="text-xs text-destructive">{downloadProgress.error || 'Download failed'}</p>
-      )}
-
-      {/* Actions row */}
-      <div className="flex items-center gap-2">
-        {isInProgress ? (
-          <>
-            {isDownloading ? (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 gap-1 px-2 text-xs"
-                onClick={() => onPause(model.id)}
-              >
-                <Pause className="size-3" />
-                Pause
-              </Button>
-            ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 gap-1 px-2 text-xs"
-                onClick={() => onResume(model.id)}
-              >
-                <Play className="size-3" />
-                Resume
-              </Button>
-            )}
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 gap-1 px-2 text-xs text-destructive hover:text-destructive"
-              onClick={() => onCancel(model.id)}
-            >
-              <X className="size-3" />
-              Cancel
-            </Button>
-          </>
-        ) : hasError ? (
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 gap-1 px-2 text-xs"
-            onClick={() => onDownload(model.id)}
-          >
-            <Download className="size-3" />
-            Retry
-          </Button>
-        ) : isDownloaded ? (
-          <>
-            <Badge
-              variant="outline"
-              className="gap-1 border-green-500/20 bg-green-500/15 text-green-700 dark:text-green-400"
-            >
-              <CheckCircle2 className="size-3" />
-              Downloaded
-            </Badge>
-            <div className="flex-1" />
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 gap-1 px-2 text-xs text-destructive hover:text-destructive"
-              onClick={() => onDelete(model.id)}
-            >
-              <Trash2 className="size-3" />
-              Delete
-            </Button>
-          </>
-        ) : (
-          <Button size="sm" className="h-7 gap-1 px-2 text-xs" onClick={() => onDownload(model.id)}>
-            <Download className="size-3" />
-            Download
-          </Button>
-        )}
-      </div>
     </div>
   )
 }

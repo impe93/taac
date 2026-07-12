@@ -242,6 +242,7 @@ export interface AIAPI {
   listAvailableModels: () => Promise<ModelDefinition[]>
   listDownloadedModels: () => Promise<ModelDefinition[]>
   isModelDownloaded: (modelId: string) => Promise<boolean>
+  getActiveDownloads: () => Promise<DownloadProgress[]>
   downloadModel: (modelId: string) => Promise<void>
   pauseDownload: (modelId: string) => Promise<void>
   resumeDownload: (modelId: string) => Promise<void>

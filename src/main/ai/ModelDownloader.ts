@@ -105,6 +105,23 @@ export class ModelDownloader extends EventEmitter {
 
           baseBytes += file.sizeBytes ?? 0
         }
+
+        // All files are on disk. Emit one clean aggregate completion so the
+        // whole-model bar reaches 100%. The per-file 'completed' events are
+        // rebased and clamped to 'downloading' whenever the actual bytes fall
+        // short of the declared sizes (they usually do), so without this the
+        // model would appear stuck just below 100% and never mark completed.
+        this.aggregates.delete(modelId)
+        this.emitProgress({
+          modelId,
+          filename: model.files[model.files.length - 1].filename,
+          bytesDownloaded: totalBytes,
+          totalBytes,
+          percentage: 100,
+          speed: 0,
+          eta: 0,
+          status: 'completed'
+        })
       } finally {
         this.aggregates.delete(modelId)
       }
@@ -412,6 +429,15 @@ export class ModelDownloader extends EventEmitter {
    */
   getProgress(modelId: string): DownloadProgress | null {
     return this.progressCache.get(modelId) || null
+  }
+
+  /**
+   * Snapshot of every download currently held in the progress cache
+   * (in-progress, paused, or terminal states not yet evicted). Used to re-seed
+   * renderer-side progress after a component remount.
+   */
+  getActiveDownloads(): DownloadProgress[] {
+    return Array.from(this.progressCache.values())
   }
 
   /**

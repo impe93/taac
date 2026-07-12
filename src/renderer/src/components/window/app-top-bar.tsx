@@ -5,6 +5,7 @@ import { Button } from '@renderer/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip'
 import { SidebarTrigger } from '@renderer/components/ui/sidebar'
 import { IndexingStatusIndicator } from '@renderer/components/ai/IndexingStatusIndicator'
+import { ModelDownloadIndicator } from '@renderer/components/models/ModelDownloadIndicator'
 import { WINDOW_TOPBAR_HEIGHT } from './constants'
 
 const TOPBAR_HEIGHT = WINDOW_TOPBAR_HEIGHT
@@ -36,9 +37,14 @@ export const AppTopBar: FC<AppTopBarProps> = ({
   if (minimal) {
     return (
       <div
-        className="fixed inset-x-0 top-0 z-40 flex items-center border-b bg-background"
+        className="fixed inset-x-0 top-0 z-40 flex items-center justify-end border-b bg-background px-2"
         style={{ ...dragStyle, height: TOPBAR_HEIGHT }}
-      />
+      >
+        {/* Surface background downloads (started in onboarding) right away. */}
+        <div style={noDragStyle}>
+          <ModelDownloadIndicator />
+        </div>
+      </div>
     )
   }
 
@@ -90,6 +96,9 @@ export const AppTopBar: FC<AppTopBarProps> = ({
 
       {/* Right: indexing status + AI panel toggle */}
       <div className="flex items-center justify-self-end gap-1">
+        <div style={noDragStyle}>
+          <ModelDownloadIndicator />
+        </div>
         <div style={noDragStyle}>
           <IndexingStatusIndicator />
         </div>

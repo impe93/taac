@@ -527,6 +527,15 @@ async function runScheduledBatch(getFsManager: GetFsManager): Promise<void> {
   if (scheduledBatchRunning || batchIndexAbort || !embeddingAvailableForIndexing) return
   if (dirtySpaces.size === 0) return
 
+  // Live re-check before touching the vector DB: the cached availability flag can
+  // be stale (model deleted, or a download that was still in flight when the flag
+  // was last set). Never attempt indexing without the model actually on disk —
+  // otherwise runSpaceBatchIndex throws and the batch fails for nothing.
+  if (!(await isEmbeddingModelReady())) {
+    embeddingAvailableForIndexing = false
+    return
+  }
+
   const spaces = [...dirtySpaces]
   dirtySpaces.clear()
 
@@ -923,6 +932,20 @@ export function registerAIHandlers(
       return await dl.isModelDownloaded(modelId)
     } catch (error) {
       throw new Error(`Failed to check model status: ${(error as Error).message}`)
+    }
+  })
+
+  /**
+   * Snapshot of downloads currently tracked (in-progress, paused, or recently
+   * terminal). Lets the renderer re-seed its progress state after a remount so
+   * background downloads stay visible outside the view that started them.
+   */
+  ipcMain.handle('ai:getActiveDownloads', async (_event: IpcMainInvokeEvent) => {
+    try {
+      const dl = await getDownloader()
+      return dl.getActiveDownloads()
+    } catch (error) {
+      throw new Error(`Failed to get active downloads: ${(error as Error).message}`)
     }
   })
 

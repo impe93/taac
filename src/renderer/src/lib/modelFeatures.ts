@@ -20,7 +20,8 @@ export interface CuratedFeature {
   icon: LucideIcon
   label: string
   description: string
-  losesIfSkipped: string
+  /** Plain-language, benefit-framed one-liner shown as the card subtitle. */
+  benefit: string
   optional: boolean
 }
 
@@ -30,17 +31,15 @@ export const FEATURES: CuratedFeature[] = [
     icon: Bot,
     label: 'AI Chat',
     description: 'Converse naturally with an AI assistant that runs entirely on your device.',
-    losesIfSkipped:
-      'Without this model you won’t be able to chat with your notes or generate AI content.',
+    benefit: 'Adds a private AI assistant that chats with your notes.',
     optional: false
   },
   {
     key: 'search',
     icon: Search,
-    label: 'Semantic Search',
+    label: 'Smart Search',
     description: 'Find your notes by meaning, not just keywords. Powered by local RAG.',
-    losesIfSkipped:
-      'Without these models, advanced search and contextual note retrieval will be disabled.',
+    benefit: 'Finds your notes by meaning, not just keywords — fully offline.',
     optional: false
   },
   {
@@ -49,8 +48,7 @@ export const FEATURES: CuratedFeature[] = [
     label: 'Meeting Notes',
     description:
       'Record meetings, automatically transcribe audio, and identify different speakers — all offline.',
-    losesIfSkipped:
-      'Without these models you won’t be able to record meetings or generate automatic transcriptions and summaries.',
+    benefit: 'Records and summarizes meetings with speaker labels, on your Mac.',
     optional: true
   }
 ]
