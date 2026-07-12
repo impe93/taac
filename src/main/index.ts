@@ -116,6 +116,7 @@ function createWindow(): void {
 
   // Create the browser window.
   const mainWindow = new BrowserWindow({
+    title: 'Taac',
     width,
     height,
     minWidth: MIN_WINDOW_WIDTH,
@@ -179,7 +180,7 @@ function createWindow(): void {
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(async () => {
   // Set app user model id for windows
-  electronApp.setAppUserModelId('com.electron')
+  electronApp.setAppUserModelId('com.taacnotes.app')
 
   // Register protocol handler for local assets
   // URL format: taac-asset://spaceId/type/filename
