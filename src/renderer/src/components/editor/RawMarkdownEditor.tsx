@@ -47,7 +47,7 @@ const lightHighlightStyle = HighlightStyle.define([
   { tag: tags.atom, color: '#fe640b' },
   { tag: tags.url, color: '#1e66f5', textDecoration: 'underline' },
   { tag: tags.link, color: '#1e66f5' },
-  { tag: tags.processingInstruction, color: '#8839ef' },
+  { tag: tags.processingInstruction, color: 'var(--success)' },
   { tag: tags.contentSeparator, color: '#9ca0b0' },
   {
     tag: tags.monospace,
@@ -82,7 +82,7 @@ const darkHighlightStyle = HighlightStyle.define([
   { tag: tags.atom, color: '#d19a66' },
   { tag: tags.url, color: '#61afef', textDecoration: 'underline' },
   { tag: tags.link, color: '#61afef' },
-  { tag: tags.processingInstruction, color: '#c678dd' },
+  { tag: tags.processingInstruction, color: 'var(--success)' },
   { tag: tags.contentSeparator, color: '#5c6370' },
   {
     tag: tags.monospace,
@@ -93,7 +93,7 @@ const darkHighlightStyle = HighlightStyle.define([
 
 const lightTheme = EditorView.theme({
   '&': {
-    backgroundColor: 'var(--background)',
+    backgroundColor: 'var(--editor)',
     color: 'var(--foreground)'
   },
   '.cm-content': {
@@ -108,7 +108,7 @@ const lightTheme = EditorView.theme({
     borderLeftColor: 'var(--foreground)'
   },
   '.cm-gutters': {
-    backgroundColor: 'var(--background)',
+    backgroundColor: 'var(--editor)',
     borderRight: '1px solid var(--border)',
     color: 'var(--muted-foreground)'
   },

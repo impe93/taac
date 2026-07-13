@@ -255,7 +255,7 @@ function NoteView(): ReactElement {
         )}
       </div>
 
-      <div className="flex-1 overflow-auto p-6">
+      <div className={`flex-1 overflow-auto ${isSourceMode ? 'p-6' : ''}`}>
         {isSourceMode ? (
           <RawMarkdownEditor markdown={content} onChange={handleContentChange} />
         ) : (

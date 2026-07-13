@@ -29,7 +29,7 @@
   --baseText: var(--foreground);
   --baseTextContrast: var(--foreground);
 
-  --basePageBg: var(--background);
+  --basePageBg: var(--editor);
 
   /* Font settings */
   font-family: inherit;
@@ -37,7 +37,7 @@
     ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
 
   color: var(--foreground);
-  background: var(--background);
+  background: var(--editor);
 }
 
 /* Dark mode - applied when dark-editor class is present */
@@ -68,18 +68,18 @@
   --baseText: var(--foreground);
   --baseTextContrast: var(--foreground);
 
-  --basePageBg: var(--background);
+  --basePageBg: var(--editor);
 
   color: var(--foreground);
-  background: var(--background);
+  background: var(--editor);
 }
 
-/* Toolbar styling */
+/* Toolbar styling — full-bleed bar flush under the note title separator */
 .mdx-note-editor [class*='_toolbarRoot_'] {
   background: var(--card);
   border-bottom: 1px solid var(--border);
-  border-radius: var(--radius) var(--radius) 0 0;
-  padding: 0.5rem;
+  border-radius: 0;
+  padding: 0.5rem 1.5rem;
 }
 
 /* Toolbar button styling */
@@ -91,9 +91,10 @@
   background: var(--accent);
 }
 
-/* Content area styling */
+/* Content area styling — padding lives here now that the editor wrapper is
+   padding-free so the toolbar can span full width */
 .mdx-note-editor [class*='_contentEditable_'] {
-  padding: 0;
+  padding: 1.5rem;
   min-height: 400px;
 }
 
