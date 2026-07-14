@@ -651,6 +651,14 @@ certificate and **notarized** by Apple, so Gatekeeper opens the app without the
 - **Verify** a build: `spctl -a -vvv -t install dist/mac-arm64/Taac.app` (expect
   "accepted, source=Notarized Developer ID") and
   `xcrun stapler validate dist/Taac-<ver>.dmg`.
+- **MLX metallib deployment target** (`scripts/prepare-asr-runtime.sh`): `mlx` and
+  `mlx-metal` publish per-SDK wheels (`macosx_14_0`, `macosx_15_0`, `macosx_26_0`).
+  pip picks the wheel matching the BUILD host, so building on a newer macOS bundles
+  a `mlx.metallib` compiled for that OS's Metal Shading Language — which then fails
+  to load on older macOS (`SIGABRT: Failed to load the default metallib … language
+  version N.0 … not supported on this OS`). The script pins the `macosx_14_0` wheels
+  (MLX's minimum OS) so the runtime works on every supported macOS regardless of the
+  build host, with a build-time guardrail asserting the bundled wheel tags.
 
 ---
 

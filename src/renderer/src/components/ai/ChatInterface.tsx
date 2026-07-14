@@ -461,10 +461,18 @@ export const ChatInterface: FC<ChatInterfaceProps> = ({
       }
     } catch (error) {
       setProcessingStage(null)
-      // Add error message
+      // Surface a memory-specific hint when the local model crashed under memory
+      // pressure (jetsam SIGKILL / Metal OOM), otherwise a generic message.
+      const message = (error as Error)?.message ?? ''
+      const isOom =
+        /SIGKILL|out of memory|memory pressure|jetsam|resource limit|metal.*(malloc|memory)/i.test(
+          message
+        )
       await addMessage(
         'assistant',
-        'Sorry, an error occurred while generating a response. Please try again.'
+        isOom
+          ? 'The local AI model ran out of memory on this machine. Try closing other apps and sending your message again.'
+          : 'Sorry, an error occurred while generating a response. Please try again.'
       )
       console.error('Chat error:', error)
     }

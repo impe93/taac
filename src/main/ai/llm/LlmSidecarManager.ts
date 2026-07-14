@@ -18,6 +18,7 @@
 
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createInterface } from 'node:readline'
+import { writeToLog } from '../logToFile'
 
 export interface LlmSidecarInitOptions {
   pythonPath: string
@@ -88,6 +89,10 @@ interface PendingRequest {
 const INIT_TIMEOUT_MS = 120_000
 /** Grace period between the shutdown request and SIGKILL */
 const SHUTDOWN_GRACE_MS = 3_000
+/** Persistent log file for sidecar crashes (under ~/Library/Logs/{app}/). */
+const SIDECAR_LOG_FILE = 'llm-sidecar.log'
+/** How many recent stderr lines to keep for post-mortem on an unexpected exit. */
+const STDERR_TAIL_MAX = 40
 
 export class LlmSidecarManager {
   private child: ChildProcessWithoutNullStreams | null = null
@@ -97,6 +102,8 @@ export class LlmSidecarManager {
   private streams = new Map<string, StreamController>()
   private pending = new Map<string, PendingRequest>()
   private exitCallbacks: Array<(code: number | null) => void> = []
+  /** Ring buffer of the most recent sidecar stderr lines, for crash diagnosis. */
+  private stderrTail: string[] = []
 
   /**
    * Spawn the bridge and wait for the model to load (ready message).
@@ -112,8 +119,11 @@ export class LlmSidecarManager {
     this.child = child
     this.disposing = false
 
+    this.stderrTail = []
     createInterface({ input: child.stderr }).on('line', (line) => {
       console.log(`[LlmSidecarManager] ${line}`)
+      this.stderrTail.push(line)
+      if (this.stderrTail.length > STDERR_TAIL_MAX) this.stderrTail.shift()
     })
 
     const readyPromise = new Promise<void>((resolve, reject) => {
@@ -122,9 +132,14 @@ export class LlmSidecarManager {
         this.killNow()
       }, INIT_TIMEOUT_MS)
 
-      const onEarlyExit = (code: number | null): void => {
+      const onEarlyExit = (code: number | null, signal: NodeJS.Signals | null): void => {
         clearTimeout(timeout)
-        reject(new Error(`LLM sidecar exited during initialization (code ${code})`))
+        this.logCrash('initialization', code, signal)
+        reject(
+          new Error(
+            `LLM sidecar exited during initialization (code ${code}, signal ${signal ?? 'none'})`
+          )
+        )
       }
       child.once('exit', onEarlyExit)
 
@@ -171,12 +186,12 @@ export class LlmSidecarManager {
         }
       })
 
-      child.on('exit', (code) => {
+      child.on('exit', (code, signal) => {
         const wasDisposing = this.disposing
         this.ready = false
         this.child = null
 
-        const err = new Error(`LLM sidecar exited (code ${code})`)
+        const err = new Error(`LLM sidecar exited (code ${code}, signal ${signal ?? 'none'})`)
         for (const [, controller] of this.streams) {
           controller.error = err
           controller.done = true
@@ -187,7 +202,10 @@ export class LlmSidecarManager {
         this.pending.clear()
 
         if (!wasDisposing) {
-          console.error(`[LlmSidecarManager] Sidecar exited unexpectedly with code ${code}`)
+          console.error(
+            `[LlmSidecarManager] Sidecar exited unexpectedly with code ${code}, signal ${signal ?? 'none'}`
+          )
+          this.logCrash('runtime', code, signal)
           for (const callback of this.exitCallbacks) callback(code)
         }
       })
@@ -205,6 +223,27 @@ export class LlmSidecarManager {
   /** Register a callback for unexpected sidecar exits (not fired on dispose()). */
   onExit(callback: (code: number | null) => void): void {
     this.exitCallbacks.push(callback)
+  }
+
+  /**
+   * Persist an unexpected sidecar exit to a durable log file. `signal === 'SIGKILL'`
+   * with `code === null` is the fingerprint of a jetsam OOM-kill on low-RAM Macs;
+   * SIGSEGV/SIGABRT/SIGBUS point at a native MLX/Metal crash instead. The stderr
+   * tail carries the Python-side context (model path, MLX caps, any traceback).
+   */
+  private logCrash(
+    phase: 'initialization' | 'runtime',
+    code: number | null,
+    signal: string | null
+  ): void {
+    const oom = signal === 'SIGKILL' && code === null
+    const header =
+      `LLM sidecar crashed during ${phase} — code=${code}, signal=${signal ?? 'none'}` +
+      (oom ? ' (likely out-of-memory / jetsam kill)' : '')
+    const tail = this.stderrTail.length
+      ? this.stderrTail.map((l) => `    ${l}`).join('\n')
+      : '    <no stderr captured>'
+    writeToLog(`${header}\n  stderr tail:\n${tail}`, SIDECAR_LOG_FILE)
   }
 
   /**
