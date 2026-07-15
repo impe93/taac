@@ -1,11 +1,12 @@
 import { type FC } from 'react'
-import { FolderInput, FolderOpen, Laptop } from 'lucide-react'
+import { BookMarked, FolderInput, FolderOpen, Laptop } from 'lucide-react'
+import type { ImportSource } from '@preload/types'
 import { Button } from '@renderer/components/ui/button'
 import { Card, CardContent } from '@renderer/components/ui/card'
 import { cn } from '@renderer/lib/utils'
 
 interface ImportSourceSelectorProps {
-  onSourceSelected: (source: 'apple-notes' | 'obsidian') => void
+  onSourceSelected: (source: ImportSource) => void
   onSkip: () => void
 }
 
@@ -28,7 +29,7 @@ export const ImportSourceSelector: FC<ImportSourceSelectorProps> = ({
         </p>
       </div>
 
-      <div className={cn('grid w-full gap-4', isMacOS ? 'grid-cols-2' : 'max-w-sm grid-cols-1')}>
+      <div className={cn('grid w-full gap-4', isMacOS ? 'grid-cols-3' : 'grid-cols-2')}>
         {isMacOS && (
           <Card
             className="cursor-pointer transition-colors hover:border-primary"
@@ -57,6 +58,21 @@ export const ImportSourceSelector: FC<ImportSourceSelectorProps> = ({
             <div className="space-y-1">
               <p className="font-semibold">Obsidian</p>
               <p className="text-sm text-muted-foreground">Import from Obsidian vault</p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card
+          className="cursor-pointer transition-colors hover:border-primary"
+          onClick={() => onSourceSelected('joplin')}
+        >
+          <CardContent className="flex flex-col items-center gap-3 pt-6">
+            <div className="flex size-12 items-center justify-center rounded-xl bg-primary/10">
+              <BookMarked className="size-6 text-primary" />
+            </div>
+            <div className="space-y-1">
+              <p className="font-semibold">Joplin</p>
+              <p className="text-sm text-muted-foreground">Import from Joplin Markdown export</p>
             </div>
           </CardContent>
         </Card>

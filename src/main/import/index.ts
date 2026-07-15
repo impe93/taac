@@ -12,4 +12,5 @@ export type {
 export { BaseParser } from './parsers/BaseParser'
 export { ObsidianParser } from './parsers/ObsidianParser'
 export { AppleNotesParser } from './parsers/AppleNotesParser'
+export { JoplinParser } from './parsers/JoplinParser'
 export { ImportManager } from './ImportManager'

@@ -12,7 +12,7 @@
 /**
  * Supported note import sources
  */
-export type ImportSource = 'apple-notes' | 'obsidian'
+export type ImportSource = 'apple-notes' | 'obsidian' | 'joplin'
 
 // ============================================================================
 // IMPORT CONFIGURATION

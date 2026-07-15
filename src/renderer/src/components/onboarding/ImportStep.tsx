@@ -1,7 +1,7 @@
 import { type FC, type ReactNode, useState } from 'react'
 import { AlertCircle, ArrowLeft, FolderOpen, Loader2, Settings } from 'lucide-react'
 import { toast } from 'sonner'
-import type { ImportOptions } from '@preload/types'
+import type { ImportOptions, ImportSource } from '@preload/types'
 import { Alert, AlertDescription, AlertTitle } from '@renderer/components/ui/alert'
 import { Button } from '@renderer/components/ui/button'
 import {
@@ -15,6 +15,7 @@ import { ImportPreview } from './ImportPreview'
 import { ImportProgress } from './ImportProgress'
 import { ImportSourceSelector } from './ImportSourceSelector'
 import { ImportTargetSelector } from './ImportTargetSelector'
+import { JoplinImportInstructions } from './JoplinImportInstructions'
 
 // =============================================================================
 // Types
@@ -34,6 +35,7 @@ interface ImportStepProps {
 export const ImportStep: FC<ImportStepProps> = ({ state, dispatch }) => {
   const [subStep, setSubStep] = useState<ImportSubStep>('source')
   const [accessError, setAccessError] = useState<string | null>(null)
+  const [showJoplinInstructions, setShowJoplinInstructions] = useState(false)
 
   // Hooks (must be at top level per rules of hooks)
   const checkAccess = useCheckAppleNotesAccess()
@@ -48,8 +50,14 @@ export const ImportStep: FC<ImportStepProps> = ({ state, dispatch }) => {
   // Handlers
   // ---------------------------------------------------------------------------
 
-  const handleSourceSelected = async (source: 'apple-notes' | 'obsidian'): Promise<void> => {
+  const handleSourceSelected = async (source: ImportSource): Promise<void> => {
     dispatch({ type: 'SET_IMPORT_SOURCE', source })
+
+    if (source === 'joplin') {
+      // Joplin has no plain notes folder — guide the user to export first.
+      setShowJoplinInstructions(true)
+      return
+    }
 
     if (source === 'apple-notes') {
       setSubStep('access-check')
@@ -77,7 +85,7 @@ export const ImportStep: FC<ImportStepProps> = ({ state, dispatch }) => {
     }
   }
 
-  const handleFolderSelect = async (source: 'apple-notes' | 'obsidian'): Promise<void> => {
+  const handleFolderSelect = async (source: ImportSource): Promise<void> => {
     setSubStep('folder-select')
 
     try {
@@ -122,6 +130,11 @@ export const ImportStep: FC<ImportStepProps> = ({ state, dispatch }) => {
 
   const handleFallbackToFolder = (): void => {
     handleFolderSelect(state.import.source ?? 'apple-notes')
+  }
+
+  const handleJoplinSelectFolder = (): void => {
+    setShowJoplinInstructions(false)
+    handleFolderSelect('joplin')
   }
 
   const handleSkipImport = (): void => {
@@ -251,7 +264,7 @@ export const ImportStep: FC<ImportStepProps> = ({ state, dispatch }) => {
               <p className="text-lg text-muted-foreground">
                 {isSelectingFolder && scanImport.isPending
                   ? 'Scanning files...'
-                  : 'Select your vault folder...'}
+                  : 'Select your export folder...'}
               </p>
             </div>
           </div>
@@ -292,5 +305,14 @@ export const ImportStep: FC<ImportStepProps> = ({ state, dispatch }) => {
     }
   }
 
-  return renderSubStep()
+  return (
+    <>
+      {renderSubStep()}
+      <JoplinImportInstructions
+        open={showJoplinInstructions}
+        onOpenChange={setShowJoplinInstructions}
+        onSelectFolder={handleJoplinSelectFolder}
+      />
+    </>
+  )
 }

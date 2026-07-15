@@ -1,9 +1,12 @@
+import { basename } from 'node:path'
+
 import type { SerializedEditorState } from 'lexical'
 
 import type { SpaceManager } from '../utils/spaceManager'
 import type { FileSystemManager } from '../utils/fileSystem'
 import { ObsidianParser } from './parsers/ObsidianParser'
 import { AppleNotesParser } from './parsers/AppleNotesParser'
+import { JoplinParser } from './parsers/JoplinParser'
 import type { BaseParser } from './parsers/BaseParser'
 import type {
   ImportSource,
@@ -38,7 +41,14 @@ function toAssetType(parsed: ParsedAttachment['type']): 'image' | 'pdf' | 'attac
  * Human-readable source label for container folder names.
  */
 function sourceLabel(source: ImportSource): string {
-  return source === 'apple-notes' ? 'Apple Notes' : 'Obsidian'
+  switch (source) {
+    case 'apple-notes':
+      return 'Apple Notes'
+    case 'obsidian':
+      return 'Obsidian'
+    case 'joplin':
+      return 'Joplin'
+  }
 }
 
 // ============================================================================
@@ -275,8 +285,11 @@ export class ImportManager {
               toAssetType(attachment.type)
             )
 
-            // Rewrite references in content to taac-asset:// URLs
-            const assetUrl = `taac-asset://${asset.id}/${attachment.filename}`
+            // Rewrite references in content to taac-asset:// URLs.
+            // Canonical format: taac-asset://<spaceId>/<type>/<assetId>.<ext>
+            // (see the `taac-asset` protocol handler in src/main/index.ts and
+            // FileSystemManager.saveAsset, which stores files as `<assetId>.<ext>`).
+            const assetUrl = `taac-asset://${spaceId}/${attachment.type}/${basename(asset.path)}`
             content = this.rewriteAttachmentRef(content, attachment, assetUrl)
             importedAttachments++
           } catch (error) {
@@ -343,14 +356,17 @@ export class ImportManager {
 
   private getParser(source: ImportSource): BaseParser {
     if (source === 'obsidian') return new ObsidianParser()
+    if (source === 'joplin') return new JoplinParser()
     return new AppleNotesParser()
   }
 
   /**
    * Rewrite attachment references in markdown content to the new asset URL.
    *
-   * Handles both Obsidian-style embed syntax (already converted to `![name]()`)
-   * and Apple Notes `(attachment)` placeholders.
+   * Handles Obsidian-style embed syntax (already converted to `![name]()`),
+   * Apple Notes `(attachment)` placeholders, and Joplin-style markdown links
+   * (both image `![alt](path)` and file `[text](path)` forms) where the path is
+   * the reference exactly as it appears in the note body.
    */
   private rewriteAttachmentRef(
     content: string,
@@ -363,10 +379,15 @@ export class ImportManager {
     const embedPattern = new RegExp(`!\\[${escaped}\\]\\(\\)`, 'g')
     content = content.replace(embedPattern, `![${attachment.filename}](${assetUrl})`)
 
-    // Also handle markdown image references with the original path
+    // Markdown image references with the original path: ![alt](path) → ![alt](assetUrl)
     const escapedPath = attachment.originalPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    const pathPattern = new RegExp(`!\\[([^\\]]*)\\]\\(${escapedPath}\\)`, 'g')
-    content = content.replace(pathPattern, `![$1](${assetUrl})`)
+    const imagePattern = new RegExp(`!\\[([^\\]]*)\\]\\(${escapedPath}\\)`, 'g')
+    content = content.replace(imagePattern, `![$1](${assetUrl})`)
+
+    // Markdown file links with the original path: [text](path) → [text](assetUrl)
+    // (the leading `!` is excluded so image refs above aren't matched twice)
+    const linkPattern = new RegExp(`(^|[^!])\\[([^\\]]*)\\]\\(${escapedPath}\\)`, 'g')
+    content = content.replace(linkPattern, `$1[$2](${assetUrl})`)
 
     return content
   }

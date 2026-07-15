@@ -1,7 +1,7 @@
 import { type FC, type ReactNode, useReducer } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import type { ImportScanResult, ImportResult } from '@preload/types'
+import type { ImportScanResult, ImportResult, ImportSource } from '@preload/types'
 import { Badge } from '@renderer/components/ui/badge'
 import { Button } from '@renderer/components/ui/button'
 import { ImportStep } from './ImportStep'
@@ -16,12 +16,19 @@ import { WelcomeStep } from './WelcomeStep'
 
 export type OnboardingStep = 'welcome' | 'import' | 'models' | 'tutorial' | 'complete'
 
+/** Human-readable labels per import source (used for default space names). */
+const IMPORT_SOURCE_LABELS: Record<ImportSource, string> = {
+  'apple-notes': 'Apple Notes',
+  obsidian: 'Obsidian',
+  joplin: 'Joplin'
+}
+
 export interface OnboardingState {
   currentStep: OnboardingStep
 
   import: {
     subStep: 'source' | 'target'
-    source: 'apple-notes' | 'obsidian' | null
+    source: ImportSource | null
     sourcePath: string | null
     targetMode: 'new-space' | 'existing-space' | null
     targetSpaceId: string | null
@@ -43,7 +50,7 @@ export interface OnboardingState {
 export type OnboardingAction =
   | { type: 'NEXT_STEP' }
   | { type: 'GO_TO_STEP'; step: OnboardingStep }
-  | { type: 'SET_IMPORT_SOURCE'; source: 'apple-notes' | 'obsidian' }
+  | { type: 'SET_IMPORT_SOURCE'; source: ImportSource }
   | { type: 'SET_IMPORT_PATH'; path: string }
   | { type: 'SET_IMPORT_TARGET'; mode: 'new-space' | 'existing-space'; spaceId?: string }
   | { type: 'SET_NEW_SPACE_NAME'; name: string }
@@ -101,7 +108,7 @@ function onboardingReducer(state: OnboardingState, action: OnboardingAction): On
           ...state.import,
           source: action.source,
           subStep: 'target',
-          newSpaceName: action.source === 'apple-notes' ? 'Apple Notes' : 'Obsidian'
+          newSpaceName: IMPORT_SOURCE_LABELS[action.source]
         }
       }
     case 'SET_IMPORT_PATH':

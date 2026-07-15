@@ -32,7 +32,8 @@ export const ImportTargetSelector: FC<ImportTargetSelectorProps> = ({
 
   const { targetMode, newSpaceName, source, targetSpaceId } = state.import
   const hasSpaces = spaces && spaces.length > 0
-  const sourceLabel = source === 'apple-notes' ? 'Apple Notes' : 'Obsidian'
+  const sourceLabel =
+    source === 'apple-notes' ? 'Apple Notes' : source === 'joplin' ? 'Joplin' : 'Obsidian'
 
   const canContinue =
     (targetMode === 'new-space' && newSpaceName.trim().length > 0) ||
