@@ -21,7 +21,7 @@ import { HighlightedText } from '@renderer/lib/highlight'
 import { useCrossSpaceSearch } from '@renderer/hooks/useCrossSpaceSearch'
 import { useSpaces, useSwitchSpace } from '@renderer/hooks/useSpaces'
 import { useAppDispatch, useAppStore } from '@renderer/store/hooks'
-import { selectNote, selectActiveSpaceId } from '@renderer/store/slices/notesTreeSlice'
+import { openTab, selectActiveSpaceId } from '@renderer/store/slices/notesTreeSlice'
 import type { SpaceScopedSearchResult } from '@preload/index.d'
 
 interface SearchCommandDialogProps {
@@ -112,7 +112,7 @@ export const SearchCommandDialog: FC<SearchCommandDialogProps> = ({ open, onOpen
       if (result.spaceId !== activeSpaceId) {
         await switchSpace.mutateAsync(result.spaceId)
       }
-      dispatch(selectNote({ noteId: result.noteId, folderId: result.folderId }))
+      dispatch(openTab({ noteId: result.noteId, folderId: result.folderId }))
       navigate({ to: '/note/$noteId', params: { noteId: result.noteId } })
     },
     [dispatch, navigate, onOpenChange, store, switchSpace]

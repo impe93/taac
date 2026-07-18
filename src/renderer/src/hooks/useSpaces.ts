@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import type { Space } from '@preload/types'
 import { useAppDispatch, useAppStore } from '@renderer/store/hooks'
 import { switchActiveSpace, loadTree } from '@renderer/store/slices/notesTreeSlice'
@@ -96,6 +97,7 @@ export const useSwitchSpace = () => {
   const queryClient = useQueryClient()
   const dispatch = useAppDispatch()
   const store = useAppStore()
+  const navigate = useNavigate()
 
   return useMutation({
     mutationFn: async (spaceId: string) => {
@@ -118,6 +120,17 @@ export const useSwitchSpace = () => {
       // 4. Update React Query cache
       queryClient.setQueryData(['config', 'activeSpaceId'], spaceId)
       // Note: Non invalidiamo più le query perché Redux gestisce lo stato
+
+      // 5. Ripristina la scheda con focus dello spazio di destinazione
+      const targetSpace = store.getState().notesTree.spaces[spaceId]
+      const focusedNoteId = targetSpace?.selectedNoteId ?? null
+      // Naviga alla nota solo se già presente in Redux (cache/filesystem);
+      // altrimenti torna alla home in attesa dell'idratazione.
+      if (focusedNoteId && targetSpace?.notes[focusedNoteId]) {
+        navigate({ to: '/note/$noteId', params: { noteId: focusedNoteId } })
+      } else {
+        navigate({ to: '/' })
+      }
     }
   })
 }

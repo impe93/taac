@@ -1,11 +1,7 @@
 import { type FC } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useAppDispatch, useAppSelector } from '@renderer/store/hooks'
-import {
-  selectNoteById,
-  selectNote,
-  selectSelectedNote
-} from '@renderer/store/slices/notesTreeSlice'
+import { selectNoteById, openTab, selectSelectedNote } from '@renderer/store/slices/notesTreeSlice'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { FileText, Mic } from 'lucide-react'
@@ -48,7 +44,7 @@ export const TreeNote: FC<TreeNoteProps> = ({ noteId, folderId, level, onDelete 
   const isSelected = selectedNoteId === noteId
 
   const handleClick = (): void => {
-    dispatch(selectNote({ noteId, folderId }))
+    dispatch(openTab({ noteId, folderId }))
     navigate({ to: '/note/$noteId', params: { noteId } })
   }
 

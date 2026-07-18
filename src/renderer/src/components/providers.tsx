@@ -30,6 +30,7 @@ type SpacesCacheStructure = Record<
       expandedFolders: string[]
       selectedNoteId: string | null
       selectedNoteFolderId: string | null
+      openTabs?: string[]
     }
     metadata: {
       lastSaved: string

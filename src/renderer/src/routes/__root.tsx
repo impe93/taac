@@ -13,6 +13,7 @@ import { useAIChatPanel } from '@renderer/hooks/useAIChatPanel'
 import { AppTopBar, WINDOW_TOPBAR_HEIGHT } from '@renderer/components/window'
 import { useConfig } from '@renderer/hooks/useConfig'
 import { SearchCommandDialog } from '@renderer/components/search/SearchCommandDialog'
+import { NoteTabsBar } from '@renderer/components/notes-tabs/NoteTabsBar'
 
 const RootLayout: FC = () => {
   const isMacOS = window.platform === 'darwin'
@@ -61,6 +62,7 @@ const RootLayout: FC = () => {
         <div className="flex h-full w-full overflow-hidden">
           <AppSidebar />
           <SidebarInset className="bg-editor">
+            <NoteTabsBar />
             <MainContentWithAIPanel className="min-h-0 flex-1">
               <div className="h-full w-full overflow-auto p-4">
                 <Outlet />

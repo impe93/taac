@@ -18,7 +18,7 @@ import { ConversationList } from './ConversationList'
 import { ChatInterface } from './ChatInterface'
 import { useAppDispatch } from '@renderer/store/hooks'
 import { store } from '@renderer/store'
-import { selectNoteById, selectNote } from '@renderer/store/slices/notesTreeSlice'
+import { selectNoteById, openTab } from '@renderer/store/slices/notesTreeSlice'
 import {
   useCreateConversation,
   useAddNoteToConversation,
@@ -126,8 +126,8 @@ export const AIChatPanel: FC<AIChatPanelProps> = ({ className, defaultModelId })
       const note = selectNoteById(noteId)(state)
 
       if (note) {
-        // If note is in state, update selection (for sidebar highlighting)
-        dispatch(selectNote({ noteId, folderId: note.folderId }))
+        // If note is in state, open it as a tab (also updates selection/highlight)
+        dispatch(openTab({ noteId, folderId: note.folderId }))
       }
 
       // Navigate to note (works even if note not in current space)

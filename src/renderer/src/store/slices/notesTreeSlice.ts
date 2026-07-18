@@ -34,8 +34,9 @@ export interface SpaceTreeState {
 
   // UI STATE
   expandedFolders: string[] // Folder IDs espansi
-  selectedNoteId: string | null // Nota selezionata
+  selectedNoteId: string | null // Nota selezionata (= scheda con focus)
   selectedNoteFolderId: string | null // Folder contenente la nota selezionata
+  openTabs: string[] // Note aperte in schede (ID nota, ordinati)
 
   // PERSISTENCE (per-spazio)
   isCacheHydrated: boolean // true dopo hydration del cache
@@ -68,9 +69,21 @@ function createEmptySpaceState(): SpaceTreeState {
     expandedFolders: ['root'],
     selectedNoteId: null,
     selectedNoteFolderId: null,
+    openTabs: [],
     isCacheHydrated: false,
     isFullyHydrated: false
   }
+}
+
+// Helper: sceglie la scheda su cui spostare il focus dopo aver rimosso `closedId`.
+// Preferisce la scheda che occupava l'indice precedente, poi la successiva.
+function pickNeighborTab(previousTabs: string[], closedId: string): string | null {
+  const index = previousTabs.indexOf(closedId)
+  if (index === -1) return null
+  const remaining = previousTabs.filter((id) => id !== closedId)
+  if (remaining.length === 0) return null
+  const neighborIndex = Math.max(0, Math.min(index - 1, remaining.length - 1))
+  return remaining[neighborIndex]
 }
 
 const initialState: NotesTreeState = {
@@ -362,6 +375,7 @@ const notesTreeSlice = createSlice({
               expandedFolders: string[]
               selectedNoteId: string | null
               selectedNoteFolderId: string | null
+              openTabs?: string[]
             }
             metadata: { lastSaved: string; version: number }
           }
@@ -380,6 +394,10 @@ const notesTreeSlice = createSlice({
           expandedFolders: spaceData.ui.expandedFolders,
           selectedNoteId: spaceData.ui.selectedNoteId,
           selectedNoteFolderId: spaceData.ui.selectedNoteFolderId,
+          // Backfill per cache vecchie: se manca openTabs, apri la nota selezionata (se c'è)
+          openTabs:
+            spaceData.ui.openTabs ??
+            (spaceData.ui.selectedNoteId ? [spaceData.ui.selectedNoteId] : []),
           isCacheHydrated: true,
           isFullyHydrated: false
         }
@@ -472,6 +490,58 @@ const notesTreeSlice = createSlice({
 
       activeSpace.selectedNoteId = null
       activeSpace.selectedNoteFolderId = null
+    },
+
+    // TABS: apre una nota in scheda (o ne porta il focus se già aperta)
+    openTab: (state, action: PayloadAction<{ noteId: string; folderId: string }>) => {
+      if (!state.activeSpaceId) return
+      const activeSpace = state.spaces[state.activeSpaceId]
+      if (!activeSpace) return
+
+      const { noteId, folderId } = action.payload
+      if (!activeSpace.openTabs.includes(noteId)) {
+        activeSpace.openTabs.push(noteId)
+      }
+      activeSpace.selectedNoteId = noteId
+      activeSpace.selectedNoteFolderId = folderId
+    },
+
+    // TABS: chiude una scheda; se era la selezionata, sposta il focus al vicino
+    closeTab: (state, action: PayloadAction<{ noteId: string }>) => {
+      if (!state.activeSpaceId) return
+      const activeSpace = state.spaces[state.activeSpaceId]
+      if (!activeSpace) return
+
+      const { noteId } = action.payload
+      if (!activeSpace.openTabs.includes(noteId)) return
+
+      const wasSelected = activeSpace.selectedNoteId === noteId
+      const neighborId = wasSelected ? pickNeighborTab(activeSpace.openTabs, noteId) : null
+
+      activeSpace.openTabs = activeSpace.openTabs.filter((id) => id !== noteId)
+
+      if (wasSelected) {
+        activeSpace.selectedNoteId = neighborId
+        activeSpace.selectedNoteFolderId = neighborId
+          ? (activeSpace.notes[neighborId]?.folderId ?? null)
+          : null
+      }
+    },
+
+    // TABS: riordina le schede (riordino puro, nessuna chiamata IPC)
+    reorderTabs: (state, action: PayloadAction<{ orderedIds: string[] }>) => {
+      if (!state.activeSpaceId) return
+      const activeSpace = state.spaces[state.activeSpaceId]
+      if (!activeSpace) return
+
+      // Preserva solo gli ID realmente aperti, nell'ordine richiesto
+      const current = new Set(activeSpace.openTabs)
+      const reordered = action.payload.orderedIds.filter((id) => current.has(id))
+      // Accoda eventuali schede mancanti dall'ordine ricevuto (safety)
+      for (const id of activeSpace.openTabs) {
+        if (!reordered.includes(id)) reordered.push(id)
+      }
+      activeSpace.openTabs = reordered
     }
   },
 
@@ -504,6 +574,16 @@ const notesTreeSlice = createSlice({
         if (space.selectedNoteId && !notes[space.selectedNoteId]) {
           space.selectedNoteId = null
           space.selectedNoteFolderId = null
+        }
+
+        // 1b. Valida openTabs: scarta schede di note non più esistenti sul filesystem
+        space.openTabs = space.openTabs.filter((noteId) => notes[noteId])
+        // Se il focus è caduto ma restano schede aperte, riparti dalla prima
+        if (!space.selectedNoteId && space.openTabs.length > 0) {
+          const firstTabId = space.openTabs[0]
+          const firstNote = notes[firstTabId]
+          space.selectedNoteId = firstTabId
+          space.selectedNoteFolderId = firstNote?.folderId ?? null
         }
 
         // 2. Valida expandedFolders: rimuovi ID che non esistono più
@@ -547,9 +627,12 @@ const notesTreeSlice = createSlice({
           space.expandedFolders.push(folderId)
         }
 
-        // Auto-seleziona nota
+        // Auto-seleziona nota e aprila in scheda
         space.selectedNoteId = note.id
         space.selectedNoteFolderId = folderId
+        if (!space.openTabs.includes(note.id)) {
+          space.openTabs.push(note.id)
+        }
 
         delete state.loadingOperations[`createNote-${folderId}`]
       })
@@ -585,8 +668,19 @@ const notesTreeSlice = createSlice({
         )
       }
 
-      // Deseleziona se era selezionata
-      if (space.selectedNoteId === noteId) {
+      // Chiudi la scheda della nota eliminata, rifocalizzando il vicino se era attiva
+      if (space.openTabs.includes(noteId)) {
+        const wasSelected = space.selectedNoteId === noteId
+        const neighborId = wasSelected ? pickNeighborTab(space.openTabs, noteId) : null
+        space.openTabs = space.openTabs.filter((id) => id !== noteId)
+        if (wasSelected) {
+          space.selectedNoteId = neighborId
+          space.selectedNoteFolderId = neighborId
+            ? (space.notes[neighborId]?.folderId ?? null)
+            : null
+        }
+      } else if (space.selectedNoteId === noteId) {
+        // Deseleziona se era selezionata ma non aperta in scheda
         space.selectedNoteId = null
         space.selectedNoteFolderId = null
       }
@@ -630,14 +724,19 @@ const notesTreeSlice = createSlice({
       if (!state.spaces[spaceId]) return
       const space = state.spaces[spaceId]
 
+      // Snapshot delle schede aperte prima della rimozione (per scegliere il vicino)
+      const previousTabs = [...space.openTabs]
+      const selectedBefore = space.selectedNoteId
+
       // Funzione ricorsiva per rimuovere cartella e tutti i suoi figli
       const removeFolderRecursive = (id: string): void => {
         const folder = space.folders[id]
         if (!folder) return
 
-        // Rimuovi tutte le note nella cartella
+        // Rimuovi tutte le note nella cartella (anche dalle schede aperte)
         folder.noteIds.forEach((noteId) => {
           delete space.notes[noteId]
+          space.openTabs = space.openTabs.filter((tabId) => tabId !== noteId)
         })
 
         // Rimuovi ricorsivamente le sotto-cartelle
@@ -660,10 +759,13 @@ const notesTreeSlice = createSlice({
         parentFolder.children = parentFolder.children.filter((id) => id !== folderId)
       }
 
-      // Deseleziona se la nota selezionata era in questa cartella
-      if (space.selectedNoteFolderId === folderId) {
-        space.selectedNoteId = null
-        space.selectedNoteFolderId = null
+      // Se la nota selezionata è stata eliminata, sposta il focus a una scheda vicina
+      if (selectedBefore && !space.notes[selectedBefore]) {
+        const neighborId = pickNeighborTab(previousTabs, selectedBefore)
+        const stillOpen = neighborId && space.openTabs.includes(neighborId) ? neighborId : null
+        const fallback = stillOpen ?? (space.openTabs.length > 0 ? space.openTabs[0] : null)
+        space.selectedNoteId = fallback
+        space.selectedNoteFolderId = fallback ? (space.notes[fallback]?.folderId ?? null) : null
       }
     })
 
@@ -890,8 +992,18 @@ const notesTreeSlice = createSlice({
           ].noteIds.filter((id) => id !== noteId)
         }
 
-        // Clear selection if this note was selected
-        if (sourceSpace.selectedNoteId === noteId) {
+        // Chiudi la scheda nello spazio sorgente, rifocalizzando il vicino
+        if (sourceSpace.openTabs.includes(noteId)) {
+          const wasSelected = sourceSpace.selectedNoteId === noteId
+          const neighborId = wasSelected ? pickNeighborTab(sourceSpace.openTabs, noteId) : null
+          sourceSpace.openTabs = sourceSpace.openTabs.filter((id) => id !== noteId)
+          if (wasSelected) {
+            sourceSpace.selectedNoteId = neighborId
+            sourceSpace.selectedNoteFolderId = neighborId
+              ? (sourceSpace.notes[neighborId]?.folderId ?? null)
+              : null
+          }
+        } else if (sourceSpace.selectedNoteId === noteId) {
           sourceSpace.selectedNoteId = null
           sourceSpace.selectedNoteFolderId = null
         }
@@ -951,15 +1063,28 @@ const notesTreeSlice = createSlice({
         const folder = sourceSpace.folders[folderId]
         const parentId = folder?.parentId
 
-        // Remove all notes in subtree
+        // Snapshot per scegliere il vicino se la scheda attiva viene spostata
+        const previousTabs = [...sourceSpace.openTabs]
+        const selectedBefore = sourceSpace.selectedNoteId
+
+        // Remove all notes in subtree (anche dalle schede aperte)
         noteIds.forEach((noteId) => {
           delete sourceSpace.notes[noteId]
-          // Clear selection if any of these notes was selected
-          if (sourceSpace.selectedNoteId === noteId) {
-            sourceSpace.selectedNoteId = null
-            sourceSpace.selectedNoteFolderId = null
-          }
+          sourceSpace.openTabs = sourceSpace.openTabs.filter((id) => id !== noteId)
         })
+
+        // Se la nota attiva è stata spostata, sposta il focus a una scheda vicina
+        if (selectedBefore && !sourceSpace.notes[selectedBefore]) {
+          const neighborId = pickNeighborTab(previousTabs, selectedBefore)
+          const stillOpen =
+            neighborId && sourceSpace.openTabs.includes(neighborId) ? neighborId : null
+          const fallback =
+            stillOpen ?? (sourceSpace.openTabs.length > 0 ? sourceSpace.openTabs[0] : null)
+          sourceSpace.selectedNoteId = fallback
+          sourceSpace.selectedNoteFolderId = fallback
+            ? (sourceSpace.notes[fallback]?.folderId ?? null)
+            : null
+        }
 
         // Remove all folders in subtree
         folderIds.forEach((fId) => {
@@ -1023,7 +1148,10 @@ export const {
   expandFolder,
   collapseFolder,
   selectNote,
-  clearSelection
+  clearSelection,
+  openTab, // TABS
+  closeTab, // TABS
+  reorderTabs // TABS
 } = notesTreeSlice.actions
 
 export default notesTreeSlice.reducer
@@ -1131,6 +1259,13 @@ export const selectSelectedNote = (state: {
     folderId: activeSpace.selectedNoteFolderId,
     note: activeSpace.selectedNoteId ? activeSpace.notes[activeSpace.selectedNoteId] || null : null
   }
+}
+
+// TABS: ID delle note aperte in scheda nello spazio attivo (ordinati)
+export const selectOpenTabs = (state: { notesTree: NotesTreeState }): string[] => {
+  const activeSpace = selectActiveSpaceState(state)
+  if (!activeSpace) return []
+  return activeSpace.openTabs
 }
 
 // Loading state (globale)

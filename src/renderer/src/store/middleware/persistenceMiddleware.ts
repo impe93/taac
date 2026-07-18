@@ -14,6 +14,7 @@ type SpacesCacheStructure = Record<
       expandedFolders: string[]
       selectedNoteId: string | null
       selectedNoteFolderId: string | null
+      openTabs: string[]
     }
     metadata: {
       lastSaved: string
@@ -31,7 +32,10 @@ const PERSISTABLE_UI_ACTIONS = [
   'notesTree/expandFolder',
   'notesTree/collapseFolder',
   'notesTree/selectNote',
-  'notesTree/clearSelection'
+  'notesTree/clearSelection',
+  'notesTree/openTab',
+  'notesTree/closeTab',
+  'notesTree/reorderTabs'
 ] as const
 
 /**
@@ -117,7 +121,8 @@ async function persistSpaceUIState(
       ui: {
         expandedFolders: spaceState.expandedFolders,
         selectedNoteId: spaceState.selectedNoteId,
-        selectedNoteFolderId: spaceState.selectedNoteFolderId
+        selectedNoteFolderId: spaceState.selectedNoteFolderId,
+        openTabs: spaceState.openTabs
       }
     }
 
@@ -149,7 +154,8 @@ function debouncedPersistAllSpaces(spaces: Record<string, SpaceTreeState>): void
           ui: {
             expandedFolders: spaceState.expandedFolders,
             selectedNoteId: spaceState.selectedNoteId,
-            selectedNoteFolderId: spaceState.selectedNoteFolderId
+            selectedNoteFolderId: spaceState.selectedNoteFolderId,
+            openTabs: spaceState.openTabs
           },
           metadata: {
             lastSaved: new Date().toISOString(),
