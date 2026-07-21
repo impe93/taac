@@ -235,7 +235,7 @@ export class AppleNotesParser extends BaseParser {
         error:
           'Full Disk Access is required to read Apple Notes. ' +
           'Go to System Settings > Privacy & Security > Full Disk Access ' +
-          'and enable TaacNotes.'
+          'and enable Taac.'
       }
     }
   }

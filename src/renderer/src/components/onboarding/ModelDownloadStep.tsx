@@ -172,7 +172,7 @@ export const ModelDownloadStep: FC<ModelDownloadStepProps> = ({ state, dispatch 
       <div className="space-y-2">
         <h1 className="font-serif text-4xl font-normal tracking-tight">Make it yours</h1>
         <p className="text-lg text-muted-foreground">
-          TaacNotes keeps its AI private by running it right on your Mac. Pick what you’d like —
+          Taac keeps its AI private by running it right on your Mac. Pick what you’d like —
           everything downloads in the background while you explore.
         </p>
       </div>

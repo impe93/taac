@@ -182,7 +182,7 @@ function createWindow(): void {
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(async () => {
   // Set app user model id for windows
-  electronApp.setAppUserModelId('com.taacnotes.app')
+  electronApp.setAppUserModelId('com.usetaac.app')
 
   // Register protocol handler for local assets
   // URL format: taac-asset://spaceId/type/filename

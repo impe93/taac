@@ -1,8 +1,8 @@
-# TaacNotes — General Architecture & Coding Rules
+# Taac — General Architecture & Coding Rules
 
 ## 1. Project Overview
 
-TaacNotes is an AI-native note-taking desktop application.
+Taac is an AI-native note-taking desktop application.
 
 | Layer   | Technology                                                              |
 | ------- | ----------------------------------------------------------------------- |

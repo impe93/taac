@@ -1,4 +1,4 @@
-"""MLX-LM JSONL bridge for the TaacNotes LLM text-generation sidecar.
+"""MLX-LM JSONL bridge for the Taac LLM text-generation sidecar.
 
 Speaks newline-delimited JSON over stdio — one JSON object per line.
 stdout carries protocol messages ONLY; all logging goes to stderr.

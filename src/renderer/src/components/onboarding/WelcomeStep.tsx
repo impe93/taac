@@ -17,7 +17,7 @@ export const WelcomeStep: FC<WelcomeStepProps> = ({ dispatch }) => {
         <span className="font-serif text-5xl italic leading-none text-primary">t</span>
       </div>
       <div className="space-y-2">
-        <h1 className="font-serif text-4xl font-normal tracking-tight">Welcome to TaacNotes</h1>
+        <h1 className="font-serif text-4xl font-normal tracking-tight">Welcome to Taac</h1>
         <p className="text-lg text-muted-foreground">
           Your AI-native note-taking app. Let&apos;s get you set up in just a few steps.
         </p>

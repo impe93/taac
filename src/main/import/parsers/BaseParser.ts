@@ -24,7 +24,7 @@ export abstract class BaseParser {
   abstract parse(sourcePath: string): Promise<ParsedNote[]>
 
   /**
-   * Map a file extension to the corresponding TaacNotes asset category.
+   * Map a file extension to the corresponding Taac asset category.
    */
   protected determineAssetType(filename: string): 'images' | 'pdfs' | 'attachments' {
     const ext = extname(filename).toLowerCase()

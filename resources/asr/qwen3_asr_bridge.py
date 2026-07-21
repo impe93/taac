@@ -1,4 +1,4 @@
-"""Qwen3-ASR JSONL bridge for the TaacNotes realtime transcription sidecar.
+"""Qwen3-ASR JSONL bridge for the Taac realtime transcription sidecar.
 
 Speaks newline-delimited JSON over stdio — one JSON object per line.
 stdout carries protocol messages ONLY; all logging goes to stderr.

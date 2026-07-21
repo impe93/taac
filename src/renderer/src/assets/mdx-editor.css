@@ -1,8 +1,8 @@
-/* MDXEditor Theme Bridge for TaacNotes */
-/* Maps MDXEditor's Radix CSS variables to TaacNotes OkLCh theme */
+/* MDXEditor Theme Bridge for Taac */
+/* Maps MDXEditor's Radix CSS variables to Taac OkLCh theme */
 
 .mdx-note-editor {
-  /* Light mode defaults - using TaacNotes CSS variables */
+  /* Light mode defaults - using Taac CSS variables */
   --accentBase: var(--background);
   --accentBgSubtle: var(--muted);
   --accentBg: var(--secondary);

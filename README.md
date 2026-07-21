@@ -1,6 +1,6 @@
-# TaacNotes
+# Taac
 
-An AI-native note-taking desktop application built with Electron, React 19, Lexical editor, and the TanStack ecosystem. TaacNotes provides a modern, performant environment for creating and organizing notes with AI-powered features.
+An AI-native note-taking desktop application built with Electron, React 19, Lexical editor, and the TanStack ecosystem. Taac provides a modern, performant environment for creating and organizing notes with AI-powered features.
 
 ## Tech Stack
 
@@ -15,15 +15,15 @@ An AI-native note-taking desktop application built with Electron, React 19, Lexi
 
 ## Spaces
 
-TaacNotes organizes notes into **Spaces** (max 5), each with its own isolated directory tree, custom name, and Lucide React icon. Spaces are managed by `SpaceManager` (`src/main/utils/spaceManager.ts`) which handles CRUD operations and stores metadata in `spaces/spaces.json`. Each space has a dedicated `FileSystemManager` instance that operates on `{userData}/spaces/{spaceId}/` for complete data isolation. The active space is tracked in `electron-store` and accessed via `useActiveSpace()` hook (`src/renderer/src/hooks/useSpaces.ts`), with UI components in `src/renderer/src/components/spaces/` for switching and managing spaces.
+Taac organizes notes into **Spaces** (max 5), each with its own isolated directory tree, custom name, and Lucide React icon. Spaces are managed by `SpaceManager` (`src/main/utils/spaceManager.ts`) which handles CRUD operations and stores metadata in `spaces/spaces.json`. Each space has a dedicated `FileSystemManager` instance that operates on `{userData}/spaces/{spaceId}/` for complete data isolation. The active space is tracked in `electron-store` and accessed via `useActiveSpace()` hook (`src/renderer/src/hooks/useSpaces.ts`), with UI components in `src/renderer/src/components/spaces/` for switching and managing spaces.
 
 ## Notes Tree & Drag-and-Drop
 
-TaacNotes features a hierarchical **Notes Tree** (`src/renderer/src/components/notes-tree/`) that provides intuitive navigation and organization of notes and folders within each space. The tree is built with **@dnd-kit/core** to enable smooth drag-and-drop functionality for reorganizing content. Notes and folders can be dragged onto other folders or dropped in empty space to move to root level, with visual feedback including ghost overlays and drop zone highlighting. To prevent accidental activation, drag requires 10px mouse movement before activating, allowing normal clicks for expanding/collapsing folders and selecting notes. The tree implements auto-expand behavior (folders open after 1.5s hover during drag), optimistic Redux state updates with automatic rollback on errors, and validates against circular dependencies to prevent moving folders into their own descendants. Move operations are handled by `FileSystemManager.moveNote()` and `FileSystemManager.moveFolder()` methods with atomic file operations and metadata updates, all persisted to `electron-store` cache via the persistence middleware for instant hydration on app restart.
+Taac features a hierarchical **Notes Tree** (`src/renderer/src/components/notes-tree/`) that provides intuitive navigation and organization of notes and folders within each space. The tree is built with **@dnd-kit/core** to enable smooth drag-and-drop functionality for reorganizing content. Notes and folders can be dragged onto other folders or dropped in empty space to move to root level, with visual feedback including ghost overlays and drop zone highlighting. To prevent accidental activation, drag requires 10px mouse movement before activating, allowing normal clicks for expanding/collapsing folders and selecting notes. The tree implements auto-expand behavior (folders open after 1.5s hover during drag), optimistic Redux state updates with automatic rollback on errors, and validates against circular dependencies to prevent moving folders into their own descendants. Move operations are handled by `FileSystemManager.moveNote()` and `FileSystemManager.moveFolder()` methods with atomic file operations and metadata updates, all persisted to `electron-store` cache via the persistence middleware for instant hydration on app restart.
 
 ## File System Utilities
 
-TaacNotes includes a comprehensive file system management layer for handling notes, folders, assets, and configuration with full type safety and IPC communication between Electron processes.
+Taac includes a comprehensive file system management layer for handling notes, folders, assets, and configuration with full type safety and IPC communication between Electron processes.
 
 ### Architecture
 
@@ -162,7 +162,7 @@ Releases are cut from a `v*` git tag. The tag triggers
 with the Developer ID certificate, notarizes with Apple and publishes the
 artifacts to the matching GitHub Release:
 
-- `taac-notes-<version>-arm64.dmg` — what users download for a first install
+- `taac-<version>-arm64.dmg` — what users download for a first install
 - `Taac-<version>-arm64-mac.zip` + `latest-mac.yml` — the auto-update payload
   read by `electron-updater` inside the app
 
@@ -192,7 +192,7 @@ development the updater is inert unless `TAAC_FORCE_UPDATE_CHECK=1` is set.
 ## Project Structure
 
 ```
-TaacNotes/
+Taac/
 ├── src/
 │   ├── main/              # Electron main process
 │   │   ├── index.ts       # Entry point

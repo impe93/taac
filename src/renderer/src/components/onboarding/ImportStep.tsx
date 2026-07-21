@@ -218,7 +218,7 @@ export const ImportStep: FC<ImportStepProps> = ({ state, dispatch }) => {
               <p className="text-lg text-muted-foreground">
                 {isChecking
                   ? 'Checking Apple Notes access...'
-                  : 'TaacNotes needs permission to read your Apple Notes.'}
+                  : 'Taac needs permission to read your Apple Notes.'}
               </p>
             </div>
 

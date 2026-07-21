@@ -50,7 +50,7 @@
   --sidebar-border: #e2ddcf;
   --sidebar-ring: #2e7d5b;
 
-  /* New tokens (TaacNotes redesign) */
+  /* New tokens (Taac redesign) */
   --ai: #9a7a2e;
   --ai-foreground: #ffffff;
   --ai-soft: rgba(154, 122, 46, 0.12);
@@ -105,7 +105,7 @@
   --sidebar-border: #2c3125;
   --sidebar-ring: #4aa473;
 
-  /* New tokens (TaacNotes redesign) */
+  /* New tokens (Taac redesign) */
   --ai: #c9a24f;
   --ai-foreground: #0c160f;
   --ai-soft: rgba(201, 162, 79, 0.15);

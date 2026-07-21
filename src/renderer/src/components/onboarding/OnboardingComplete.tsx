@@ -85,7 +85,7 @@ export const OnboardingComplete: FC<OnboardingCompleteProps> = ({ state }) => {
       </Card>
 
       <Button size="lg" onClick={handleComplete}>
-        Start Using TaacNotes
+        Start Using Taac
       </Button>
     </div>
   )

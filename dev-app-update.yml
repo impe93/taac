@@ -3,4 +3,4 @@
 provider: github
 owner: impe93
 repo: taac
-updaterCacheDirName: taac-notes-updater
+updaterCacheDirName: taac-updater

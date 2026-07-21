@@ -1,9 +1,10 @@
 {
-  "name": "taac-notes",
+  "name": "taac",
   "version": "0.1.0",
   "description": "AI native Note taking app",
   "main": "./out/main/index.js",
   "author": "Lorenzo Imperatrice",
+  "license": "AGPL-3.0-or-later",
   "repository": {
     "type": "git",
     "url": "https://github.com/impe93/taac.git"

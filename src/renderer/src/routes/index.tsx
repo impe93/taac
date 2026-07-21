@@ -62,7 +62,7 @@ function HomeView(): ReactNode {
     <div className="flex h-full flex-col items-center justify-center">
       <div className="w-full max-w-3xl space-y-8">
         <div className="space-y-2 text-center">
-          <h1 className="text-3xl font-bold tracking-tight">Welcome to TaacNotes</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Welcome to Taac</h1>
           <p className="text-muted-foreground">
             Your AI-powered note-taking workspace. Write, organize, and search your notes with the
             help of local AI.

@@ -428,7 +428,7 @@ const AppearanceSettings: FC = () => {
         <div>
           <h2 className="text-lg font-semibold">Appearance</h2>
           <p className="text-xs text-muted-foreground">
-            Choose how TaacNotes looks on your device.
+            Choose how Taac looks on your device.
           </p>
         </div>
       </div>

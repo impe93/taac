@@ -1,4 +1,4 @@
-appId: com.taacnotes.app
+appId: com.usetaac.app
 productName: Taac
 directories:
   buildResources: build
@@ -30,7 +30,7 @@ asarUnpack:
   - '**/*.so'
   - '**/*.dll'
 win:
-  executableName: taac-notes
+  executableName: taac
   target:
     - target: nsis
       arch:
@@ -68,8 +68,8 @@ mac:
   entitlementsInherit: build/entitlements.mac.inherit.plist
   extendInfo:
     - NSCameraUsageDescription: Application requests access to the device's camera.
-    - NSMicrophoneUsageDescription: 'TaacNotes needs microphone access to record meeting audio.'
-    - NSAudioCaptureUsageDescription: 'TaacNotes needs audio capture access to record system audio during meetings.'
+    - NSMicrophoneUsageDescription: 'Taac needs microphone access to record meeting audio.'
+    - NSAudioCaptureUsageDescription: 'Taac needs audio capture access to record system audio during meetings.'
     - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
     - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
   # Notarization uses electron-builder's built-in flow; credentials are read from

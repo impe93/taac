@@ -89,7 +89,7 @@ export interface ImportProgressEvent {
 // ============================================================================
 
 /**
- * A note parsed from the source, ready for creation in TaacNotes
+ * A note parsed from the source, ready for creation in Taac
  */
 export interface ParsedNote {
   title: string

@@ -50,7 +50,7 @@ export class ProcessingUtilityManager {
       const workerPath = join(__dirname, 'processingWorker.js')
 
       const child = utilityProcess.fork(workerPath, [], {
-        serviceName: 'taacnotes-processing',
+        serviceName: 'taac-processing',
         stdio: 'inherit'
       })
       this.child = child
