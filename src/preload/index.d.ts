@@ -6,7 +6,8 @@ import type {
   Asset,
   AppConfig,
   Space,
-  MoveFolderToSpaceResult
+  MoveFolderToSpaceResult,
+  UpdaterState
 } from './types'
 import type {
   HardwareInfo,
@@ -35,7 +36,16 @@ import type {
 } from '../main/import/types'
 
 // Re-export types from types.ts for convenience
-export type { Note, FolderMetadata, OrderedItem, Asset, AppConfig, Space, MoveFolderToSpaceResult }
+export type {
+  Note,
+  FolderMetadata,
+  OrderedItem,
+  Asset,
+  AppConfig,
+  Space,
+  MoveFolderToSpaceResult,
+  UpdaterState
+}
 
 // Re-export AI types for convenience
 export type {
@@ -444,6 +454,17 @@ export interface AudioAPI {
   onRealtimeStatus: (callback: (status: RealtimeStatusEvent) => void) => () => void
 }
 
+// Auto-update API interface
+export interface UpdaterAPI {
+  check: () => Promise<UpdaterState>
+  download: () => Promise<void>
+  /** Quits the app (disposing sidecars first) and installs the downloaded update. */
+  install: () => Promise<void>
+  getState: () => Promise<UpdaterState>
+  getAppVersion: () => Promise<string>
+  onStatus: (callback: (state: UpdaterState) => void) => () => void
+}
+
 // Global window interface
 declare global {
   interface Window {
@@ -455,5 +476,6 @@ declare global {
     ai: AIAPI
     import: ImportAPI
     audio: AudioAPI
+    updater: UpdaterAPI
   }
 }

@@ -11,8 +11,11 @@ import {
   Cpu,
   Boxes,
   Loader2,
-  RefreshCw
+  RefreshCw,
+  DownloadCloud
 } from 'lucide-react'
+import { Progress } from '@renderer/components/ui/progress'
+import { useUpdater } from '@renderer/hooks/useUpdater'
 import { Card, CardContent } from '@renderer/components/ui/card'
 import { Button } from '@renderer/components/ui/button'
 import { Switch } from '@renderer/components/ui/switch'
@@ -36,6 +39,7 @@ import {
   type CuratedFeature
 } from '@renderer/lib/modelFeatures'
 import type { ModelDefinition, ModelProfile } from '@main/ai/types'
+import type { UpdaterState } from '@preload/types'
 import {
   SUMMARY_DEPTH_OPTIONS,
   isDetailedSummaryAvailable,
@@ -140,6 +144,8 @@ function SettingsPage(): ReactNode {
       />
 
       <AppearanceSettings />
+
+      <UpdatesSettings />
     </div>
   )
 }
@@ -308,6 +314,101 @@ const THEME_OPTIONS = [
   { value: 'light', label: 'Light', icon: Sun },
   { value: 'dark', label: 'Dark', icon: Moon }
 ] as const
+
+/** Human-readable one-liner for the current updater state. */
+const describeUpdateState = (state: UpdaterState): string => {
+  switch (state.status) {
+    case 'checking':
+      return 'Checking for updates…'
+    case 'available':
+      return `Version ${state.version} is available.`
+    case 'not-available':
+      return 'You are running the latest version.'
+    case 'downloading':
+      return `Downloading version ${state.version}… ${state.percent ?? 0}%`
+    case 'downloaded':
+      return `Version ${state.version} is ready — restart to install.`
+    case 'error':
+      return `Update check failed: ${state.message ?? 'unknown error'}`
+    default:
+      return 'Updates are checked automatically in the background.'
+  }
+}
+
+const UpdatesSettings: FC = () => {
+  const { state, check, install, isChecking, isDownloading } = useUpdater()
+  const { data: autoUpdateEnabled } = useConfig('autoUpdateEnabled')
+  const setAutoUpdate = useSetConfig<'autoUpdateEnabled'>()
+
+  const handleAutoUpdateChange = (checked: boolean): void => {
+    setAutoUpdate.mutate({ key: 'autoUpdateEnabled', value: checked })
+  }
+
+  const handleCheck = (): void => {
+    void check()
+  }
+
+  const handleInstall = (): void => {
+    void install()
+  }
+
+  return (
+    <div className="mt-8">
+      <div className="mb-4 flex items-center gap-2">
+        <DownloadCloud className="size-5 text-muted-foreground" />
+        <div>
+          <h2 className="text-lg font-semibold">Updates</h2>
+          <p className="text-xs text-muted-foreground">
+            Taac updates itself from the official GitHub releases.
+          </p>
+        </div>
+      </div>
+
+      <Card className="py-0">
+        <CardContent className="divide-y py-0">
+          <div className="flex items-center justify-between gap-4 py-4">
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium">Current version {state.currentVersion || '—'}</p>
+              <p className="text-xs text-muted-foreground">{describeUpdateState(state)}</p>
+              {isDownloading && (
+                <Progress value={state.percent ?? 0} className="mt-2 h-1.5 w-full max-w-xs" />
+              )}
+            </div>
+            {state.status === 'downloaded' ? (
+              <Button size="sm" onClick={handleInstall}>
+                Restart &amp; install
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleCheck}
+                disabled={isChecking || isDownloading}
+              >
+                {isChecking ? (
+                  <Loader2 className="mr-1.5 size-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="mr-1.5 size-4" />
+                )}
+                Check for updates
+              </Button>
+            )}
+          </div>
+          <div className="flex items-center justify-between gap-4 py-4">
+            <div className="flex-1 pr-4">
+              <p className="text-sm font-medium">Download updates automatically</p>
+              <p className="text-xs text-muted-foreground">
+                Fetch new versions in the background and ask you to restart when they are ready.
+                Turn off to only check manually from this page.
+              </p>
+            </div>
+            <Switch checked={autoUpdateEnabled ?? true} onCheckedChange={handleAutoUpdateChange} />
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
 
 const AppearanceSettings: FC = () => {
   const { theme, setTheme } = useTheme()

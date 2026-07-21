@@ -47,9 +47,18 @@ mac:
   extraResources:
     - from: python-runtime
       to: python-runtime
+  # dmg = first install, zip = auto-update payload (Squirrel.Mac only accepts a
+  # zip; without it electron-builder cannot emit latest-mac.yml). The zip keeps
+  # the DEFAULT artifactName on purpose — latest-mac.yml references that name.
   target:
-    - dmg
-    - zip
+    - target: dmg
+      arch: [arm64]
+    - target: zip
+      arch: [arm64]
+  # The bundled MLX runtime is pinned to the macosx_14_0 wheels
+  # (scripts/prepare-asr-runtime.sh), so macOS 14 is the real floor. Declaring it
+  # keeps the updater from offering builds to systems that cannot run them.
+  minimumSystemVersion: '14.0'
   # Hardened Runtime is mandatory for notarization. The entitlements below relax
   # it enough for node-llama-cpp (JIT) and the embedded Python/MLX sidecar
   # (library validation must be disabled to load the unsigned bundled dylibs).
@@ -73,7 +82,7 @@ afterPack: scripts/afterPack.mjs
 # submits + staples each produced .dmg so it is Gatekeeper-verifiable offline.
 afterAllArtifactBuild: scripts/afterAllArtifactBuild.mjs
 dmg:
-  artifactName: ${name}-${version}.${ext}
+  artifactName: ${name}-${version}-arm64.${ext}
 linux:
   target:
     - AppImage
@@ -84,6 +93,11 @@ linux:
 appImage:
   artifactName: ${name}-${version}.${ext}
 npmRebuild: false
+# Auto-update source: GitHub Releases. The release workflow publishes the .dmg,
+# the .zip and latest-mac.yml to the tag's release; electron-updater in the app
+# (src/main/utils/updater.ts) reads latest-mac.yml from there.
 publish:
-  provider: generic
-  url: https://example.com/auto-updates
+  provider: github
+  owner: impe93
+  repo: taac
+  releaseType: release

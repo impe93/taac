@@ -17,6 +17,7 @@ import type { FolderMetadata, Note } from '@preload/types'
 import { useNavigate } from '@tanstack/react-router'
 import { MeetingLifecycleProvider } from '@renderer/components/meeting/MeetingLifecycleProvider'
 import { DownloadProvider } from '@renderer/components/models/DownloadProvider'
+import { UpdateNotifier } from '@renderer/components/layout/UpdateNotifier'
 
 // Type alias per la struttura della cache multi-spazio
 type SpacesCacheStructure = Record<
@@ -220,7 +221,10 @@ export function Providers({ children }: { children: React.ReactNode }): React.Re
           <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
             <DownloadProvider>
               <PersistentSidebarProvider>
-                <MeetingLifecycleProvider>{children}</MeetingLifecycleProvider>
+                <MeetingLifecycleProvider>
+                  <UpdateNotifier />
+                  {children}
+                </MeetingLifecycleProvider>
               </PersistentSidebarProvider>
             </DownloadProvider>
             <Toaster

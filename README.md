@@ -155,6 +155,40 @@ pnpm build:linux    # Linux
 pnpm build:unpack   # Build without packaging (for testing)
 ```
 
+## Releasing
+
+Releases are cut from a `v*` git tag. The tag triggers
+`.github/workflows/release.yml`, which builds on an Apple Silicon runner, signs
+with the Developer ID certificate, notarizes with Apple and publishes the
+artifacts to the matching GitHub Release:
+
+- `taac-notes-<version>-arm64.dmg` — what users download for a first install
+- `Taac-<version>-arm64-mac.zip` + `latest-mac.yml` — the auto-update payload
+  read by `electron-updater` inside the app
+
+```bash
+pnpm release:patch   # 0.1.0 → 0.1.1: typecheck, lint, bump, tag, push
+pnpm release:minor
+pnpm release:major
+
+pnpm publish:mac     # manual fallback: build + notarize + publish from your Mac
+```
+
+Required repository secrets:
+
+| Secret | Purpose |
+| --- | --- |
+| `MACOS_CERTIFICATE` | Developer ID Application `.p12`, base64-encoded |
+| `MACOS_CERTIFICATE_PWD` | Password of that `.p12` |
+| `KEYCHAIN_PASSWORD` | Any value — unlocks the temporary CI keychain |
+| `APPLE_ID` | Apple ID used for notarization |
+| `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password for that Apple ID |
+| `APPLE_TEAM_ID` | 10-character Apple Developer Team ID |
+
+In-app updates are checked 15 s after launch and every 6 hours, downloaded in
+the background and installed on restart (toggle in Settings → Updates). In
+development the updater is inert unless `TAAC_FORCE_UPDATE_CHECK=1` is set.
+
 ## Project Structure
 
 ```

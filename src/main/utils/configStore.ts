@@ -33,6 +33,8 @@ export interface AppConfig {
   sidebarWidth: number
   // Editor mode preference
   editorMode: 'wysiwyg' | 'source'
+  /** When true, the app checks GitHub Releases and downloads updates in the background. */
+  autoUpdateEnabled: boolean
   // Redux persistence (new multi-space structure)
   reduxSpacesCaches?: Record<
     string,
@@ -180,6 +182,10 @@ const schema = {
     type: 'string',
     enum: ['wysiwyg', 'source'],
     default: 'wysiwyg'
+  },
+  autoUpdateEnabled: {
+    type: 'boolean',
+    default: true
   },
   reduxSpacesCaches: {
     type: 'object',

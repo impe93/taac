@@ -28,13 +28,19 @@ const ENTITLEMENTS = fileURLToPath(new URL('../build/entitlements.mac.plist', im
  * "Apple Development" cert can share the same common name as the Developer ID
  * one, so signing by name would be ambiguous and could pick the wrong cert.
  * `TAAC_SIGN_IDENTITY` overrides (accepts a hash or a full identity string).
+ *
+ * On CI the cert usually lives in a dedicated keychain: `security find-identity`
+ * only searches the keychains in the user's search list, so `CSC_KEYCHAIN` (when
+ * set) is passed explicitly — otherwise the identity is invisible here and the
+ * python-runtime would ship unsigned, failing notarization.
  */
 function resolveIdentity() {
   if (process.env.TAAC_SIGN_IDENTITY) return process.env.TAAC_SIGN_IDENTITY
 
+  const keychainArgs = process.env.CSC_KEYCHAIN ? [process.env.CSC_KEYCHAIN] : []
   let out = ''
   try {
-    out = execFileSync('security', ['find-identity', '-v', '-p', 'codesigning'], {
+    out = execFileSync('security', ['find-identity', '-v', '-p', 'codesigning', ...keychainArgs], {
       encoding: 'utf8'
     })
   } catch {
@@ -101,6 +107,10 @@ export default async function afterPack(context) {
     `[afterPack] Deep-signing ${binaries.length} Mach-O file(s) in python-runtime with "${identity}".`
   )
 
+  // Same reason as resolveIdentity(): codesign must be told which keychain holds
+  // the private key when it is not in the default search list (CI).
+  const keychainArgs = process.env.CSC_KEYCHAIN ? ['--keychain', process.env.CSC_KEYCHAIN] : []
+
   let signed = 0
   for (const file of binaries) {
     try {
@@ -115,6 +125,7 @@ export default async function afterPack(context) {
           ENTITLEMENTS,
           '--sign',
           identity,
+          ...keychainArgs,
           file
         ],
         { stdio: ['ignore', 'ignore', 'pipe'] }

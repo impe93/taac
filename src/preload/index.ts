@@ -456,6 +456,27 @@ const audioAPI = {
   }
 }
 
+// Auto-update API (electron-updater over GitHub Releases)
+const updaterAPI = {
+  check: () => ipcRenderer.invoke('updater:check'),
+
+  download: () => ipcRenderer.invoke('updater:download'),
+
+  install: () => ipcRenderer.invoke('updater:install'),
+
+  getState: () => ipcRenderer.invoke('updater:getState'),
+
+  getAppVersion: () => ipcRenderer.invoke('updater:getAppVersion'),
+
+  onStatus: (callback: (state: unknown) => void) => {
+    const handler = (_: unknown, state: unknown): void => callback(state)
+    ipcRenderer.on('updater:status', handler)
+    return (): void => {
+      ipcRenderer.removeListener('updater:status', handler)
+    }
+  }
+}
+
 // Use `contextBridge` APIs to expose Electron APIs to
 // renderer only if context isolation is enabled, otherwise
 // just add to the DOM global.
@@ -469,6 +490,7 @@ if (process.contextIsolated) {
     contextBridge.exposeInMainWorld('ai', aiAPI)
     contextBridge.exposeInMainWorld('import', importAPI)
     contextBridge.exposeInMainWorld('audio', audioAPI)
+    contextBridge.exposeInMainWorld('updater', updaterAPI)
   } catch (error) {
     console.error(error)
   }
@@ -489,4 +511,6 @@ if (process.contextIsolated) {
   window.import = importAPI
   // @ts-ignore (define in dts)
   window.audio = audioAPI
+  // @ts-ignore (define in dts)
+  window.updater = updaterAPI
 }

@@ -102,6 +102,28 @@ export type {
 } from '../main/import/types'
 
 // App configuration type
+/** Auto-update state broadcast by the main process (see src/main/utils/updater.ts). */
+export interface UpdaterState {
+  status:
+    | 'idle'
+    | 'checking'
+    | 'available'
+    | 'not-available'
+    | 'downloading'
+    | 'downloaded'
+    | 'error'
+  /** Version of the update being checked/downloaded (absent when idle). */
+  version?: string
+  /** Download progress in percent (0-100), only while `downloading`. */
+  percent?: number
+  /** Download speed in bytes/s, only while `downloading`. */
+  bytesPerSecond?: number
+  /** Human-readable error message, only when `error`. */
+  message?: string
+  /** Version currently running. */
+  currentVersion: string
+}
+
 export interface AppConfig {
   theme: 'light' | 'dark' | 'system'
   editorFontSize: number
@@ -134,6 +156,8 @@ export interface AppConfig {
   sidebarWidth: number
   // Editor mode preference
   editorMode: 'wysiwyg' | 'source'
+  /** When true, the app checks GitHub Releases and downloads updates in the background. */
+  autoUpdateEnabled: boolean
   // Redux persistence (new multi-space structure)
   reduxSpacesCaches?: Record<
     string,

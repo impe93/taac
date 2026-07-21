@@ -1,3 +1,6 @@
-provider: generic
-url: https://example.com/auto-updates
+# Used by electron-updater only in development (TAAC_FORCE_UPDATE_CHECK=1).
+# Must mirror the `publish` block of electron-builder.yml.
+provider: github
+owner: impe93
+repo: taac
 updaterCacheDirName: taac-notes-updater

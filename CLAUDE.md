@@ -30,6 +30,8 @@ pnpm build:mac          # Build for macOS
 pnpm build:win          # Build for Windows
 pnpm build:linux        # Build for Linux
 pnpm build:unpack       # Build without packaging (for testing)
+pnpm release:patch      # Bump version + tag + push → triggers the release workflow
+pnpm publish:mac        # Manual: build + notarize + publish to GitHub Releases
 pnpm ui-add             # Add new Shadcn/UI components (shadcn "new-york" style)
 pnpm setup:asr-dev      # One-time dev setup: .venv-asr for the realtime ASR sidecar (macOS)
 pnpm prepare:asr-runtime # Build the bundled Python runtime (runs automatically in build:mac)
@@ -122,6 +124,22 @@ Live transcription during recording via **Qwen3-ASR MLX** in a Python sidecar (`
 - **Python runtime**: dev = `.venv-asr/` (`pnpm setup:asr-dev`), packaged = `python-runtime/` extraResource (`scripts/prepare-asr-runtime.sh`, python-build-standalone + `mlx-qwen3-asr` pinned); `TAAC_ASR_PYTHON` env overrides
 - **Memory discipline (16GB target)**: 1.7B-8bit sidecar ≈2.5GB RSS lives only during recording; disposed at stop BEFORE the summary LLM loads
 - **Models**: `qwen3-asr-1.7b-mlx-8bit` (default) / `qwen3-asr-0.6b-mlx-8bit` (low tier) — multi-file MLX checkpoints in `{userData}/models/{modelId}/` (ModelDownloader `files[]` + aggregate progress) + `silero-vad-onnx`
+
+### Auto-update & Release (macOS arm64)
+
+Updates come from **GitHub Releases** via `electron-updater`:
+
+- `src/main/utils/updater.ts` (+ `src/main/ipc/updaterHandlers.ts`, `window.updater`,
+  `useUpdater` hook, Settings → Updates section). Check at +15 s and every 6 h,
+  background download, toast with "Restart now".
+- **Never call `quitAndInstall()` directly**: `requestInstall()` arms a flag and
+  quits; the existing `before-quit` chain disposes the sidecars and then calls
+  `finalizeQuit()` which installs.
+- Publishing: push a `v*` tag (`pnpm release:patch`) → `.github/workflows/release.yml`
+  builds/signs/notarizes and uploads `.dmg` + `.zip` + `latest-mac.yml`. The `zip`
+  target and its default artifact name are required by Squirrel.Mac.
+- In CI the signing cert is imported into a keychain in the **search list** and
+  exported as `CSC_KEYCHAIN` — `CSC_LINK` would hide it from `scripts/afterPack.mjs`.
 
 ### TypeScript Configuration
 

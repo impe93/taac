@@ -15,13 +15,15 @@ import { execFileSync } from 'node:child_process'
 
 /**
  * SHA-1 hash of the Developer ID Application cert (unambiguous vs. same-named
- * Apple Development certs). `TAAC_SIGN_IDENTITY` overrides.
+ * Apple Development certs). `TAAC_SIGN_IDENTITY` overrides. `CSC_KEYCHAIN` is
+ * honoured so the CI keychain (outside the default search list) is searched too.
  */
 function resolveIdentity() {
   if (process.env.TAAC_SIGN_IDENTITY) return process.env.TAAC_SIGN_IDENTITY
+  const keychainArgs = process.env.CSC_KEYCHAIN ? [process.env.CSC_KEYCHAIN] : []
   let out = ''
   try {
-    out = execFileSync('security', ['find-identity', '-v', '-p', 'codesigning'], {
+    out = execFileSync('security', ['find-identity', '-v', '-p', 'codesigning', ...keychainArgs], {
       encoding: 'utf8'
     })
   } catch {
@@ -54,9 +56,12 @@ export default async function afterAllArtifactBuild(buildResult) {
     // (the ticket alone lets it mount, but a signed + notarized DMG is cleanest).
     if (identity) {
       console.log(`[afterAllArtifactBuild] Signing DMG: ${dmg}`)
-      execFileSync('codesign', ['--force', '--timestamp', '--sign', identity, dmg], {
-        stdio: 'inherit'
-      })
+      const keychainArgs = process.env.CSC_KEYCHAIN ? ['--keychain', process.env.CSC_KEYCHAIN] : []
+      execFileSync(
+        'codesign',
+        ['--force', '--timestamp', '--sign', identity, ...keychainArgs, dmg],
+        { stdio: 'inherit' }
+      )
     } else {
       console.warn('[afterAllArtifactBuild] No Developer ID identity found — DMG left unsigned.')
     }

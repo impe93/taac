@@ -660,6 +660,40 @@ certificate and **notarized** by Apple, so Gatekeeper opens the app without the
   (MLX's minimum OS) so the runtime works on every supported macOS regardless of the
   build host, with a build-time guardrail asserting the bundled wheel tags.
 
+### Release & Auto-update
+
+Distribution is macOS **arm64 only** (the bundled Python/MLX runtime is arm64;
+`scripts/prepare-asr-runtime.sh` no-ops elsewhere) and flows entirely from a git
+tag:
+
+`pnpm release:<patch|minor|major>` (`scripts/release.mjs`) → typecheck + lint →
+`npm version` (commit + tag `vX.Y.Z`) → `git push --follow-tags` →
+`.github/workflows/release.yml` → build, sign, notarize, `electron-builder --mac
+--publish always` → GitHub Release with `.dmg`, `.zip` and `latest-mac.yml`.
+
+- **Two mac targets are mandatory**: the `.dmg` is the human download, the `.zip`
+  is what Squirrel.Mac installs. Without a `zip` target electron-builder cannot
+  emit `latest-mac.yml` and the updater is dead. The zip must keep the DEFAULT
+  `artifactName` — `latest-mac.yml` points at that exact filename.
+- **`publish` = GitHub Releases** (`electron-builder.yml` + `dev-app-update.yml`
+  must stay in sync). No token is embedded in the app: this only works while the
+  repository is public.
+- **CI keychain gotcha**: `scripts/afterPack.mjs` and
+  `scripts/afterAllArtifactBuild.mjs` resolve the identity with `security
+  find-identity`, which only sees keychains in the user search list. The workflow
+  therefore imports the `.p12` into its own keychain, adds it to the search list
+  and exports `CSC_KEYCHAIN` (both hooks pass it to `find-identity`/`codesign`);
+  `CSC_LINK` is deliberately unused, because the temporary keychain it creates
+  would be invisible to those hooks and the nested Python runtime would ship
+  unsigned → notarization failure.
+- **Updater vs. shutdown ordering**: `src/main/utils/updater.ts` never calls
+  `quitAndInstall()` from an IPC handler — that would race the `before-quit`
+  cleanup that disposes the llama/Python sidecars. `requestInstall()` arms a flag
+  and quits; `finalizeQuit()`, called at the end of the existing shutdown chain in
+  `src/main/index.ts`, performs the install.
+- **Dev behaviour**: checks are disabled unless `TAAC_FORCE_UPDATE_CHECK=1`
+  (an unsigned dev build cannot install anything anyway).
+
 ---
 
 ## 16. File System Layout
@@ -698,5 +732,7 @@ pnpm build            # Full production build (includes typecheck)
 pnpm build:mac        # macOS build
 pnpm build:win        # Windows build
 pnpm build:linux      # Linux build
+pnpm release:patch    # Bump + tag + push → triggers the release workflow
+pnpm publish:mac      # Manual build + notarize + publish to GitHub Releases
 pnpm ui-add           # Add Shadcn/UI components
 ```

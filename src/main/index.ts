@@ -35,6 +35,8 @@ import {
 } from './ipc/aiHandlers'
 import { registerImportHandlers } from './ipc/importHandlers'
 import { registerAudioHandlers } from './ipc/audioHandlers'
+import { registerUpdaterHandlers } from './ipc/updaterHandlers'
+import { disposeAutoUpdater, finalizeQuit, initAutoUpdater } from './utils/updater'
 import { AudioManager } from './audio/AudioManager'
 import { RealtimeTranscriptionService } from './audio/realtime/RealtimeTranscriptionService'
 
@@ -254,6 +256,10 @@ app.whenReady().then(async () => {
   registerAIHandlers(getOrCreateFsManager, () => spaceManager.listSpaces())
   registerImportHandlers(spaceManager, getOrCreateFsManager)
   registerAudioHandlers()
+  registerUpdaterHandlers()
+
+  // Auto-update over GitHub Releases. No-op in development (see updater.ts).
+  initAutoUpdater()
 
   // Default open or close DevTools by F12 in development
   // and ignore CommandOrControl + R in production.
@@ -321,6 +327,7 @@ app.on('window-all-closed', () => {
 })
 
 async function shutdownAppResources(): Promise<void> {
+  disposeAutoUpdater()
   await RealtimeTranscriptionService.getInstance().abortAll()
   await AudioManager.getInstance().dispose()
   await disposeAISubsystem()
@@ -353,7 +360,9 @@ app.on('before-quit', (event) => {
     }),
     hardTimeout
   ]).finally(() => {
-    app.quit()
+    // Installs a pending update if one was armed via the updater, otherwise
+    // just quits. Must run AFTER the sidecars are disposed.
+    finalizeQuit()
   })
 })
 
