@@ -38,9 +38,9 @@ all fully offline. No API keys, no accounts, no "connect your OpenAI" step.
 
 **[Download](https://github.com/impe93/taac/releases) · [Website](https://usetaac.app) · [Roadmap](#roadmap) · [FAQ](#faq)**
 
-<video src="https://github.com/impe93/taac/raw/main/readme-resources/taac-demo.mp4" controls muted loop width="800"></video>
+https://github.com/user-attachments/assets/4eacb02a-cd79-4c0f-a0e7-01b95ae0a86f
 
-▶️ **[Watch the demo](https://github.com/impe93/taac/raw/main/readme-resources/taac-demo.mp4)** — write a note, hit ⌘⇧A, and get an answer grounded in your own notes.
+_Write a note, hit ⌘⇧A, and get an answer grounded in your own notes._
 
 </div>
 
