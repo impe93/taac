@@ -686,6 +686,24 @@ tag:
   `CSC_LINK` is deliberately unused, because the temporary keychain it creates
   would be invisible to those hooks and the nested Python runtime would ship
   unsigned → notarization failure.
+- **Required repository secrets**: `MACOS_CERTIFICATE` (the Developer ID
+  Application `.p12`, base64), `MACOS_CERTIFICATE_PWD`, `APPLE_ID`,
+  `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`. The keychain password is
+  generated inside the job — it protects a keychain that is deleted with it. A
+  missing secret used to surface as an opaque `SecKeychainItemImport … not valid`
+  (empty base64 → 0-byte `.p12`), so the workflow now preflights them and asserts
+  that a `Developer ID Application` identity actually landed in the keychain.
+- **Exporting the `.p12`**: Keychain Access only offers the `.p12` format when the
+  certificate and its private key live in the **same** keychain, under *My
+  Certificates*. `security find-identity` without a keychain argument joins them
+  across the whole search list, so an identity can look healthy while the two
+  halves sit in different keychains (ours: cert in `System.keychain`, key in
+  `login.keychain-db`) and the export silently offers only `.cer/.pem/.p7b`. Fix
+  by importing the certificate into the keychain holding the key:
+  `security find-certificate -c "Developer ID Application: …" -p
+  /Library/Keychains/System.keychain > /tmp/devid.pem && security import
+  /tmp/devid.pem -k ~/Library/Keychains/login.keychain-db`. Current cert expires
+  **Jul 2031**.
 - **Updater vs. shutdown ordering**: `src/main/utils/updater.ts` never calls
   `quitAndInstall()` from an IPC handler — that would race the `before-quit`
   cleanup that disposes the llama/Python sidecars. `requestInstall()` arms a flag

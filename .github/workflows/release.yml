@@ -29,6 +29,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # A missing secret otherwise surfaces ~1 minute later as an opaque
+      # `SecKeychainItemImport: One or more parameters ... were not valid` (an
+      # empty MACOS_CERTIFICATE decodes to a 0-byte .p12). Fail in seconds with
+      # the actual cause instead.
+      - name: Check signing secrets
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+        run: |
+          missing=()
+          for name in MACOS_CERTIFICATE MACOS_CERTIFICATE_PWD APPLE_ID \
+                      APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            [ -n "${!name}" ] || missing+=("$name")
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing repository secrets: ${missing[*]} — add them under Settings → Secrets and variables → Actions"
+            exit 1
+          fi
+
       - uses: pnpm/action-setup@v4
         with:
           version: 10.21.0
@@ -60,24 +79,46 @@ jobs:
         env:
           MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
           MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
         run: |
           KEYCHAIN_PATH="$RUNNER_TEMP/taac-signing.keychain-db"
-          echo "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          CERT_PATH="$RUNNER_TEMP/certificate.p12"
+          # The keychain is thrown away at the end of the job, so its password is
+          # generated here rather than kept as one more secret to rotate.
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
+
+          if ! printf '%s' "$MACOS_CERTIFICATE" | base64 --decode > "$CERT_PATH"; then
+            echo "::error::MACOS_CERTIFICATE is not valid base64"
+            exit 1
+          fi
+          if [ ! -s "$CERT_PATH" ]; then
+            echo "::error::MACOS_CERTIFICATE decoded to an empty file"
+            exit 1
+          fi
 
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security import "$RUNNER_TEMP/certificate.p12" -k "$KEYCHAIN_PATH" \
+          security import "$CERT_PATH" -k "$KEYCHAIN_PATH" -f pkcs12 \
             -P "$MACOS_CERTIFICATE_PWD" -T /usr/bin/codesign -T /usr/bin/security
+          rm -f "$CERT_PATH"
           # Lets codesign use the private key without an interactive prompt.
           security set-key-partition-list -S apple-tool:,apple:,codesign: \
             -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" > /dev/null
           security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
 
-          rm "$RUNNER_TEMP/certificate.p12"
           echo "CSC_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
-          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
+          # A .p12 holding only e.g. an "Apple Development" cert would import
+          # cleanly and only blow up much later, during notarization.
+          IDENTITIES="$(security find-identity -v -p codesigning "$KEYCHAIN_PATH")"
+          echo "$IDENTITIES"
+          case "$IDENTITIES" in
+            *"Developer ID Application:"*) ;;
+            *)
+              echo "::error::No 'Developer ID Application' identity in the CI keychain — re-export MACOS_CERTIFICATE from a keychain where the certificate and its private key are paired"
+              exit 1
+              ;;
+          esac
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
