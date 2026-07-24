@@ -126,16 +126,14 @@ export const CreateItemDialog: FC<CreateItemDialogProps> = ({
                 </ToggleGroupItem>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <span className="flex flex-1">
-                      <ToggleGroupItem
-                        value="meeting"
-                        className="flex-1 gap-2"
-                        disabled={!meetingModelsReady}
-                      >
-                        <Mic className="size-4" />
-                        Meeting Note
-                      </ToggleGroupItem>
-                    </span>
+                    <ToggleGroupItem
+                      value="meeting"
+                      className="flex-1 gap-2 aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+                      aria-disabled={!meetingModelsReady}
+                    >
+                      <Mic className="size-4" />
+                      Meeting Note
+                    </ToggleGroupItem>
                   </TooltipTrigger>
                   {!meetingModelsReady && (
                     <TooltipContent side="bottom">
