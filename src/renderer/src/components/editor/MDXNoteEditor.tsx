@@ -12,6 +12,7 @@ import {
   imagePlugin,
   codeBlockPlugin,
   codeMirrorPlugin,
+  tablePlugin,
   toolbarPlugin,
   UndoRedo,
   BoldItalicUnderlineToggles,
@@ -20,6 +21,7 @@ import {
   BlockTypeSelect,
   CreateLink,
   InsertImage,
+  InsertTable,
   InsertThematicBreak,
   InsertCodeBlock,
   ChangeCodeMirrorLanguage,
@@ -194,6 +196,7 @@ export const MDXNoteEditor: FC<MDXNoteEditorProps> = ({
         '': 'Plain Text'
       }
     }),
+    tablePlugin(),
     markdownShortcutPlugin()
   ]
 
@@ -222,6 +225,7 @@ export const MDXNoteEditor: FC<MDXNoteEditorProps> = ({
                     <Separator />
                     <CreateLink />
                     <InsertImage />
+                    <InsertTable />
                     <InsertCodeBlock />
                     <InsertThematicBreak />
                   </>

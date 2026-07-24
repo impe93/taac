@@ -244,27 +244,100 @@
   font-size: 0.875em;
 }
 
-/* Table styling */
+/* Table styling — shared table box model for both plain rendered tables
+   (read-only / source round-trip) and the tablePlugin WYSIWYG editor. */
 .mdx-note-editor table {
   border-collapse: collapse;
   width: 100%;
   margin: 1rem 0;
 }
 
-.mdx-note-editor th,
-.mdx-note-editor td {
+/* Plain (non-editor) tables: full content styling incl. row hover. Scoped away
+   from the WYSIWYG editor, which manages its own chrome and active-cell state. */
+.mdx-note-editor table:not([class*='_tableEditor_']) th,
+.mdx-note-editor table:not([class*='_tableEditor_']) td {
   border: 1px solid var(--border);
   padding: 0.5rem 1rem;
   text-align: left;
 }
 
-.mdx-note-editor th {
+.mdx-note-editor table:not([class*='_tableEditor_']) th {
   background: var(--muted);
   font-weight: 600;
 }
 
-.mdx-note-editor tr:hover {
+.mdx-note-editor table:not([class*='_tableEditor_']) tr:hover {
   background: var(--accent);
+}
+
+/* --- WYSIWYG table editor (tablePlugin) — contrast tuning ---------------------
+   The plugin draws data-cell borders with --baseBgActive (→ the faint --accent
+   token) and renders its editing chrome (row/column "…" triggers, add-row /
+   add-column bars, delete-table trash) at very low opacity (0.15 at rest, 0.3 on
+   table hover). On the Taac dark theme that grid and chrome are nearly invisible,
+   so we repoint borders at the higher-contrast --border token, lift the resting/
+   hover opacities, and give the add bars a real surface. Colours stay theme-
+   driven via --muted-foreground/--foreground (no hard-coded white). */
+
+/* Grid lines + outer frame */
+.mdx-note-editor [class*='_tableEditor_'] {
+  border: 1px solid var(--border);
+}
+
+.mdx-note-editor [class*='_tableEditor_'] > tbody > tr > td:not([class*='_toolCell_']),
+.mdx-note-editor
+  [class*='_tableEditor_']
+  > tbody
+  > tr
+  > th:not([class*='_toolCell_']):not([data-tool-cell='true']) {
+  border-color: var(--border);
+}
+
+/* Header row of the markdown table (th in tbody, excluding tool cells) */
+.mdx-note-editor [class*='_tableEditor_'] > tbody > tr > th:not([class*='_toolCell_']):not([data-tool-cell='true']) {
+  background: var(--muted);
+  font-weight: 600;
+}
+
+/* Editing chrome: discoverable resting opacity, stronger on table hover, full on
+   direct hover — preserving the plugin's progressive-reveal behaviour. */
+.mdx-note-editor [class*='_tableEditor_'] [class*='_tableColumnEditorTrigger_'],
+.mdx-note-editor [class*='_tableEditor_'] [class*='_tableRowEditorTrigger_'],
+.mdx-note-editor [class*='_tableEditor_'] [class*='_addRowButton_'],
+.mdx-note-editor [class*='_tableEditor_'] [class*='_addColumnButton_'],
+.mdx-note-editor [class*='_tableEditor_'] [class*='_iconButton_'] {
+  color: var(--muted-foreground);
+  opacity: 0.5;
+}
+
+.mdx-note-editor [class*='_tableEditor_']:hover [class*='_tableColumnEditorTrigger_'],
+.mdx-note-editor [class*='_tableEditor_']:hover [class*='_tableRowEditorTrigger_'],
+.mdx-note-editor [class*='_tableEditor_']:hover [class*='_addRowButton_'],
+.mdx-note-editor [class*='_tableEditor_']:hover [class*='_addColumnButton_'],
+.mdx-note-editor [class*='_tableEditor_']:hover [class*='_iconButton_'] {
+  opacity: 0.8;
+}
+
+.mdx-note-editor [class*='_tableEditor_']:hover [class*='_tableColumnEditorTrigger_']:hover,
+.mdx-note-editor [class*='_tableEditor_']:hover [class*='_tableRowEditorTrigger_']:hover,
+.mdx-note-editor [class*='_tableEditor_']:hover [class*='_addRowButton_']:hover,
+.mdx-note-editor [class*='_tableEditor_']:hover [class*='_addColumnButton_']:hover,
+.mdx-note-editor [class*='_tableEditor_']:hover [class*='_iconButton_']:hover {
+  color: var(--foreground);
+  opacity: 1;
+}
+
+/* Add-row / add-column bars: give them a surface + border so they read as
+   affordances instead of blending into the editor canvas. */
+.mdx-note-editor [class*='_tableEditor_'] [class*='_addRowButton_'],
+.mdx-note-editor [class*='_tableEditor_'] [class*='_addColumnButton_'] {
+  background-color: var(--muted);
+  border: 1px solid var(--border);
+}
+
+.mdx-note-editor [class*='_tableEditor_'] [class*='_addRowButton_']:hover,
+.mdx-note-editor [class*='_tableEditor_'] [class*='_addColumnButton_']:hover {
+  background-color: var(--accent);
 }
 
 /* Blockquote styling */
