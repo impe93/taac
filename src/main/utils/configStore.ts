@@ -82,6 +82,19 @@ export interface AppConfig {
      */
     summaryDepth: 'conservative' | 'balanced' | 'aggressive'
   }
+  // Calendar sync settings (global preferences; linked accounts live per-space on disk)
+  calendar: {
+    /** Poll interval (minutes) for calendar sync. 0 = sync disabled. */
+    syncIntervalMinutes: number
+    /** Show a native notification at each meeting's start time. */
+    notificationsEnabled: boolean
+    /** When the notification is actioned, auto-start recording (best-effort). */
+    autoStartRecording: boolean
+    /** Fire the notification this many seconds before the event start (0 = at start). */
+    notificationLeadSeconds: number
+    /** How far ahead (hours) to look when arming notifications / listing upcoming. */
+    upcomingWindowHours: number
+  }
 }
 
 /** Factory defaults for meeting transcription models (lowest common denominator). */
@@ -239,6 +252,23 @@ const schema = {
       realtimeTranscription: 'auto',
       asrModelId: FACTORY_MEETING_ASR_ID,
       summaryDepth: 'balanced'
+    }
+  },
+  calendar: {
+    type: 'object',
+    properties: {
+      syncIntervalMinutes: { type: 'number', enum: [0, 5, 10, 15, 30, 60], default: 5 },
+      notificationsEnabled: { type: 'boolean', default: true },
+      autoStartRecording: { type: 'boolean', default: true },
+      notificationLeadSeconds: { type: 'number', enum: [0, 60, 120, 300], default: 0 },
+      upcomingWindowHours: { type: 'number', minimum: 1, maximum: 168, default: 24 }
+    },
+    default: {
+      syncIntervalMinutes: 5,
+      notificationsEnabled: true,
+      autoStartRecording: true,
+      notificationLeadSeconds: 0,
+      upcomingWindowHours: 24
     }
   }
 } as const

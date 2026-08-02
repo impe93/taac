@@ -477,6 +477,61 @@ const updaterAPI = {
   }
 }
 
+// Calendar API (per-space account linking + upcoming meetings + start-meeting trigger)
+const calendarAPI = {
+  configuredProviders: () => ipcRenderer.invoke('calendar:configuredProviders'),
+
+  listAccounts: (spaceId: string) => ipcRenderer.invoke('calendar:listAccounts', spaceId),
+
+  linkAccount: (spaceId: string, provider: 'google' | 'microsoft') =>
+    ipcRenderer.invoke('calendar:linkAccount', spaceId, provider),
+
+  unlinkAccount: (spaceId: string, accountId: string) =>
+    ipcRenderer.invoke('calendar:unlinkAccount', spaceId, accountId),
+
+  setCalendarEnabled: (spaceId: string, accountId: string, calendarId: string, enabled: boolean) =>
+    ipcRenderer.invoke('calendar:setCalendarEnabled', spaceId, accountId, calendarId, enabled),
+
+  syncNow: (spaceId: string) => ipcRenderer.invoke('calendar:syncNow', spaceId),
+
+  listUpcoming: (spaceId: string, withinHours: number) =>
+    ipcRenderer.invoke('calendar:listUpcoming', spaceId, withinHours),
+
+  linkNote: (spaceId: string, eventId: string, noteId: string) =>
+    ipcRenderer.invoke('calendar:linkNote', spaceId, eventId, noteId),
+
+  // Fired when a meeting-start notification is actioned. The renderer creates the
+  // meeting note, links it, and (best-effort) starts recording.
+  onTriggerMeeting: (
+    callback: (payload: { spaceId: string; meeting: import('./types').UpcomingMeeting }) => void
+  ) => {
+    const handler = (
+      _: unknown,
+      payload: { spaceId: string; meeting: import('./types').UpcomingMeeting }
+    ): void => callback(payload)
+    ipcRenderer.on('calendar:trigger-meeting', handler)
+    return (): void => {
+      ipcRenderer.removeListener('calendar:trigger-meeting', handler)
+    }
+  },
+
+  onAccountsChanged: (callback: (payload: { spaceId: string }) => void) => {
+    const handler = (_: unknown, payload: { spaceId: string }): void => callback(payload)
+    ipcRenderer.on('calendar:accounts-changed', handler)
+    return (): void => {
+      ipcRenderer.removeListener('calendar:accounts-changed', handler)
+    }
+  },
+
+  onUpcomingChanged: (callback: (payload: { spaceId: string }) => void) => {
+    const handler = (_: unknown, payload: { spaceId: string }): void => callback(payload)
+    ipcRenderer.on('calendar:upcoming-changed', handler)
+    return (): void => {
+      ipcRenderer.removeListener('calendar:upcoming-changed', handler)
+    }
+  }
+}
+
 // Use `contextBridge` APIs to expose Electron APIs to
 // renderer only if context isolation is enabled, otherwise
 // just add to the DOM global.
@@ -491,6 +546,7 @@ if (process.contextIsolated) {
     contextBridge.exposeInMainWorld('import', importAPI)
     contextBridge.exposeInMainWorld('audio', audioAPI)
     contextBridge.exposeInMainWorld('updater', updaterAPI)
+    contextBridge.exposeInMainWorld('calendar', calendarAPI)
   } catch (error) {
     console.error(error)
   }
@@ -513,4 +569,6 @@ if (process.contextIsolated) {
   window.audio = audioAPI
   // @ts-ignore (define in dts)
   window.updater = updaterAPI
+  // @ts-ignore (define in dts)
+  window.calendar = calendarAPI
 }

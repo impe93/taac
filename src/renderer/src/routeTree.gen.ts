@@ -16,6 +16,7 @@ import { Route as IndexImport } from './routes/index'
 import { Route as SettingsIndexImport } from './routes/settings/index'
 import { Route as OnboardingIndexImport } from './routes/onboarding/index'
 import { Route as DashboardIndexImport } from './routes/dashboard/index'
+import { Route as CalendarIndexImport } from './routes/calendar/index'
 import { Route as NoteNoteIdImport } from './routes/note/$noteId'
 
 // Create/Update Routes
@@ -23,37 +24,43 @@ import { Route as NoteNoteIdImport } from './routes/note/$noteId'
 const DashboardLayoutRoute = DashboardLayoutImport.update({
   id: '/dashboard',
   path: '/dashboard',
-  getParentRoute: () => rootRoute
+  getParentRoute: () => rootRoute,
 } as any)
 
 const IndexRoute = IndexImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => rootRoute
+  getParentRoute: () => rootRoute,
 } as any)
 
 const SettingsIndexRoute = SettingsIndexImport.update({
   id: '/settings/',
   path: '/settings/',
-  getParentRoute: () => rootRoute
+  getParentRoute: () => rootRoute,
 } as any)
 
 const OnboardingIndexRoute = OnboardingIndexImport.update({
   id: '/onboarding/',
   path: '/onboarding/',
-  getParentRoute: () => rootRoute
+  getParentRoute: () => rootRoute,
 } as any)
 
 const DashboardIndexRoute = DashboardIndexImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => DashboardLayoutRoute
+  getParentRoute: () => DashboardLayoutRoute,
+} as any)
+
+const CalendarIndexRoute = CalendarIndexImport.update({
+  id: '/calendar/',
+  path: '/calendar/',
+  getParentRoute: () => rootRoute,
 } as any)
 
 const NoteNoteIdRoute = NoteNoteIdImport.update({
   id: '/note/$noteId',
   path: '/note/$noteId',
-  getParentRoute: () => rootRoute
+  getParentRoute: () => rootRoute,
 } as any)
 
 // Populate the FileRoutesByPath interface
@@ -79,6 +86,13 @@ declare module '@tanstack/react-router' {
       path: '/note/$noteId'
       fullPath: '/note/$noteId'
       preLoaderRoute: typeof NoteNoteIdImport
+      parentRoute: typeof rootRoute
+    }
+    '/calendar/': {
+      id: '/calendar/'
+      path: '/calendar'
+      fullPath: '/calendar'
+      preLoaderRoute: typeof CalendarIndexImport
       parentRoute: typeof rootRoute
     }
     '/dashboard/': {
@@ -112,17 +126,18 @@ interface DashboardLayoutRouteChildren {
 }
 
 const DashboardLayoutRouteChildren: DashboardLayoutRouteChildren = {
-  DashboardIndexRoute: DashboardIndexRoute
+  DashboardIndexRoute: DashboardIndexRoute,
 }
 
 const DashboardLayoutRouteWithChildren = DashboardLayoutRoute._addFileChildren(
-  DashboardLayoutRouteChildren
+  DashboardLayoutRouteChildren,
 )
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardLayoutRouteWithChildren
   '/note/$noteId': typeof NoteNoteIdRoute
+  '/calendar': typeof CalendarIndexRoute
   '/dashboard/': typeof DashboardIndexRoute
   '/onboarding': typeof OnboardingIndexRoute
   '/settings': typeof SettingsIndexRoute
@@ -131,6 +146,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/note/$noteId': typeof NoteNoteIdRoute
+  '/calendar': typeof CalendarIndexRoute
   '/dashboard': typeof DashboardIndexRoute
   '/onboarding': typeof OnboardingIndexRoute
   '/settings': typeof SettingsIndexRoute
@@ -141,6 +157,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardLayoutRouteWithChildren
   '/note/$noteId': typeof NoteNoteIdRoute
+  '/calendar/': typeof CalendarIndexRoute
   '/dashboard/': typeof DashboardIndexRoute
   '/onboarding/': typeof OnboardingIndexRoute
   '/settings/': typeof SettingsIndexRoute
@@ -148,14 +165,28 @@ export interface FileRoutesById {
 
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/dashboard' | '/note/$noteId' | '/dashboard/' | '/onboarding' | '/settings'
+  fullPaths:
+    | '/'
+    | '/dashboard'
+    | '/note/$noteId'
+    | '/calendar'
+    | '/dashboard/'
+    | '/onboarding'
+    | '/settings'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/note/$noteId' | '/dashboard' | '/onboarding' | '/settings'
+  to:
+    | '/'
+    | '/note/$noteId'
+    | '/calendar'
+    | '/dashboard'
+    | '/onboarding'
+    | '/settings'
   id:
     | '__root__'
     | '/'
     | '/dashboard'
     | '/note/$noteId'
+    | '/calendar/'
     | '/dashboard/'
     | '/onboarding/'
     | '/settings/'
@@ -166,6 +197,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DashboardLayoutRoute: typeof DashboardLayoutRouteWithChildren
   NoteNoteIdRoute: typeof NoteNoteIdRoute
+  CalendarIndexRoute: typeof CalendarIndexRoute
   OnboardingIndexRoute: typeof OnboardingIndexRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
 }
@@ -174,8 +206,9 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DashboardLayoutRoute: DashboardLayoutRouteWithChildren,
   NoteNoteIdRoute: NoteNoteIdRoute,
+  CalendarIndexRoute: CalendarIndexRoute,
   OnboardingIndexRoute: OnboardingIndexRoute,
-  SettingsIndexRoute: SettingsIndexRoute
+  SettingsIndexRoute: SettingsIndexRoute,
 }
 
 export const routeTree = rootRoute
@@ -191,6 +224,7 @@ export const routeTree = rootRoute
         "/",
         "/dashboard",
         "/note/$noteId",
+        "/calendar/",
         "/onboarding/",
         "/settings/"
       ]
@@ -206,6 +240,9 @@ export const routeTree = rootRoute
     },
     "/note/$noteId": {
       "filePath": "note/$noteId.tsx"
+    },
+    "/calendar/": {
+      "filePath": "calendar/index.tsx"
     },
     "/dashboard/": {
       "filePath": "dashboard/index.tsx",

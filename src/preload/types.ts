@@ -8,6 +8,62 @@ export interface Note {
   title: string
   type: 'note' | 'meeting'
   meetingMetadata?: MeetingMetadata
+  /**
+   * Link back to the external calendar event this note was created from.
+   * Set when a meeting note is spawned from a calendar notification. Kept as a
+   * top-level field (not inside meetingMetadata, which AudioManager rebuilds
+   * wholesale after processing) so the link survives transcription.
+   */
+  calendarLink?: CalendarLink
+}
+
+/** Reference tying a meeting note to the external calendar event it came from. */
+export interface CalendarLink {
+  provider: CalendarProviderId
+  accountId: string // internal id of the linked calendar account
+  calendarId: string
+  eventId: string
+  title: string
+  start: string // ISO 8601
+  end: string // ISO 8601
+  htmlLink?: string // deep link back to the event in the provider UI
+}
+
+// ---- Calendar sync (renderer-facing shapes; secrets never cross this boundary) ----
+
+export type CalendarProviderId = 'google' | 'microsoft'
+
+export interface CalendarLinkedCalendar {
+  id: string
+  name: string
+  enabled: boolean
+  color?: string
+  primary?: boolean
+}
+
+export interface CalendarAccountSummary {
+  id: string
+  provider: CalendarProviderId
+  email: string
+  displayName?: string
+  addedAt: string
+  calendars: CalendarLinkedCalendar[]
+}
+
+export interface UpcomingMeeting {
+  spaceId: string
+  provider: CalendarProviderId
+  accountId: string
+  calendarId: string
+  eventId: string
+  title: string
+  start: string // ISO 8601
+  end: string // ISO 8601
+  htmlLink?: string
+  location?: string
+  organizer?: string
+  joinUrl?: string
+  linkedNoteId?: string
 }
 
 export interface MeetingMetadata {
@@ -200,5 +256,18 @@ export interface AppConfig {
     asrModelId: string
     /** Summary generation budget profile (completeness vs memory/speed on 16GB target) */
     summaryDepth: 'conservative' | 'balanced' | 'aggressive'
+  }
+  // Calendar sync settings (global preferences; linked accounts live per-space on disk)
+  calendar: {
+    /** Poll interval (minutes) for calendar sync. 0 = sync disabled. */
+    syncIntervalMinutes: number
+    /** Show a native notification at each meeting's start time. */
+    notificationsEnabled: boolean
+    /** When the notification is actioned, auto-start recording (best-effort). */
+    autoStartRecording: boolean
+    /** Fire the notification this many seconds before the event start (0 = at start). */
+    notificationLeadSeconds: number
+    /** How far ahead (hours) to look when arming notifications / listing upcoming. */
+    upcomingWindowHours: number
   }
 }

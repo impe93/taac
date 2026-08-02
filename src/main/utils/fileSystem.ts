@@ -14,6 +14,21 @@ export interface Note {
   title: string
   type: 'note' | 'meeting'
   meetingMetadata?: MeetingMetadata
+  // Link back to the external calendar event this meeting note was created from.
+  // Kept top-level so it survives the wholesale meetingMetadata rebuild after
+  // transcription. Mirrors CalendarLink in src/preload/types.ts.
+  calendarLink?: CalendarLink
+}
+
+export interface CalendarLink {
+  provider: 'google' | 'microsoft'
+  accountId: string
+  calendarId: string
+  eventId: string
+  title: string
+  start: string
+  end: string
+  htmlLink?: string
 }
 
 export interface MeetingMetadata {

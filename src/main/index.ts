@@ -36,9 +36,11 @@ import {
 import { registerImportHandlers } from './ipc/importHandlers'
 import { registerAudioHandlers } from './ipc/audioHandlers'
 import { registerUpdaterHandlers } from './ipc/updaterHandlers'
+import { registerCalendarHandlers } from './ipc/calendarHandlers'
 import { disposeAutoUpdater, finalizeQuit, initAutoUpdater } from './utils/updater'
 import { AudioManager } from './audio/AudioManager'
 import { RealtimeTranscriptionService } from './audio/realtime/RealtimeTranscriptionService'
+import { CalendarManager } from './calendar/CalendarManager'
 
 // Register custom protocol for serving local assets
 // Must be called before app is ready
@@ -58,6 +60,13 @@ let spaceManager: SpaceManager
 const fsManagerMap = new Map<string, FileSystemManager>()
 /** Guards the controlled shutdown path in before-quit (preventDefault → cleanup → quit). */
 let isAppShuttingDown = false
+/** Retained reference to the primary window so the calendar notification can focus it. */
+let mainWindow: BrowserWindow | null = null
+
+/** The primary application window, or null before it exists / after it closed. */
+export function getMainWindow(): BrowserWindow | null {
+  return mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
+}
 
 // Get or create FileSystemManager for a specific space
 export function getOrCreateFsManager(spaceId: string): FileSystemManager {
@@ -117,7 +126,7 @@ function createWindow(): void {
   const height = Math.max(savedBounds.height, MIN_WINDOW_HEIGHT)
 
   // Create the browser window.
-  const mainWindow = new BrowserWindow({
+  const win = new BrowserWindow({
     title: 'Taac',
     width,
     height,
@@ -137,24 +146,29 @@ function createWindow(): void {
       sandbox: false
     }
   })
+  mainWindow = win
 
-  mainWindow.once('ready-to-show', () => {
+  win.once('ready-to-show', () => {
     if (savedIsMaximized) {
-      mainWindow.maximize()
+      win.maximize()
     }
-    mainWindow.show()
-    mainWindow.focus()
+    win.show()
+    win.focus()
     if (is.dev) {
-      mainWindow.webContents.openDevTools()
+      win.webContents.openDevTools()
     }
   })
 
+  win.on('closed', () => {
+    if (mainWindow === win) mainWindow = null
+  })
+
   // Save window state on close
-  mainWindow.on('close', () => {
-    const isMaximized = mainWindow.isMaximized()
+  win.on('close', () => {
+    const isMaximized = win.isMaximized()
     configStore.set('isMaximized', isMaximized)
     if (!isMaximized) {
-      const bounds = mainWindow.getBounds()
+      const bounds = win.getBounds()
       // Guard against degenerate bounds sometimes returned during transitions
       // (hide/animations): never persist a size below the usable floor.
       if (bounds.width >= MIN_WINDOW_WIDTH && bounds.height >= MIN_WINDOW_HEIGHT) {
@@ -163,7 +177,7 @@ function createWindow(): void {
     }
   })
 
-  mainWindow.webContents.setWindowOpenHandler((details) => {
+  win.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
   })
@@ -171,9 +185,9 @@ function createWindow(): void {
   // HMR for renderer base on electron-vite cli.
   // Load the remote URL for development or the local html file for production.
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    win.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    win.loadFile(join(__dirname, '../renderer/index.html'))
   }
 }
 
@@ -257,6 +271,7 @@ app.whenReady().then(async () => {
   registerImportHandlers(spaceManager, getOrCreateFsManager)
   registerAudioHandlers()
   registerUpdaterHandlers()
+  registerCalendarHandlers()
 
   // Auto-update over GitHub Releases. No-op in development (see updater.ts).
   initAutoUpdater()
@@ -285,6 +300,20 @@ app.whenReady().then(async () => {
       console.error('[App] Deferred embedding init failed:', error)
     })
   }, 2000)
+
+  // Deferred calendar sync init — polls linked calendars and fires meeting-start
+  // notifications. Runs after the window is visible so network work doesn't block
+  // first paint. No-op until the user links an account.
+  setTimeout(() => {
+    CalendarManager.getInstance()
+      .initialize({
+        getSpaces: () => spaceManager.listSpaces(),
+        getMainWindow
+      })
+      .catch((error) => {
+        console.error('[App] Deferred calendar init failed:', error)
+      })
+  }, 3000)
 
   // Register display media request handler for system audio loopback capture (§3.2)
   // Must be set up after app is ready so session is available
@@ -328,6 +357,7 @@ app.on('window-all-closed', () => {
 
 async function shutdownAppResources(): Promise<void> {
   disposeAutoUpdater()
+  CalendarManager.getInstance().dispose()
   await RealtimeTranscriptionService.getInstance().abortAll()
   await AudioManager.getInstance().dispose()
   await disposeAISubsystem()

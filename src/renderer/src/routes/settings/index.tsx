@@ -12,7 +12,8 @@ import {
   Boxes,
   Loader2,
   RefreshCw,
-  DownloadCloud
+  DownloadCloud,
+  CalendarClock
 } from 'lucide-react'
 import { Progress } from '@renderer/components/ui/progress'
 import { useUpdater } from '@renderer/hooks/useUpdater'
@@ -143,6 +144,8 @@ function SettingsPage(): ReactNode {
         profile={profile}
       />
 
+      <CalendarSettings />
+
       <AppearanceSettings />
 
       <UpdatesSettings />
@@ -266,6 +269,132 @@ const SearchSettings: FC = () => {
               </p>
             </div>
             <Switch checked={ragMultiSearch ?? true} onCheckedChange={handleMultiSearchChange} />
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+/** Options for the calendar sync poll interval (minutes). 0 = sync off. */
+const CALENDAR_SYNC_OPTIONS = [
+  { value: 0, label: 'Off' },
+  { value: 5, label: 'Every 5 minutes' },
+  { value: 10, label: 'Every 10 minutes' },
+  { value: 15, label: 'Every 15 minutes' },
+  { value: 30, label: 'Every 30 minutes' },
+  { value: 60, label: 'Every hour' }
+] as const
+
+/** How early (seconds before start) to fire the meeting-start notification. */
+const CALENDAR_LEAD_OPTIONS = [
+  { value: 0, label: 'At start time' },
+  { value: 60, label: '1 minute before' },
+  { value: 120, label: '2 minutes before' },
+  { value: 300, label: '5 minutes before' }
+] as const
+
+/**
+ * Calendar sync preferences (global). Linked accounts are managed per-space from
+ * the space menu → "Calendar Accounts".
+ */
+const CalendarSettings: FC = () => {
+  const { data: calendar } = useConfig('calendar')
+  const setCalendar = useSetConfig<'calendar'>()
+
+  if (!calendar) return null
+
+  const patch = (updates: Partial<typeof calendar>): void => {
+    setCalendar.mutate({ key: 'calendar', value: { ...calendar, ...updates } })
+  }
+
+  return (
+    <div className="mt-8">
+      <div className="mb-4 flex items-center gap-2">
+        <CalendarClock className="size-5 text-muted-foreground" />
+        <div>
+          <h2 className="text-lg font-semibold">Calendar</h2>
+          <p className="text-xs text-muted-foreground">
+            Sync external calendars and get notified at meeting start. Connect accounts per space
+            from the space menu → “Calendar Accounts”.
+          </p>
+        </div>
+      </div>
+      <Card className="py-0">
+        <CardContent className="divide-y py-0">
+          <div className="flex items-center justify-between py-4">
+            <div className="flex-1 pr-4">
+              <p className="text-sm font-medium">Sync frequency</p>
+              <p className="text-xs text-muted-foreground">
+                How often connected calendars are checked for upcoming meetings. Only network
+                traffic — light on the CPU. Choose “Off” to pause calendar sync.
+              </p>
+            </div>
+            <Select
+              value={String(calendar.syncIntervalMinutes)}
+              onValueChange={(v) => patch({ syncIntervalMinutes: Number(v) })}
+            >
+              <SelectTrigger className="w-44">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CALENDAR_SYNC_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={String(opt.value)}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center justify-between py-4">
+            <div className="flex-1 pr-4">
+              <p className="text-sm font-medium">Meeting notifications</p>
+              <p className="text-xs text-muted-foreground">
+                Show a notification when a meeting starts, with a button to create a linked meeting
+                note and start recording.
+              </p>
+            </div>
+            <Switch
+              checked={calendar.notificationsEnabled}
+              onCheckedChange={(checked) => patch({ notificationsEnabled: checked })}
+            />
+          </div>
+          <div className="flex items-center justify-between py-4">
+            <div className="flex-1 pr-4">
+              <p className="text-sm font-medium">Notify me</p>
+              <p className="text-xs text-muted-foreground">
+                Fire the notification exactly at the start, or a little earlier.
+              </p>
+            </div>
+            <Select
+              value={String(calendar.notificationLeadSeconds)}
+              onValueChange={(v) => patch({ notificationLeadSeconds: Number(v) })}
+            >
+              <SelectTrigger className="w-44">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CALENDAR_LEAD_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={String(opt.value)}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center justify-between py-4">
+            <div className="flex-1 pr-4">
+              <p className="text-sm font-medium">Auto-start recording</p>
+              <p className="text-xs text-muted-foreground">
+                When you action the notification, start recording immediately. If the recording mode
+                needs system audio and no click reaches the app, the recorder opens ready with a
+                single Start button.
+              </p>
+            </div>
+            <Switch
+              checked={calendar.autoStartRecording}
+              onCheckedChange={(checked) => patch({ autoStartRecording: checked })}
+            />
           </div>
         </CardContent>
       </Card>
@@ -427,9 +556,7 @@ const AppearanceSettings: FC = () => {
         <Palette className="size-5 text-muted-foreground" />
         <div>
           <h2 className="text-lg font-semibold">Appearance</h2>
-          <p className="text-xs text-muted-foreground">
-            Choose how Taac looks on your device.
-          </p>
+          <p className="text-xs text-muted-foreground">Choose how Taac looks on your device.</p>
         </div>
       </div>
 

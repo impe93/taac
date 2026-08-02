@@ -18,6 +18,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { MeetingLifecycleProvider } from '@renderer/components/meeting/MeetingLifecycleProvider'
 import { DownloadProvider } from '@renderer/components/models/DownloadProvider'
 import { UpdateNotifier } from '@renderer/components/layout/UpdateNotifier'
+import { CalendarMeetingTrigger } from '@renderer/components/calendar/CalendarMeetingTrigger'
 
 // Type alias per la struttura della cache multi-spazio
 type SpacesCacheStructure = Record<
@@ -223,6 +224,7 @@ export function Providers({ children }: { children: React.ReactNode }): React.Re
               <PersistentSidebarProvider>
                 <MeetingLifecycleProvider>
                   <UpdateNotifier />
+                  <CalendarMeetingTrigger />
                   {children}
                 </MeetingLifecycleProvider>
               </PersistentSidebarProvider>

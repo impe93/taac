@@ -1,23 +1,38 @@
 import { type FC, useState } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import { useActiveSpace } from '@renderer/hooks/useSpaces'
 import * as Icons from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger
 } from '@renderer/components/ui/dropdown-menu'
 import { Button } from '@renderer/components/ui/button'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@renderer/components/ui/tooltip'
-import { LucideIcon, MoreVertical, Pencil, Trash2, Plus, FileText, FolderPlus } from 'lucide-react'
+import {
+  LucideIcon,
+  MoreVertical,
+  Pencil,
+  Trash2,
+  Plus,
+  FileText,
+  FolderPlus,
+  CalendarClock,
+  CalendarCog
+} from 'lucide-react'
 import { DeleteSpaceDialog } from './delete-space-dialog'
 import { EditSpaceDialog } from './edit-space-dialog'
 import { CreateItemDialog } from '../notes-tree/CreateItemDialog'
+import { CalendarSettingsDialog } from '../calendar/CalendarSettingsDialog'
 
 export const SpaceHeader: FC = () => {
   const activeSpace = useActiveSpace()
+  const navigate = useNavigate()
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [showEditDialog, setShowEditDialog] = useState(false)
+  const [showCalendarDialog, setShowCalendarDialog] = useState(false)
   const [createDialog, setCreateDialog] = useState<{
     open: boolean
     type: 'note' | 'folder'
@@ -66,6 +81,15 @@ export const SpaceHeader: FC = () => {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => navigate({ to: '/calendar' })}>
+                <CalendarClock className="size-4 mr-2" />
+                Upcoming Meetings
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setShowCalendarDialog(true)}>
+                <CalendarCog className="size-4 mr-2" />
+                Calendar Accounts
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => setShowEditDialog(true)}>
                 <Pencil className="size-4 mr-2" />
                 Edit Space
@@ -88,6 +112,12 @@ export const SpaceHeader: FC = () => {
         onOpenChange={setShowDeleteDialog}
       />
       <EditSpaceDialog space={activeSpace} open={showEditDialog} onOpenChange={setShowEditDialog} />
+      <CalendarSettingsDialog
+        spaceId={activeSpace.id}
+        spaceName={activeSpace.name}
+        open={showCalendarDialog}
+        onOpenChange={setShowCalendarDialog}
+      />
       <CreateItemDialog
         type={createDialog.type}
         parentFolderId="root"

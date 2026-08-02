@@ -7,7 +7,10 @@ import type {
   AppConfig,
   Space,
   MoveFolderToSpaceResult,
-  UpdaterState
+  UpdaterState,
+  CalendarProviderId,
+  CalendarAccountSummary,
+  UpcomingMeeting
 } from './types'
 import type {
   HardwareInfo,
@@ -454,6 +457,28 @@ export interface AudioAPI {
   onRealtimeStatus: (callback: (status: RealtimeStatusEvent) => void) => () => void
 }
 
+// Calendar API interface
+export interface CalendarAPI {
+  configuredProviders: () => Promise<CalendarProviderId[]>
+  listAccounts: (spaceId: string) => Promise<CalendarAccountSummary[]>
+  linkAccount: (spaceId: string, provider: CalendarProviderId) => Promise<CalendarAccountSummary>
+  unlinkAccount: (spaceId: string, accountId: string) => Promise<void>
+  setCalendarEnabled: (
+    spaceId: string,
+    accountId: string,
+    calendarId: string,
+    enabled: boolean
+  ) => Promise<void>
+  syncNow: (spaceId: string) => Promise<void>
+  listUpcoming: (spaceId: string, withinHours: number) => Promise<UpcomingMeeting[]>
+  linkNote: (spaceId: string, eventId: string, noteId: string) => Promise<void>
+  onTriggerMeeting: (
+    callback: (payload: { spaceId: string; meeting: UpcomingMeeting }) => void
+  ) => () => void
+  onAccountsChanged: (callback: (payload: { spaceId: string }) => void) => () => void
+  onUpcomingChanged: (callback: (payload: { spaceId: string }) => void) => () => void
+}
+
 // Auto-update API interface
 export interface UpdaterAPI {
   check: () => Promise<UpdaterState>
@@ -477,5 +502,6 @@ declare global {
     import: ImportAPI
     audio: AudioAPI
     updater: UpdaterAPI
+    calendar: CalendarAPI
   }
 }
