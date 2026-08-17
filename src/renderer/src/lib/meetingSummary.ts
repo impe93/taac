@@ -45,10 +45,11 @@ export const DEFAULT_SUMMARY_DEPTH: SummaryDepth = 'balanced'
 
 /**
  * Context size (tokens) the "Detailed" profile requests. Mirrors
- * `AudioManager.SUMMARY_PROFILES.aggressive.contextSize`. A chat model whose
- * context is smaller cannot honour the profile, so Detailed is disabled.
+ * `SUMMARY_PROFILES.aggressive.contextSize` in
+ * `src/main/audio/summary/budgets.ts`. A chat model whose context is smaller
+ * cannot honour the profile, so Detailed is disabled.
  */
-export const DETAILED_SUMMARY_CONTEXT = 24576
+export const DETAILED_SUMMARY_CONTEXT = 16384
 
 export const summaryDepthLabel = (depth: SummaryDepth): string =>
   SUMMARY_DEPTH_OPTIONS.find((o) => o.value === depth)?.label ?? depth

@@ -422,6 +422,10 @@ export interface AudioAPI {
     content: string
     actionItems: import('./types').ActionItem[]
     language: string
+    /** Speakers after name resolution/merging — persist these into the note. */
+    speakers: import('./types').Speaker[]
+    /** Segments after cluster merging — persist these into the note. */
+    transcription: import('./types').TranscriptionSegment[]
     summarizationError?: string
   }>
   hasStoredRecording: (noteId: string, spaceId: string) => Promise<boolean>

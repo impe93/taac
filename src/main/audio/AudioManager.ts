@@ -21,7 +21,6 @@
 import { join } from 'node:path'
 import fs from 'node:fs/promises'
 import { app } from 'electron'
-import { randomUUID } from 'node:crypto'
 import type {
   MeetingMetadata,
   Speaker,
@@ -38,37 +37,13 @@ import type {
 import { ProcessingUtilityManager } from './ProcessingUtilityManager'
 import type { WorkerInitConfig } from './processingWorker'
 import type { RealtimeSessionResult } from './realtime/types'
-import { AIManager } from '../ai/AIManager'
 import { HardwareDetector } from '../ai/HardwareDetector'
 import { ModelRegistry } from '../ai/ModelRegistry'
-import type { ChatMessage } from '../ai/AIManager'
 import type { HardwareInfo } from '../ai/types'
-import { getLanguageName, normalizeLanguageCode, resolveMeetingLanguage } from './language'
+import { normalizeLanguageCode, resolveMeetingLanguage } from './language'
 import { isCrossTalkDuplicate } from './crossTalk'
-
-/**
- * Token budget for a summarization pass. The context size and output-token
- * budget are the two levers that decide whether a long meeting summary fits
- * without being truncated. Chosen per `meeting.summaryDepth` so the user can
- * trade completeness against memory/speed on the mid-end (16GB) target.
- */
-interface SummaryBudget {
-  /** Isolated LLM context size (input + output). Capped at the model's trainContextSize. */
-  contextSize: number
-  /** Max output tokens for the final structured summary (reduce / single-pass). */
-  finalOutputTokens: number
-  /** Max output tokens for each intermediate map/collapse note. */
-  mapOutputTokens: number
-}
-
-type SummaryDepth = 'conservative' | 'balanced' | 'aggressive'
-
-/**
- * What was recorded. Drives the summary structure: a `meeting` produces the
- * classic decisions/action-items summary; `media` (e.g. an online course being
- * listened to) produces a learning-oriented notes structure.
- */
-type SummaryContentType = 'meeting' | 'media'
+import { SummaryService } from './summary/SummaryService'
+import type { SummaryContentType, SummaryDepth, SummaryOutcome } from './summary/types'
 
 /**
  * TEMPORARY DEBUG AID — when true, the raw (unprocessed) whisper transcription
@@ -97,13 +72,6 @@ export class AudioManager {
   /** Release the worker (and its ~1GB of models) after this idle period. */
   private static readonly IDLE_DISPOSE_MS = 5 * 60 * 1000
   private idleDisposeTimer: NodeJS.Timeout | null = null
-
-  // Abort signal for the in-flight summarization. Set at the boundary of
-  // summarizeTranscript and read by the private summary helpers so a cancelled
-  // or aborted processing job stops the LLM generation instead of running it to
-  // completion on the GPU. Processing jobs are serialized (one active abort
-  // controller in audioHandlers), so a single field is safe.
-  private summaryAbortSignal?: AbortSignal
 
   private constructor() {
     // §3.1 — singleton; use AudioManager.getInstance()
@@ -445,11 +413,7 @@ export class AudioManager {
     onProgress({ stage: 'summarizing', progress: 0, message: 'Generating summary...' })
     console.log('[AudioManager] Stage: summarizing')
 
-    const {
-      content,
-      actionItems,
-      error: summarizationError
-    } = await this.summarizeTranscript(
+    const summary = await this.summarizeTranscript(
       speakers,
       transcriptionSegments,
       resolvedLanguage,
@@ -458,6 +422,7 @@ export class AudioManager {
       signal,
       summaryDepth
     )
+    const { content, actionItems, error: summarizationError } = summary
 
     onProgress({ stage: 'summarizing', progress: 100, message: 'Summary complete' })
 
@@ -465,14 +430,16 @@ export class AudioManager {
     // Build and return MeetingMetadata + content
     // (Cleanup is handled by audioHandlers based on config §4.2)
     // ------------------------------------------------------------------
+    // Use the speakers/segments returned by summarization: clusters may have been
+    // renamed from the transcript and merged, and the note refers to those names.
     const metadata: MeetingMetadata = {
       recordingMode: mode,
       contentType,
       duration: durationSecs,
       language: resolvedLanguage,
       recordingDate,
-      speakers,
-      transcription: transcriptionSegments,
+      speakers: summary.speakers,
+      transcription: summary.transcription,
       actionItems
     }
 
@@ -540,6 +507,10 @@ export class AudioManager {
     content: string
     actionItems: ActionItem[]
     language: string
+    /** Speakers after name resolution — the caller must persist them. */
+    speakers: Speaker[]
+    /** Segments after cluster merging — the caller must persist them. */
+    transcription: TranscriptionSegment[]
     summarizationError?: string
   }> {
     const { configStore } = await import('../utils/configStore')
@@ -552,7 +523,7 @@ export class AudioManager {
       `[AudioManager] Regenerating summary — language: ${resolvedLanguage}, type: ${contentType}`
     )
 
-    const { content, actionItems, error } = await this.summarizeTranscript(
+    const summary = await this.summarizeTranscript(
       speakers,
       transcriptionSegments,
       resolvedLanguage,
@@ -561,7 +532,14 @@ export class AudioManager {
       undefined,
       summaryDepth
     )
-    return { content, actionItems, language: resolvedLanguage, summarizationError: error }
+    return {
+      content: summary.content,
+      actionItems: summary.actionItems,
+      language: resolvedLanguage,
+      speakers: summary.speakers,
+      transcription: summary.transcription,
+      summarizationError: summary.error
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -735,146 +713,16 @@ export class AudioManager {
   }
 
   // ---------------------------------------------------------------------------
-  // Summarization helpers (§6)
+  // Summarization (§6) — delegated to SummaryService
   // ---------------------------------------------------------------------------
 
   /**
-   * Returns the ID of the first loaded chat model, or the default model ID.
-   * This ensures we reuse a model already in memory without forcing a load.
-   */
-  private getActiveChatModelId(): string {
-    const aiManager = AIManager.getInstance()
-    const loaded = aiManager.getLoadedModels()
-    const chatModel = loaded.find((m) =>
-      ModelRegistry.getModel(m.id)?.capabilities.includes('chat')
-    )
-    // Fall back to the hardware-resolved default (MLX on Apple Silicon, GGUF
-    // elsewhere) rather than a hardcoded GGUF id.
-    return chatModel?.id ?? aiManager.getDefaultChatModelId()
-  }
-
-  /**
-   * Format [MM:SS - MM:SS] timestamp from seconds.
-   */
-  private formatTimestamp(secs: number): string {
-    const m = Math.floor(secs / 60)
-    const s = Math.floor(secs % 60)
-    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-  }
-
-  /**
-   * Convert transcript segments + speaker map into the prompt string:
-   * [MM:SS - MM:SS] SpeakerLabel: text
-   */
-  private formatTranscriptForPrompt(segments: TranscriptionSegment[], speakers: Speaker[]): string {
-    const speakerMap = new Map<string, string>(speakers.map((s) => [s.id, s.label]))
-    return segments
-      .map((seg) => {
-        const label = speakerMap.get(seg.speakerId) ?? seg.speakerId
-        const start = this.formatTimestamp(seg.startTime)
-        const end = this.formatTimestamp(seg.endTime)
-        return `[${start} - ${end}] ${label}: ${seg.text.trim()}`
-      })
-      .join('\n')
-  }
-
-  /**
-   * Build fallback content used when summarization fails or is unavailable.
-   * Preserves the raw transcript so the user never loses their meeting content,
-   * and states the reason so the failure is visible rather than silent.
-   */
-  private buildFallbackContent(
-    transcriptText: string,
-    reason: string,
-    contentType: SummaryContentType
-  ): string {
-    const transcriptBlock = transcriptText.trim() ? transcriptText.trim() : '_No speech detected._'
-    const sections = AudioManager.SUMMARY_SECTIONS[contentType]
-    const lines: string[] = []
-    sections.forEach((heading, index) => {
-      lines.push(heading, '', index === 0 ? `_${reason}_` : '_Not available._', '')
-    })
-    lines.push('## Full Transcript', '', transcriptBlock)
-    return lines.join('\n')
-  }
-
-  /**
-   * Parse action items from the LLM-generated markdown.
-   * Matches lines like: - [ ] Description — Assigned to: Name — Due: Date
-   */
-  private parseActionItems(markdown: string): ActionItem[] {
-    const actionItems: ActionItem[] = []
-    // Match checklist lines under ## Action Items section
-    const lines = markdown.split('\n')
-    for (const line of lines) {
-      const match = line.match(/^- \[ \] (.+)$/)
-      if (!match) continue
-      const raw = match[1]
-      // Extract optional "— Assigned to: X" and "— Due: Y" parts
-      const assigneeMatch = raw.match(/[—-]{1,2}\s*Assigned to:\s*([^—-]+)/i)
-      const textMatch = raw.match(/^(.+?)(?:\s*[—-]|$)/)
-      const text = textMatch ? textMatch[1].trim() : raw.trim()
-      const assignee = assigneeMatch ? assigneeMatch[1].trim() : undefined
-      actionItems.push({
-        id: randomUUID(),
-        text,
-        assignee,
-        completed: false
-      })
-    }
-    return actionItems
-  }
-
-  // Budget profiles for summarization. A larger context + output budget lets long
-  // meetings finish all sections without truncation; map-reduce still keeps every
-  // single LLM call within the chosen context. The context is isolated (created
-  // and disposed per call) and the ASR sidecar is already freed before summarizing,
-  // so even the balanced profile stays within the 16GB target.
-  private static readonly SUMMARY_PROFILES: Record<SummaryDepth, SummaryBudget> = {
-    conservative: { contextSize: 12288, finalOutputTokens: 3072, mapOutputTokens: 1024 },
-    balanced: { contextSize: 16384, finalOutputTokens: 4096, mapOutputTokens: 1536 },
-    aggressive: { contextSize: 24576, finalOutputTokens: 4096, mapOutputTokens: 1536 }
-  }
-  private static readonly SUMMARY_SECTIONS: Record<SummaryContentType, string[]> = {
-    meeting: [
-      '## Meeting Summary',
-      '## Key Topics Discussed',
-      '## Key Decisions',
-      '## Action Items'
-    ],
-    media: ['## Overview', '## Key Concepts', '## Important Points', '## Takeaways']
-  }
-
-  /**
-   * Resolve the active summarization budget from the user's `meeting.summaryDepth`
-   * preference. Falls back to the balanced profile if the config is missing or
-   * unreadable, so summarization never breaks on a bad/legacy config value.
-   */
-  private async resolveSummaryBudget(override?: SummaryDepth): Promise<SummaryBudget> {
-    if (override && AudioManager.SUMMARY_PROFILES[override]) {
-      return AudioManager.SUMMARY_PROFILES[override]
-    }
-    try {
-      const { configStore } = await import('../utils/configStore')
-      const depth = configStore.get('meeting')?.summaryDepth as SummaryDepth | undefined
-      return (
-        (depth && AudioManager.SUMMARY_PROFILES[depth]) || AudioManager.SUMMARY_PROFILES.balanced
-      )
-    } catch {
-      return AudioManager.SUMMARY_PROFILES.balanced
-    }
-  }
-
-  /**
-   * Generate a structured meeting summary from the transcript.
+   * Build the meeting/media note from the transcript.
    *
-   * Robustness (fixes the "sometimes no summary" bug):
-   *   - map-reduce chunking within the model's token budget → no context overflow
-   *   - required-section validation with one strict retry
-   *   - failures surface to the caller (error field) instead of silently returning
-   *     a placeholder; the raw transcript is always preserved in the content.
-   *
-   * The body language is `language`; section headings stay in English for parsing.
+   * SummaryService owns the pipeline and also returns the speakers/segments it
+   * resolved — cluster names deduced from the transcript, duplicate clusters
+   * merged. Callers must persist those, otherwise the note shows real names
+   * while the stored metadata still says "Speaker 7".
    */
   private async summarizeTranscript(
     speakers: Speaker[],
@@ -884,530 +732,15 @@ export class AudioManager {
     onProgress: (progress: ProcessingProgress) => void,
     signal?: AbortSignal,
     summaryDepth?: SummaryDepth
-  ): Promise<{ content: string; actionItems: ActionItem[]; error?: string }> {
-    const transcriptText = this.formatTranscriptForPrompt(transcriptionSegments, speakers)
-    const languageName = getLanguageName(language)
-
-    if (!transcriptText.trim()) {
-      const reason = 'No speech was detected in this recording.'
-      console.warn('[AudioManager] Empty transcript — skipping summarization')
-      return {
-        content: this.buildFallbackContent('', reason, contentType),
-        actionItems: [],
-        error: reason
-      }
-    }
-
-    const aiManager = AIManager.getInstance()
-    this.summaryAbortSignal = signal
-    let loadedModelId: string | undefined
-
-    // Keep the summarizing progress bar monotonic: the strict retry re-runs
-    // generateSummary from a low percentage, which would otherwise make the bar
-    // jump backwards from ~95%. Clamp any emitted value to the highest seen.
-    let progressCeiling = 0
-    const monotonicProgress = (progress: ProcessingProgress): void => {
-      if (progress.stage === 'summarizing' && typeof progress.progress === 'number') {
-        if (progress.progress < progressCeiling) {
-          onProgress({ ...progress, progress: progressCeiling })
-          return
-        }
-        progressCeiling = progress.progress
-      }
-      onProgress(progress)
-    }
-
-    try {
-      if (!aiManager.isInitialized()) {
-        console.log('[AudioManager] AIManager not initialized — initializing now...')
-        await aiManager.initialize()
-      }
-
-      const budget = await this.resolveSummaryBudget(summaryDepth)
-      console.log(
-        `[AudioManager] Summary budget — type ${contentType}, context ${budget.contextSize}, ` +
-          `output ${budget.finalOutputTokens}/${budget.mapOutputTokens}`
-      )
-
-      const modelId = this.getActiveChatModelId()
-      // Throws if the chat model is missing/unloadable → surfaced as a clear error.
-      await aiManager.loadModel(modelId)
-      loadedModelId = modelId
-      console.log(`[AudioManager] Summarizing with model: ${modelId}`)
-
-      const summary = await this.generateSummary(
-        aiManager,
-        modelId,
-        transcriptText,
-        languageName,
-        contentType,
-        monotonicProgress,
-        budget,
-        false
-      )
-
-      if (this.isValidSummary(summary, contentType)) {
-        console.log(`[AudioManager] Summarization complete (${summary.length} chars)`)
-        return { content: summary, actionItems: this.extractActionItems(summary, contentType) }
-      }
-
-      console.warn('[AudioManager] Summary missing required sections — retrying once (strict)')
-      const retry = await this.generateSummary(
-        aiManager,
-        modelId,
-        transcriptText,
-        languageName,
-        contentType,
-        monotonicProgress,
-        budget,
-        true
-      )
-
-      if (this.isValidSummary(retry, contentType)) {
-        console.log(`[AudioManager] Summarization complete on retry (${retry.length} chars)`)
-        return { content: retry, actionItems: this.extractActionItems(retry, contentType) }
-      }
-
-      // Graceful degradation: rather than discarding a long, mostly-complete
-      // summary and showing an empty "_Not available._" template, keep whatever
-      // the model actually produced (the best of the two attempts). The
-      // structured transcript is preserved independently in MeetingMetadata.
-      const best = this.pickBestSummary(summary, retry, contentType)
-      if (this.summaryBodyLength(best, contentType) > 40) {
-        console.warn(
-          '[AudioManager] Keeping incomplete summary (some sections missing) instead of discarding'
-        )
-        return {
-          content: best,
-          actionItems: this.extractActionItems(best, contentType),
-          error: 'The automatic summary may be incomplete — some sections could be missing.'
-        }
-      }
-
-      console.error('[AudioManager] Summary essentially empty after retry — using fallback')
-      return {
-        content: this.buildFallbackContent(
-          transcriptText,
-          'The automatic summary was incomplete. The full transcript is preserved below.',
-          contentType
-        ),
-        actionItems: [],
-        error: 'Summary was incomplete after retry.'
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      const stack = err instanceof Error ? err.stack : ''
-      console.error(`[AudioManager] Summarization failed: ${msg}`)
-      if (stack) console.error(`[AudioManager] Stack: ${stack}`)
-      return {
-        content: this.buildFallbackContent(
-          transcriptText,
-          `Automatic summarization failed: ${msg}. The full transcript is preserved below.`,
-          contentType
-        ),
-        actionItems: [],
-        error: msg
-      }
-    } finally {
-      this.summaryAbortSignal = undefined
-      // Free the chat model right after the meeting (success OR failure) so
-      // ~2.7GB of VRAM is not held until the 5-minute idle unload. It is
-      // reloaded lazily on the next chat/summary use.
-      if (loadedModelId) {
-        try {
-          await aiManager.unloadModel(loadedModelId)
-          console.log(`[AudioManager] Unloaded chat model after summarization: ${loadedModelId}`)
-        } catch (e) {
-          console.error('[AudioManager] Failed to unload chat model after summarization:', e)
-        }
-      }
-    }
-  }
-
-  /**
-   * Build a synchronous token counter for the summary map-reduce, backend-aware:
-   * - GGUF (node-llama-cpp): exact `model.tokenize().length`.
-   * - MLX (Python sidecar): tokenizing every chunk over IPC would be slow, so we
-   *   calibrate a chars-per-token ratio from ONE exact count of the full
-   *   transcript and estimate from string length. The budgeting already carries
-   *   safety margins, so an estimate is sufficient and avoids per-chunk IPC.
-   */
-  private async buildTokenCounter(
-    aiManager: AIManager,
-    modelId: string,
-    calibrationText: string
-  ): Promise<(text: string) => number> {
-    if (ModelRegistry.getModel(modelId)?.format === 'mlx') {
-      const total = await aiManager.countTokens(modelId, calibrationText)
-      const charsPerToken = calibrationText.length / Math.max(1, total)
-      return (text: string): number => Math.ceil(text.length / Math.max(charsPerToken, 1e-6))
-    }
-    const model = await aiManager.getModelInstance(modelId)
-    return (text: string): number => model.tokenize(text).length
-  }
-
-  /**
-   * Map-reduce summary generation that keeps every LLM call within the token
-   * budget so it never overflows the context window.
-   */
-  private async generateSummary(
-    aiManager: AIManager,
-    modelId: string,
-    transcriptText: string,
-    languageName: string,
-    contentType: SummaryContentType,
-    onProgress: (progress: ProcessingProgress) => void,
-    budget: SummaryBudget,
-    strict: boolean
-  ): Promise<string> {
-    const countTokens = await this.buildTokenCounter(aiManager, modelId, transcriptText)
-
-    const finalSystemPrompt = this.buildSummarySystemPrompt(languageName, strict, contentType)
-    // Content-type-aware wording for the user turns (kept in English; the model
-    // writes the body in `languageName`).
-    const sourceLabel = contentType === 'media' ? 'recording' : 'meeting'
-    const preserveClause =
-      contentType === 'media'
-        ? 'Do not lose any key concepts or important points'
-        : 'Do not lose any decisions or action items'
-    // Retry passes flag their progress messages so the frozen bar still tells the
-    // user something is happening (the value itself is clamped monotonic upstream).
-    const retryNote = strict ? ' (retry)' : ''
-    // Token budget available for the prompt INPUT so that input + output + framing
-    // stays within the isolated context and the summary is never truncated.
-    const inputBudget = Math.max(
-      1024,
-      budget.contextSize - budget.finalOutputTokens - countTokens(finalSystemPrompt) - 320 // framing / chat-template overhead margin
-    )
-
-    // Fits in one pass → summarize directly.
-    if (countTokens(transcriptText) <= inputBudget) {
-      return this.runSummaryChat(
-        aiManager,
-        modelId,
-        finalSystemPrompt,
-        `Here is the ${sourceLabel} transcript:\n\n${transcriptText}`,
-        budget.finalOutputTokens,
-        budget.contextSize,
-        (p) =>
-          onProgress({
-            stage: 'summarizing',
-            progress: p,
-            message: `Generating summary${retryNote}...`
-          }),
-        10,
-        95
-      )
-    }
-
-    // ---- Map: summarize each chunk into intermediate notes ----
-    const mapSystemPrompt = this.buildMapSystemPrompt(languageName, contentType)
-    const chunks = this.splitIntoChunks(transcriptText, inputBudget, countTokens)
-    console.log(`[AudioManager] Long transcript — map-reduce over ${chunks.length} chunk(s)`)
-
-    let partials: string[] = []
-    for (let i = 0; i < chunks.length; i++) {
-      const partial = await this.runSummaryChat(
-        aiManager,
-        modelId,
-        mapSystemPrompt,
-        `${sourceLabel === 'meeting' ? 'Meeting' : 'Recording'} transcript part ${i + 1} of ${chunks.length}:\n\n${chunks[i]}`,
-        budget.mapOutputTokens,
-        budget.contextSize
-      )
-      partials.push(partial)
-      const pct = Math.round(((i + 1) / chunks.length) * 65)
-      onProgress({
-        stage: 'summarizing',
-        progress: pct,
-        message: `Summarizing sections${retryNote}...`
-      })
-    }
-
-    // ---- Collapse partials until they fit the budget ----
-    let guard = 0
-    while (countTokens(partials.join('\n\n')) > inputBudget && guard++ < 5) {
-      const groups = this.groupByBudget(partials, inputBudget, countTokens)
-      const collapsed: string[] = []
-      for (const group of groups) {
-        collapsed.push(
-          await this.runSummaryChat(
-            aiManager,
-            modelId,
-            mapSystemPrompt,
-            `Combine these ${sourceLabel} notes into one set of notes. ${preserveClause}:\n\n${group}`,
-            budget.mapOutputTokens,
-            budget.contextSize
-          )
-        )
-      }
-      partials = collapsed
-    }
-
-    // ---- Reduce: synthesize the final structured summary ----
-    // Safety net: even if the collapse loop hit its guard, never feed the reduce
-    // more than the context can hold — hard-truncate to the input budget so the
-    // final call cannot overflow (which would fail the whole summary).
-    let combined = partials.join('\n\n---\n\n')
-    if (countTokens(combined) > inputBudget) {
-      const perChar = countTokens(combined) / Math.max(1, combined.length)
-      const maxChars = Math.floor(inputBudget / Math.max(perChar, 1e-6))
-      console.warn(
-        `[AudioManager] Reduce input still over budget after collapse — truncating to fit context`
-      )
-      combined = combined.slice(0, maxChars)
-    }
-    return this.runSummaryChat(
-      aiManager,
-      modelId,
-      finalSystemPrompt,
-      `Here are notes from consecutive parts of the same ${sourceLabel}, in order. Synthesize them into a single structured summary. ${preserveClause}:\n\n${combined}`,
-      budget.finalOutputTokens,
-      budget.contextSize,
-      (p) =>
-        onProgress({
-          stage: 'summarizing',
-          progress: p,
-          message: `Finalizing summary${retryNote}...`
-        }),
-      70,
-      95
-    )
-  }
-
-  /**
-   * Run a single isolated chat completion and return the cleaned text.
-   * Optionally maps generation cadence to a progress range [progressFrom, progressTo].
-   */
-  private async runSummaryChat(
-    aiManager: AIManager,
-    modelId: string,
-    systemPrompt: string,
-    userMessage: string,
-    maxTokens: number,
-    contextSize: number,
-    onProgress?: (percentage: number) => void,
-    progressFrom = 0,
-    progressTo = 100
-  ): Promise<string> {
-    // Don't start a new (map/collapse/reduce) generation once the job is aborted.
-    if (this.summaryAbortSignal?.aborted) {
-      throw new Error('Summarization aborted')
-    }
-
-    const messages: ChatMessage[] = [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userMessage }
-    ]
-
-    const generator = aiManager.generateChatCompletion(
-      modelId,
-      messages,
-      {
-        isolated: true,
-        maxTokens,
-        contextSize,
-        // Disable reasoning for summaries: Qwen3.5's default thought budget (~75% of
-        // context) can consume the entire maxTokens allowance before any structured
-        // output is emitted, producing an empty summary. With thinking off the full
-        // budget goes to the actual sections, and generation is deterministic/faster.
-        thoughtTokens: 0,
-        // Lower temperature for stable adherence to the required section format.
-        temperature: 0.3
-      },
-      // Cancelling the processing job (or app shutdown) stops the native LLM
-      // generation instead of running it to completion on the GPU.
-      this.summaryAbortSignal
-    )
-
-    let fullContent = ''
-    let chunkCount = 0
-    for await (const chunk of generator) {
-      fullContent += chunk
-      chunkCount++
-      if (onProgress && chunkCount % 20 === 0) {
-        const span = progressTo - progressFrom
-        const estimated = progressFrom + Math.min(span, chunkCount / 3)
-        onProgress(Math.round(estimated))
-      }
-    }
-
-    // Defensively strip any reasoning blocks a model might leak into the response.
-    // `onTextChunk` already excludes thought segments, but this guards against
-    // regressions (e.g. switching to onResponseChunk) and non-standard templates.
-    fullContent = fullContent.replace(/<think>[\s\S]*?<\/think>/gi, '')
-
-    // Strip any Full Transcript section the model might have added on its own.
-    const transcriptHeadingIndex = fullContent.indexOf('## Full Transcript')
-    if (transcriptHeadingIndex !== -1) {
-      fullContent = fullContent.substring(0, transcriptHeadingIndex).trimEnd()
-    }
-    return fullContent.trim()
-  }
-
-  /** Whether the summary contains all required sections plus real body content. */
-  private isValidSummary(text: string, contentType: SummaryContentType): boolean {
-    if (!text) return false
-    // Ignore any leaked reasoning block so it can't inflate the body-length check.
-    const cleaned = text.replace(/<think>[\s\S]*?<\/think>/gi, '')
-    const sections = AudioManager.SUMMARY_SECTIONS[contentType]
-    const hasAllSections = sections.every((h) => cleaned.includes(h))
-    if (!hasAllSections) return false
-    // Ensure there is meaningful content beyond the headings themselves.
-    return this.summaryBodyLength(cleaned, contentType) > 40
-  }
-
-  /**
-   * Count real body characters (excluding required headings, markdown symbols and
-   * any leaked reasoning). Used to tell an empty/near-empty summary from one that
-   * has real content but is merely missing a section heading.
-   */
-  private summaryBodyLength(text: string, contentType: SummaryContentType): number {
-    if (!text) return 0
-    let body = text.replace(/<think>[\s\S]*?<\/think>/gi, '')
-    for (const h of AudioManager.SUMMARY_SECTIONS[contentType]) body = body.split(h).join('')
-    return body.replace(/[#\s_*\-[\]()]/g, '').length
-  }
-
-  /** Pick the attempt that produced the most real content (used for degradation). */
-  private pickBestSummary(a: string, b: string, contentType: SummaryContentType): string {
-    return this.summaryBodyLength(b, contentType) > this.summaryBodyLength(a, contentType) ? b : a
-  }
-
-  /**
-   * Action items only exist for meetings. Media summaries have no
-   * "## Action Items" section, so they never carry action items.
-   */
-  private extractActionItems(markdown: string, contentType: SummaryContentType): ActionItem[] {
-    return contentType === 'meeting' ? this.parseActionItems(markdown) : []
-  }
-
-  /** Split transcript text into token-budgeted chunks at line boundaries. */
-  private splitIntoChunks(
-    text: string,
-    budget: number,
-    countTokens: (t: string) => number
-  ): string[] {
-    const lines = text.split('\n')
-    // Estimate tokens-per-char once to avoid tokenizing every line.
-    const perChar = countTokens(text) / Math.max(1, text.length)
-    const chunks: string[] = []
-    let current = ''
-    let currentTokens = 0
-    for (const line of lines) {
-      const lineTokens = Math.ceil((line.length + 1) * perChar)
-      if (currentTokens + lineTokens > budget && current) {
-        chunks.push(current)
-        current = ''
-        currentTokens = 0
-      }
-      current += (current ? '\n' : '') + line
-      currentTokens += lineTokens
-    }
-    if (current.trim()) chunks.push(current)
-    return chunks.length > 0 ? chunks : [text]
-  }
-
-  /** Group partial summaries into budget-sized blobs for a reduction pass. */
-  private groupByBudget(
-    parts: string[],
-    budget: number,
-    countTokens: (t: string) => number
-  ): string[] {
-    const groups: string[] = []
-    let current = ''
-    for (const part of parts) {
-      const candidate = current ? `${current}\n\n---\n\n${part}` : part
-      if (current && countTokens(candidate) > budget) {
-        groups.push(current)
-        current = part
-      } else {
-        current = candidate
-      }
-    }
-    if (current.trim()) groups.push(current)
-    return groups
-  }
-
-  /** System prompt for the final structured summary. */
-  private buildSummarySystemPrompt(
-    languageName: string,
-    strict: boolean,
-    contentType: SummaryContentType
-  ): string {
-    if (contentType === 'media') {
-      return this.buildMediaSummarySystemPrompt(languageName, strict)
-    }
-    const strictLine = strict
-      ? '\nYou MUST output every one of the four sections below, each with real content. Do not skip any section.'
-      : ''
-    return `You are a meeting summarizer. Given a timestamped transcript with speaker labels, produce a structured summary in markdown format with EXACTLY these four sections, in this order:
-
-## Meeting Summary
-A detailed overview of the meeting capturing the important points, context, and nuances discussed.
-
-## Key Topics Discussed
-Organized by topic. For each topic, provide the context, what was discussed, different viewpoints expressed, who contributed, and any conclusions reached.
-
-## Key Decisions
-Numbered list of decisions made during the meeting, each with its rationale and any conditions or caveats. If no decisions were made, write "_None._".
-
-## Action Items
-Checklist format with assignee and deadline if mentioned:
-- [ ] [Action description] — Assigned to: [Speaker] — Due: [Date if mentioned]
-If no action items were mentioned, write "_None._" under this heading.
-
-CRITICAL — budget your output so that ALL FOUR sections are always produced. Never spend so much detail on the earlier sections that you run out of room before "## Key Decisions" and "## Action Items". Keep each section proportionate; it is far better to be a little more concise everywhere than to omit a later section. The "## Action Items" heading must always be the final section and must always be present.${strictLine}
-
-IMPORTANT: Write ALL content (body text, bullet points, descriptions) in ${languageName}. The section headings (## Meeting Summary, ## Key Topics Discussed, ## Key Decisions, ## Action Items) MUST remain exactly as shown above in English for parsing consistency.
-Do not include any text outside of these sections. Use the exact section headings above. Do NOT include a transcript section.`
-  }
-
-  /**
-   * System prompt for the final learning summary of listened media (e.g. an
-   * online course). Same anti-overflow discipline as the meeting prompt, but a
-   * learning-oriented structure instead of decisions/action items.
-   */
-  private buildMediaSummarySystemPrompt(languageName: string, strict: boolean): string {
-    const strictLine = strict
-      ? '\nYou MUST output every one of the four sections below, each with real content. Do not skip any section.'
-      : ''
-    return `You are summarizing media content (such as an online course, lecture, talk or video) that the user listened to. Given the transcript, produce structured learning notes in markdown format with EXACTLY these four sections, in this order:
-
-## Overview
-A concise overview of what the content covered, its purpose and the main thread of the argument or lesson.
-
-## Key Concepts
-The core concepts, definitions and ideas presented, each briefly explained so the notes stand on their own without the original media.
-
-## Important Points
-The most important points, arguments, examples, data or steps worth remembering. Use a bullet or numbered list.
-
-## Takeaways
-The practical takeaways, conclusions or things to remember/apply. If the content suggests exercises or next steps, list them here. If there are none, write "_None._".
-
-CRITICAL — budget your output so that ALL FOUR sections are always produced. Never spend so much detail on the earlier sections that you run out of room before "## Important Points" and "## Takeaways". Keep each section proportionate; it is far better to be a little more concise everywhere than to omit a later section. The "## Takeaways" heading must always be the final section and must always be present.${strictLine}
-
-IMPORTANT: Write ALL content (body text, bullet points, descriptions) in ${languageName}. The section headings (## Overview, ## Key Concepts, ## Important Points, ## Takeaways) MUST remain exactly as shown above in English for parsing consistency.
-Do not include any text outside of these sections. Use the exact section headings above. Do NOT include a transcript section.`
-  }
-
-  /** System prompt for the map step (per-chunk intermediate notes). */
-  private buildMapSystemPrompt(languageName: string, contentType: SummaryContentType): string {
-    if (contentType === 'media') {
-      return `You are taking notes on part of a media transcript (e.g. an online course or lecture). Extract, in ${languageName}:
-- the key concepts and ideas presented
-- important points, arguments, examples or steps
-- any practical takeaways or conclusions
-
-Be faithful and concise. Do not invent information. Output plain notes in ${languageName} — no preamble, no headings required. This is an intermediate note that will be merged with notes from other parts of the same recording.`
-    }
-    return `You are taking notes on part of a meeting transcript. Extract, in ${languageName}:
-- the key points and context discussed
-- any decisions made (with rationale)
-- any action items (with assignee and deadline if mentioned)
-- who said what when relevant
-
-Be faithful and concise. Do not invent information. Output plain notes in ${languageName} — no preamble, no headings required. This is an intermediate note that will be merged with notes from other parts of the same meeting.`
+  ): Promise<SummaryOutcome> {
+    return SummaryService.getInstance().summarize({
+      speakers,
+      segments: transcriptionSegments,
+      language,
+      contentType,
+      summaryDepth,
+      onProgress,
+      signal
+    })
   }
 }

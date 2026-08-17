@@ -99,7 +99,12 @@ export const MeetingMetadataBar: FC<MeetingMetadataBarProps> = ({
             meetingMetadata: {
               ...metadata,
               language: result.language,
-              actionItems: result.actionItems
+              actionItems: result.actionItems,
+              // Summarization may have named the speakers from the transcript and
+              // merged duplicate clusters; keep the metadata in step with the
+              // names now used in the note body.
+              speakers: result.speakers,
+              transcription: result.transcription
             }
           }
         })

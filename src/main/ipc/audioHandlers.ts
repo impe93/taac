@@ -634,6 +634,10 @@ export function registerAudioHandlers(): void {
       content: string
       actionItems: ActionItem[]
       language: string
+      // Speaker names are resolved from the transcript during summarization, so
+      // the caller must persist these back into the note's metadata.
+      speakers: Speaker[]
+      transcription: TranscriptionSegment[]
       summarizationError?: string
     }> => {
       try {
