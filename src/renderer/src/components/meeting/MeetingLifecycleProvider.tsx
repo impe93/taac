@@ -4,7 +4,6 @@ import { useAppDispatch } from '@renderer/store/hooks'
 import { updateNote } from '@renderer/store/slices/notesTreeSlice'
 import { PcmTapStreamer } from '@renderer/lib/pcmTapStreamer'
 import type { ProcessingProgress, RealtimeSegment, RealtimeStatusEvent } from '@preload/index.d'
-import type { MeetingMetadata } from '@preload/types'
 import {
   MeetingLifecycleContext,
   type LiveTranscriptionStatus,
@@ -15,8 +14,14 @@ import {
   type MeetingSummaryDepth,
   type ProcessingJob,
   type ProcessingFailure,
-  type RecordingStartFailure
+  type RecordingStartFailure,
+  type ReprocessMeetingRequest
 } from '@renderer/hooks/useMeetingLifecycle'
+
+interface ReprocessResolver {
+  resolve: () => void
+  reject: (error: Error) => void
+}
 
 export const MeetingLifecycleProvider: FC<{ children: ReactNode }> = ({ children }) => {
   const dispatch = useAppDispatch()
@@ -35,6 +40,8 @@ export const MeetingLifecycleProvider: FC<{ children: ReactNode }> = ({ children
     useState<LiveTranscriptionStatus>('idle')
 
   const processingQueueRef = useRef<ProcessingJob[]>([])
+  const activeProcessingJobRef = useRef<ProcessingJob | null>(null)
+  const reprocessResolversRef = useRef(new Map<string, ReprocessResolver>())
   processingQueueRef.current = processingQueue
 
   const micRecorderRef = useRef<MediaRecorder | null>(null)
@@ -160,14 +167,22 @@ export const MeetingLifecycleProvider: FC<{ children: ReactNode }> = ({ children
     try {
       while (processingQueueRef.current.length > 0) {
         const job = processingQueueRef.current[0]
+        activeProcessingJobRef.current = job
         setActiveProcessingJob(job)
         setProcessingProgress(null)
 
         try {
-          const result = (await window.audio.processRecording(job.noteId, job.spaceId)) as {
-            metadata: MeetingMetadata
-            content: string
-            summarizationError?: string
+          const result =
+            job.kind === 'recording'
+              ? await window.audio.processRecording(job.noteId, job.spaceId)
+              : await window.audio.reprocessFromDisk(job.noteId, job.spaceId, job.options)
+
+          // A fallback transcript is valuable for a new recording, but a replay
+          // must never replace an existing note unless its new summary succeeded.
+          if (job.kind === 'reprocess' && (result.processingError || result.summarizationError)) {
+            throw new Error(
+              result.processingError ?? `Summary generation failed: ${result.summarizationError}`
+            )
           }
 
           await dispatch(
@@ -182,19 +197,35 @@ export const MeetingLifecycleProvider: FC<{ children: ReactNode }> = ({ children
             })
           ).unwrap()
 
-          setProcessingFailure((prev) => (prev?.noteId === job.noteId ? null : prev))
-          // The transcript is always saved; a summarization error is surfaced as a
-          // non-blocking warning (the note keeps the full transcript) rather than a
-          // silent placeholder.
-          if (result.summarizationError) {
-            toast.warning(`Meeting saved, but the summary failed: ${result.summarizationError}`)
+          if (job.kind === 'recording') {
+            setProcessingFailure((prev) => (prev?.noteId === job.noteId ? null : prev))
+            // The transcript is always saved; a summarization error is surfaced as a
+            // non-blocking warning (the note keeps the full transcript) rather than a
+            // silent placeholder.
+            if (result.processingError) {
+              toast.warning(`Meeting saved with processing issues: ${result.processingError}`)
+            } else if (result.summarizationError) {
+              toast.warning(`Meeting saved, but the summary failed: ${result.summarizationError}`)
+            } else {
+              toast.success('Meeting processed')
+            }
           } else {
-            toast.success('Meeting processed')
+            reprocessResolversRef.current.get(job.requestId)?.resolve()
           }
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Processing failed'
-          setProcessingFailure({ noteId: job.noteId, message })
-          toast.error(message)
+          if (job.kind === 'recording') {
+            setProcessingFailure({ noteId: job.noteId, message })
+            toast.error(message)
+          } else {
+            reprocessResolversRef.current
+              .get(job.requestId)
+              ?.reject(new Error(`${message} The original note was kept.`))
+          }
+        } finally {
+          if (job.kind === 'reprocess') {
+            reprocessResolversRef.current.delete(job.requestId)
+          }
         }
 
         const next = processingQueueRef.current.slice(1)
@@ -202,6 +233,7 @@ export const MeetingLifecycleProvider: FC<{ children: ReactNode }> = ({ children
         setProcessingQueue(next)
         setProcessingProgress(null)
       }
+      activeProcessingJobRef.current = null
       setActiveProcessingJob(null)
       setProcessingProgress(null)
     } finally {
@@ -222,10 +254,39 @@ export const MeetingLifecycleProvider: FC<{ children: ReactNode }> = ({ children
     [runProcessingPump]
   )
 
+  const reprocessMeeting = useCallback(
+    (request: ReprocessMeetingRequest): Promise<void> => {
+      const requestId = crypto.randomUUID()
+
+      return new Promise<void>((resolve, reject) => {
+        reprocessResolversRef.current.set(requestId, { resolve, reject })
+        enqueueProcessingJob({
+          kind: 'reprocess',
+          requestId,
+          noteId: request.noteId,
+          spaceId: request.spaceId,
+          folderId: request.folderId,
+          options: request.options
+        })
+      })
+    },
+    [enqueueProcessingJob]
+  )
+
   useEffect(() => {
     return window.audio.onProcessingProgress((data: ProcessingProgress) => {
+      if (activeProcessingJobRef.current?.noteId !== data.noteId) return
       setProcessingProgress(data)
     })
+  }, [])
+
+  useEffect(() => {
+    const resolvers = reprocessResolversRef.current
+    return (): void => {
+      const error = new Error('Meeting processing stopped because the application view closed.')
+      resolvers.forEach(({ reject }) => reject(error))
+      resolvers.clear()
+    }
   }, [])
 
   useEffect(() => {
@@ -473,7 +534,7 @@ export const MeetingLifecycleProvider: FC<{ children: ReactNode }> = ({ children
       sessionIdsRef.current = null
       setRecordingSession(null)
 
-      enqueueProcessingJob({ noteId, spaceId, folderId })
+      enqueueProcessingJob({ kind: 'recording', noteId, spaceId, folderId })
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to save recording'
       toast.error(message)
@@ -498,6 +559,7 @@ export const MeetingLifecycleProvider: FC<{ children: ReactNode }> = ({ children
       pauseRecording,
       resumeRecording,
       stopRecording,
+      reprocessMeeting,
       processingQueue,
       activeProcessingJob,
       processingProgress,
@@ -515,6 +577,7 @@ export const MeetingLifecycleProvider: FC<{ children: ReactNode }> = ({ children
       pauseRecording,
       resumeRecording,
       stopRecording,
+      reprocessMeeting,
       processingQueue,
       activeProcessingJob,
       processingProgress,

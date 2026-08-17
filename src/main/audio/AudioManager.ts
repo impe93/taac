@@ -284,7 +284,12 @@ export class AudioManager {
     onProgress: (progress: ProcessingProgress) => void,
     precomputed?: RealtimeSessionResult,
     signal?: AbortSignal
-  ): Promise<{ metadata: MeetingMetadata; content: string; summarizationError?: string }> {
+  ): Promise<{
+    metadata: MeetingMetadata
+    content: string
+    processingError?: string
+    summarizationError?: string
+  }> {
     await this.initialize({ needsWhisper: !precomputed })
     this.clearIdleDispose()
 
@@ -362,6 +367,7 @@ export class AudioManager {
     // re-initializes from a clean state.
     let micDiarization: DiarizationResult
     let systemDiarization: DiarizationResult | null
+    let processingError: string | undefined
     try {
       ;[micDiarization, systemDiarization] = await Promise.all([
         micDiarizationP,
@@ -372,6 +378,7 @@ export class AudioManager {
       console.error(
         `[AudioManager] Diarization failed — falling back to single speaker: ${message}`
       )
+      processingError = `Speaker identification failed: ${message}`
       micDiarization = { segments: [{ speaker: 0, startTime: 0, endTime: 0 }], numSpeakers: 1 }
       systemDiarization = hasSystemTrack
         ? { segments: [{ speaker: 0, startTime: 0, endTime: 0 }], numSpeakers: 1 }
@@ -458,7 +465,7 @@ export class AudioManager {
         )}`
       : content
 
-    return { metadata, content: finalContent, summarizationError }
+    return { metadata, content: finalContent, processingError, summarizationError }
   }
 
   /**

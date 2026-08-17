@@ -10,13 +10,10 @@ import {
   SelectTrigger,
   SelectValue
 } from '@renderer/components/ui/select'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger
-} from '@renderer/components/ui/tooltip'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip'
 import { useAppDispatch } from '@renderer/store/hooks'
 import { updateNote } from '@renderer/store/slices/notesTreeSlice'
+import { useConfig } from '@renderer/hooks/useConfig'
 import { MEETING_LANGUAGE_CHOICES, meetingLanguageLabel } from '@renderer/lib/meetingLanguages'
 import { MeetingReprocessDialog } from '@renderer/components/meeting/MeetingReprocessDialog'
 import type { MeetingMetadata } from '@preload/types'
@@ -44,6 +41,7 @@ export const MeetingMetadataBar: FC<MeetingMetadataBarProps> = ({
   folderId
 }) => {
   const dispatch = useAppDispatch()
+  const { data: meetingConfig } = useConfig('meeting')
   const [selectedLanguage, setSelectedLanguage] = useState(metadata.language)
   const [isRegenerating, setIsRegenerating] = useState(false)
   const [hasStoredRecording, setHasStoredRecording] = useState(false)
@@ -60,14 +58,19 @@ export const MeetingMetadataBar: FC<MeetingMetadataBarProps> = ({
     }
 
     let cancelled = false
-    void window.audio.hasStoredRecording(noteId, spaceId).then((exists) => {
-      if (!cancelled) setHasStoredRecording(exists)
-    })
+    void window.audio
+      .hasStoredRecording(noteId, spaceId, metadata.recordingMode)
+      .then((exists) => {
+        if (!cancelled) setHasStoredRecording(exists)
+      })
+      .catch(() => {
+        if (!cancelled) setHasStoredRecording(false)
+      })
 
     return (): void => {
       cancelled = true
     }
-  }, [noteId, spaceId])
+  }, [metadata.recordingMode, noteId, spaceId])
 
   const date = new Date(metadata.recordingDate).toLocaleDateString(undefined, {
     year: 'numeric',
@@ -122,11 +125,16 @@ export const MeetingMetadataBar: FC<MeetingMetadataBarProps> = ({
     }
   }
 
-  const handleReprocessClick = (): void => {
-    if (!hasStoredRecording) {
-      toast.error(
-        'No saved audio files found. Enable "Keep audio recordings after transcription" in Settings.'
-      )
+  const handleReprocessClick = async (): Promise<void> => {
+    const isStillAvailable = await window.audio.hasStoredRecording(
+      noteId,
+      spaceId,
+      metadata.recordingMode
+    )
+    setHasStoredRecording(isStillAvailable)
+
+    if (!isStillAvailable) {
+      toast.error('Saved audio is missing or incomplete. The full pipeline cannot be reprocessed.')
       return
     }
     setReprocessOpen(true)
@@ -181,7 +189,7 @@ export const MeetingMetadataBar: FC<MeetingMetadataBarProps> = ({
                     className="size-7"
                     aria-label="Reprocess meeting from saved audio"
                     disabled={!spaceId || !hasStoredRecording}
-                    onClick={handleReprocessClick}
+                    onClick={() => void handleReprocessClick()}
                   >
                     <RefreshCw className="size-3.5" />
                   </Button>
@@ -190,7 +198,7 @@ export const MeetingMetadataBar: FC<MeetingMetadataBarProps> = ({
                   <p>
                     {hasStoredRecording
                       ? 'Dev: re-run full pipeline from saved audio'
-                      : 'No saved audio — enable "Keep audio recordings" in Settings'}
+                      : 'Saved audio is missing or incomplete'}
                   </p>
                 </TooltipContent>
               </Tooltip>
@@ -212,6 +220,7 @@ export const MeetingMetadataBar: FC<MeetingMetadataBarProps> = ({
           folderId={folderId}
           metadata={metadata}
           language={selectedLanguage}
+          summaryDepth={meetingConfig?.summaryDepth ?? 'balanced'}
         />
       )}
     </>

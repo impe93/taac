@@ -7,7 +7,8 @@ import type {
   AppConfig,
   Space,
   MoveFolderToSpaceResult,
-  UpdaterState
+  UpdaterState,
+  ReprocessRecordingOptions
 } from './types'
 import type {
   HardwareInfo,
@@ -44,7 +45,8 @@ export type {
   AppConfig,
   Space,
   MoveFolderToSpaceResult,
-  UpdaterState
+  UpdaterState,
+  ReprocessRecordingOptions
 }
 
 // Re-export AI types for convenience
@@ -407,6 +409,7 @@ export interface AudioAPI {
   ) => Promise<{
     metadata: import('./types').MeetingMetadata
     content: string
+    processingError?: string
     summarizationError?: string
   }>
   cancelProcessing: (noteId: string) => Promise<void>
@@ -428,21 +431,19 @@ export interface AudioAPI {
     transcription: import('./types').TranscriptionSegment[]
     summarizationError?: string
   }>
-  hasStoredRecording: (noteId: string, spaceId: string) => Promise<boolean>
+  hasStoredRecording: (
+    noteId: string,
+    spaceId: string,
+    mode: 'remote' | 'in-person' | 'system-only'
+  ) => Promise<boolean>
   reprocessFromDisk: (
     noteId: string,
     spaceId: string,
-    options: {
-      mode: 'remote' | 'in-person' | 'system-only'
-      contentType?: 'meeting' | 'media'
-      summaryDepth?: 'conservative' | 'balanced' | 'aggressive'
-      recordingDate: string
-      durationSecs: number
-      language: string
-    }
+    options: ReprocessRecordingOptions
   ) => Promise<{
     metadata: import('./types').MeetingMetadata
     content: string
+    processingError?: string
     summarizationError?: string
   }>
   // --- Realtime transcription (macOS Apple Silicon) ---

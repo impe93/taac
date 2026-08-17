@@ -325,9 +325,18 @@ Each space is fully isolated:
 ├── spaces.json              # Global metadata
 └── {spaceId}/
     ├── notes/{folderId}/    # Notes as JSON files
-    ├── assets/              # images/, pdfs/, attachments/
+    ├── assets/              # images/, pdfs/, attachments/, audio/
     └── database/vectors.db  # Per-space vector DB
 ```
+
+### Developer Meeting Replay
+
+When `meeting.keepAudioAfterTranscription` is enabled, original WebM tracks are stored under
+`assets/audio/{noteId}/`. `mic.webm` is the primary track in every recording mode; remote meetings
+also require `system.webm`. Development builds may enqueue a full replay from these files through
+the normal serialized meeting-processing queue. Replay WAV files are temporary and always deleted;
+the source WebM files are never deleted by a replay. The main process rejects replay requests in
+packaged builds, and an existing note is updated only after summarization succeeds.
 
 ### Redux Shape
 
@@ -730,7 +739,11 @@ tag:
         ├── assets/
         │   ├── images/
         │   ├── pdfs/
-        │   └── attachments/
+        │   ├── attachments/
+        │   └── audio/
+        │       └── {noteId}/
+        │           ├── mic.webm
+        │           └── system.webm  # remote mode only
         └── database/
             └── vectors.db
 ```

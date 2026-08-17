@@ -1,4 +1,4 @@
-import { type FC, useCallback, useEffect, useRef, useState } from 'react'
+import { type FC, useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import {
   Dialog,
@@ -8,11 +8,10 @@ import {
   DialogTitle
 } from '@renderer/components/ui/dialog'
 import { Button } from '@renderer/components/ui/button'
-import { useAppDispatch } from '@renderer/store/hooks'
-import { updateNote } from '@renderer/store/slices/notesTreeSlice'
 import { MeetingProgressView } from '@renderer/components/meeting/MeetingProgressView'
+import { useMeetingLifecycle } from '@renderer/hooks/useMeetingLifecycle'
 import { meetingLanguageLabel } from '@renderer/lib/meetingLanguages'
-import type { ProcessingProgress } from '@preload/index.d'
+import { summaryDepthLabel, type SummaryDepth } from '@renderer/lib/meetingSummary'
 import type { MeetingMetadata } from '@preload/types'
 
 interface MeetingReprocessDialogProps {
@@ -23,7 +22,10 @@ interface MeetingReprocessDialogProps {
   folderId: string
   metadata: MeetingMetadata
   language: string
+  summaryDepth: SummaryDepth
 }
+
+type ReprocessPhase = 'confirm' | 'processing' | 'error'
 
 export const MeetingReprocessDialog: FC<MeetingReprocessDialogProps> = ({
   open,
@@ -32,83 +34,55 @@ export const MeetingReprocessDialog: FC<MeetingReprocessDialogProps> = ({
   spaceId,
   folderId,
   metadata,
-  language
+  language,
+  summaryDepth
 }) => {
-  const dispatch = useAppDispatch()
-  const [progress, setProgress] = useState<ProcessingProgress | null>(null)
+  const { reprocessMeeting, activeProcessingJob, processingProgress } = useMeetingLifecycle()
+  const [phase, setPhase] = useState<ReprocessPhase>('confirm')
   const [error, setError] = useState<string | null>(null)
-  const [isProcessing, setIsProcessing] = useState(false)
-  const hasStartedRef = useRef(false)
+
+  const isProcessing = phase === 'processing'
+  const isActive =
+    activeProcessingJob?.kind === 'reprocess' && activeProcessingJob.noteId === noteId
+  const progress = isActive ? processingProgress : null
+
+  useEffect(() => {
+    if (!open) {
+      setPhase('confirm')
+      setError(null)
+    }
+  }, [open])
 
   const runReprocess = useCallback(async (): Promise<void> => {
     if (!spaceId) return
 
-    setIsProcessing(true)
+    setPhase('processing')
     setError(null)
-    setProgress(null)
 
     try {
-      const result = await window.audio.reprocessFromDisk(noteId, spaceId, {
-        mode: metadata.recordingMode,
-        contentType: metadata.contentType ?? 'meeting',
-        recordingDate: metadata.recordingDate,
-        durationSecs: metadata.duration,
-        language
+      await reprocessMeeting({
+        noteId,
+        spaceId,
+        folderId,
+        options: {
+          mode: metadata.recordingMode,
+          contentType: metadata.contentType ?? 'meeting',
+          summaryDepth,
+          recordingDate: metadata.recordingDate,
+          durationSecs: metadata.duration,
+          language
+        }
       })
 
-      await dispatch(
-        updateNote({
-          spaceId,
-          folderId,
-          noteId,
-          updates: {
-            content: result.content,
-            meetingMetadata: result.metadata
-          }
-        })
-      ).unwrap()
-
-      if (result.summarizationError) {
-        toast.warning(`Meeting reprocessed, but the summary failed: ${result.summarizationError}`)
-      } else {
-        toast.success('Meeting reprocessed')
-      }
-
+      toast.success('Meeting reprocessed')
       onOpenChange(false)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Reprocessing failed'
       setError(message)
+      setPhase('error')
       toast.error(message)
-    } finally {
-      setIsProcessing(false)
-      setProgress(null)
-      hasStartedRef.current = false
     }
-  }, [dispatch, folderId, language, metadata, noteId, onOpenChange, spaceId])
-
-  useEffect(() => {
-    if (!open) {
-      hasStartedRef.current = false
-      setProgress(null)
-      setError(null)
-      setIsProcessing(false)
-      return
-    }
-
-    if (hasStartedRef.current) return
-    hasStartedRef.current = true
-    void runReprocess()
-  }, [open, runReprocess])
-
-  useEffect(() => {
-    if (!open) return
-
-    return window.audio.onProcessingProgress((data: ProcessingProgress) => {
-      if (data.noteId === noteId) {
-        setProgress(data)
-      }
-    })
-  }, [noteId, open])
+  }, [folderId, language, metadata, noteId, onOpenChange, reprocessMeeting, spaceId, summaryDepth])
 
   const handleOpenChange = (nextOpen: boolean): void => {
     if (isProcessing && !nextOpen) return
@@ -126,32 +100,75 @@ export const MeetingReprocessDialog: FC<MeetingReprocessDialogProps> = ({
           if (isProcessing) event.preventDefault()
         }}
       >
-        <DialogHeader>
-          <DialogTitle>Reprocessing meeting</DialogTitle>
-          <DialogDescription>
-            Running the full transcription and summarization pipeline in{' '}
-            {meetingLanguageLabel(language)}.
-          </DialogDescription>
-        </DialogHeader>
+        {phase === 'confirm' && (
+          <>
+            <DialogHeader>
+              <DialogTitle>Reprocess meeting?</DialogTitle>
+              <DialogDescription>
+                This reruns audio conversion, transcription, speaker identification, and summary
+                generation. The note content and meeting metadata will be replaced only if the full
+                pipeline succeeds. Your saved audio will be kept.
+              </DialogDescription>
+            </DialogHeader>
 
-        <MeetingProgressView
-          progress={progress}
-          title={isProcessing ? 'Reprocessing meeting...' : 'Reprocessing complete'}
-        />
+            <div className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">
+              Language: {meetingLanguageLabel(language)} · Summary:{' '}
+              {summaryDepthLabel(summaryDepth)}
+            </div>
 
-        {error && (
-          <p className="text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2">{error}</p>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                Cancel
+              </Button>
+              <Button type="button" onClick={() => void runReprocess()}>
+                Reprocess
+              </Button>
+            </div>
+          </>
         )}
 
-        {error && !isProcessing && (
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Close
-            </Button>
-            <Button type="button" onClick={() => void runReprocess()}>
-              Retry
-            </Button>
-          </div>
+        {phase === 'processing' && (
+          <>
+            <DialogHeader>
+              <DialogTitle>{isActive ? 'Reprocessing meeting' : 'Reprocessing queued'}</DialogTitle>
+              <DialogDescription>
+                {isActive
+                  ? `Running the full pipeline in ${meetingLanguageLabel(language)}.`
+                  : 'Waiting for the current meeting processing job to finish.'}
+              </DialogDescription>
+            </DialogHeader>
+
+            <MeetingProgressView
+              progress={progress}
+              title={isActive ? 'Reprocessing meeting...' : 'Waiting for available resources...'}
+            />
+          </>
+        )}
+
+        {phase === 'error' && (
+          <>
+            <DialogHeader>
+              <DialogTitle>Reprocessing failed</DialogTitle>
+              <DialogDescription>
+                The existing note and its saved audio were not changed.
+              </DialogDescription>
+            </DialogHeader>
+
+            {error && (
+              <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {error}
+              </p>
+            )}
+
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                Close
+              </Button>
+              <Button type="button" onClick={() => void runReprocess()}>
+                Retry
+              </Button>
+            </div>
+          </>
         )}
       </DialogContent>
     </Dialog>

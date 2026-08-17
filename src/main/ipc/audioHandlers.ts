@@ -11,7 +11,7 @@
  */
 
 import { ipcMain, app, BrowserWindow } from 'electron'
-import { join, normalize } from 'path'
+import { isAbsolute, join, relative, resolve, sep } from 'path'
 import fs from 'node:fs/promises'
 import { convertToWav } from '../audio/audioConverter'
 import { AudioManager } from '../audio/AudioManager'
@@ -22,10 +22,21 @@ import { checkRealtimeAvailability } from '../audio/realtime/availability'
 import type { RealtimeAvailability } from '../audio/realtime/availability'
 import type { RealtimeSessionResult, RealtimeTrack } from '../audio/realtime/types'
 import type { ProcessingProgress } from '../audio/types'
-import type { Speaker, TranscriptionSegment, ActionItem } from '../../preload/types'
+import type {
+  Speaker,
+  TranscriptionSegment,
+  ActionItem,
+  MeetingMetadata,
+  ReprocessRecordingOptions
+} from '../../preload/types'
 
-// AbortController for the active processing job
-let activeProcessingAbort: AbortController | null = null
+interface ActiveProcessingJob {
+  noteId: string
+  controller: AbortController
+}
+
+// AudioManager owns native/AI resources that must only serve one pipeline at a time.
+let activeProcessingJob: ActiveProcessingJob | null = null
 
 /**
  * Recording context stored after saveRecording, consumed by processRecording.
@@ -60,7 +71,66 @@ function isDevApp(): boolean {
   return !app.isPackaged
 }
 
+function beginProcessingJob(noteId: string): ActiveProcessingJob {
+  if (activeProcessingJob) {
+    throw new Error(
+      `Another recording is already being processed (${activeProcessingJob.noteId}). Try again when it finishes.`
+    )
+  }
+
+  const job = { noteId, controller: new AbortController() }
+  activeProcessingJob = job
+  return job
+}
+
+function finishProcessingJob(job: ActiveProcessingJob): void {
+  if (activeProcessingJob === job) activeProcessingJob = null
+}
+
+function validateStorageId(value: string, label: string): void {
+  if (
+    typeof value !== 'string' ||
+    !value.trim() ||
+    value === '.' ||
+    value === '..' ||
+    value.includes('/') ||
+    value.includes('\\')
+  ) {
+    throw new Error(`[AudioHandlers] Invalid ${label}`)
+  }
+}
+
+function validateReprocessOptions(options: ReprocessRecordingOptions): void {
+  const modes = new Set(['remote', 'in-person', 'system-only'])
+  const contentTypes = new Set(['meeting', 'media'])
+  const summaryDepths = new Set(['conservative', 'balanced', 'aggressive'])
+
+  if (!options || !modes.has(options.mode)) {
+    throw new Error('[AudioHandlers] Invalid recording mode')
+  }
+  if (options.contentType !== undefined && !contentTypes.has(options.contentType)) {
+    throw new Error('[AudioHandlers] Invalid content type')
+  }
+  if (options.contentType === 'media' && options.mode !== 'system-only') {
+    throw new Error('[AudioHandlers] Media reprocessing requires system-only audio')
+  }
+  if (options.summaryDepth !== undefined && !summaryDepths.has(options.summaryDepth)) {
+    throw new Error('[AudioHandlers] Invalid summary depth')
+  }
+  if (!Number.isFinite(options.durationSecs) || options.durationSecs < 0) {
+    throw new Error('[AudioHandlers] Invalid recording duration')
+  }
+  if (!options.recordingDate || Number.isNaN(Date.parse(options.recordingDate))) {
+    throw new Error('[AudioHandlers] Invalid recording date')
+  }
+  if (!/^auto$|^[a-z]{2}$/i.test(options.language)) {
+    throw new Error('[AudioHandlers] Invalid meeting language')
+  }
+}
+
 function getAudioDir(noteId: string, spaceId: string): string {
+  validateStorageId(noteId, 'note ID')
+  validateStorageId(spaceId, 'space ID')
   const userData = app.getPath('userData')
   const spacesBase = join(userData, 'spaces')
   const audioDir = join(spacesBase, spaceId, 'assets', 'audio', noteId)
@@ -68,10 +138,10 @@ function getAudioDir(noteId: string, spaceId: string): string {
   return audioDir
 }
 
-async function fileExists(path: string): Promise<boolean> {
+async function isUsableFile(path: string): Promise<boolean> {
   try {
-    await fs.access(path)
-    return true
+    const stats = await fs.stat(path)
+    return stats.isFile() && stats.size > 0
   } catch {
     return false
   }
@@ -83,58 +153,53 @@ async function fileExists(path: string): Promise<boolean> {
 async function prepareRecordingContextFromDisk(
   noteId: string,
   spaceId: string,
-  options: {
-    mode: 'remote' | 'in-person' | 'system-only'
-    contentType: 'meeting' | 'media'
-    summaryDepth?: 'conservative' | 'balanced' | 'aggressive'
-    recordingDate: string
-    durationSecs: number
-    requestedLanguage: string
-  },
+  options: ReprocessRecordingOptions,
   onConvertingProgress: (progress: number) => void
 ): Promise<RecordingContext> {
   const audioDir = getAudioDir(noteId, spaceId)
   const micWebmPath = join(audioDir, 'mic.webm')
+  const micWavPath = join(audioDir, 'mic.wav')
+  const systemWebmPath = options.mode === 'remote' ? join(audioDir, 'system.webm') : undefined
+  const systemWavPath = options.mode === 'remote' ? join(audioDir, 'system.wav') : undefined
 
-  if (!(await fileExists(micWebmPath))) {
+  if (!(await isUsableFile(micWebmPath))) {
     throw new Error(
-      `No saved microphone audio found at "${micWebmPath}". Enable "Keep audio recordings after transcription" and record again.`
+      'The saved primary audio is missing or empty. Keep the original recording and try again.'
     )
   }
-
-  onConvertingProgress(10)
-  const micWavPath = join(audioDir, 'mic.wav')
-  await convertToWav(micWebmPath, micWavPath)
-  onConvertingProgress(50)
-
-  let systemWebmPath: string | undefined
-  let systemWavPath: string | undefined
-
-  if (options.mode === 'remote') {
-    const candidateSystemWebm = join(audioDir, 'system.webm')
-    if (await fileExists(candidateSystemWebm)) {
-      systemWebmPath = candidateSystemWebm
-      systemWavPath = join(audioDir, 'system.wav')
-      await convertToWav(systemWebmPath, systemWavPath)
-    }
+  if (systemWebmPath && !(await isUsableFile(systemWebmPath))) {
+    throw new Error('The saved system audio is missing or empty for this remote meeting.')
   }
 
-  onConvertingProgress(100)
+  try {
+    onConvertingProgress(10)
+    await convertToWav(micWebmPath, micWavPath)
+    onConvertingProgress(50)
 
-  const durationSecs =
-    options.durationSecs > 0 ? options.durationSecs : await getWavDurationSecs(micWavPath)
+    if (systemWebmPath && systemWavPath) {
+      await convertToWav(systemWebmPath, systemWavPath)
+    }
 
-  return {
-    micWavPath,
-    systemWavPath,
-    micWebmPath,
-    systemWebmPath,
-    mode: options.mode,
-    contentType: options.contentType,
-    summaryDepth: options.summaryDepth,
-    recordingDate: options.recordingDate,
-    durationSecs,
-    requestedLanguage: options.requestedLanguage
+    onConvertingProgress(100)
+
+    const durationSecs =
+      options.durationSecs > 0 ? options.durationSecs : await getWavDurationSecs(micWavPath)
+
+    return {
+      micWavPath,
+      systemWavPath,
+      micWebmPath,
+      systemWebmPath,
+      mode: options.mode,
+      contentType: options.contentType ?? 'meeting',
+      summaryDepth: options.summaryDepth,
+      recordingDate: options.recordingDate,
+      durationSecs,
+      requestedLanguage: options.language
+    }
+  } catch (error) {
+    await cleanupTemporaryWavPaths([micWavPath, systemWavPath])
+    throw error
   }
 }
 
@@ -147,9 +212,10 @@ const REALTIME_STAGES = ['converting', 'diarizing', 'summarizing'] as const
  * Prevents directory-traversal attacks from renderer-supplied noteId / spaceId values.
  */
 function validatePath(resolvedPath: string, baseDir: string): void {
-  const normalizedBase = normalize(baseDir)
-  const normalizedPath = normalize(resolvedPath)
-  if (!normalizedPath.startsWith(normalizedBase + '/') && normalizedPath !== normalizedBase) {
+  const normalizedBase = resolve(baseDir)
+  const normalizedPath = resolve(resolvedPath)
+  const relativePath = relative(normalizedBase, normalizedPath)
+  if (relativePath === '..' || relativePath.startsWith(`..${sep}`) || isAbsolute(relativePath)) {
     throw new Error(
       `[AudioHandlers] Path "${normalizedPath}" escapes the expected base directory "${normalizedBase}"`
     )
@@ -200,24 +266,33 @@ function broadcastProgress(
   })
 }
 
-/**
- * Clean up audio files after processing based on configuration.
- * §4.2: keepAudioAfterTranscription controls which files are retained.
- */
-async function cleanupAudioFiles(context: RecordingContext): Promise<void> {
-  const keepAudio = configStore.get('meeting').keepAudioAfterTranscription
-
-  // Always delete temporary WAV files (they are conversion artifacts)
-  const wavPaths = [context.micWavPath, context.systemWavPath].filter(Boolean) as string[]
-  for (const p of wavPaths) {
+async function cleanupTemporaryWavPaths(paths: Array<string | undefined>): Promise<void> {
+  for (const path of paths) {
+    if (!path) continue
     try {
-      await fs.unlink(p)
-      console.log(`[AudioHandlers] Deleted temp WAV: ${p}`)
+      await fs.unlink(path)
+      console.log(`[AudioHandlers] Deleted temp WAV: ${path}`)
     } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') continue
       const msg = err instanceof Error ? err.message : String(err)
-      console.warn(`[AudioHandlers] Could not delete temp WAV "${p}": ${msg}`)
+      console.warn(`[AudioHandlers] Could not delete temp WAV "${path}": ${msg}`)
     }
   }
+}
+
+async function cleanupTemporaryWavs(context: RecordingContext): Promise<void> {
+  await cleanupTemporaryWavPaths([context.micWavPath, context.systemWavPath])
+}
+
+/**
+ * Clean up audio files after a newly captured recording succeeds.
+ * Developer replays deliberately call cleanupTemporaryWavs instead so the
+ * preserved WebM source can be replayed again regardless of current settings.
+ */
+async function cleanupCapturedAudioFiles(context: RecordingContext): Promise<void> {
+  await cleanupTemporaryWavs(context)
+
+  const keepAudio = configStore.get('meeting').keepAudioAfterTranscription
 
   // Delete WebM originals if user chose not to keep audio
   if (!keepAudio) {
@@ -425,21 +500,32 @@ export function registerAudioHandlers(): void {
       _event,
       noteId: string,
       spaceId: string
-    ): Promise<{ metadata: unknown; content: string }> => {
+    ): Promise<{
+      metadata: MeetingMetadata
+      content: string
+      processingError?: string
+      summarizationError?: string
+    }> => {
+      let job: ActiveProcessingJob | null = null
+      let context: RecordingContext | null = null
+      let completed = false
+
       try {
-        const context = recordingContextMap.get(noteId)
+        context = recordingContextMap.get(noteId) ?? null
         if (!context) {
           throw new Error(
             `No recording context found for note ${noteId}. Was saveRecording called first?`
           )
         }
 
+        // Acquire only after locating the context. If another job is active, leave
+        // this context untouched so the renderer queue may retry it later.
+        job = beginProcessingJob(noteId)
+
         // Transcript produced live during recording (undefined → whisper path)
         const realtime = realtimeResults.get(noteId)
         realtimeResults.delete(noteId)
         const stages = realtime ? REALTIME_STAGES : DEFAULT_STAGES
-
-        activeProcessingAbort = new AbortController()
 
         console.log(
           `[AudioHandlers] processRecording called for note ${noteId}` +
@@ -470,26 +556,27 @@ export function registerAudioHandlers(): void {
           context.summaryDepth,
           (progress: ProcessingProgress) => broadcastProgress(noteId, progress, stages),
           realtime,
-          activeProcessingAbort.signal
+          job.controller.signal
         )
 
-        activeProcessingAbort = null
-
-        // §4.2: Clean up audio files based on config
-        await cleanupAudioFiles(context)
-
-        // Remove consumed context
-        recordingContextMap.delete(noteId)
-
+        completed = true
         return result
       } catch (error) {
-        activeProcessingAbort = null
-        recordingContextMap.delete(noteId)
-        realtimeResults.delete(noteId)
         const message = error instanceof Error ? error.message : String(error)
         throw new Error(
           `[AudioHandlers] Failed to process recording for note ${noteId}: ${message}`
         )
+      } finally {
+        if (job && context) {
+          try {
+            if (completed) await cleanupCapturedAudioFiles(context)
+            else await cleanupTemporaryWavs(context)
+          } finally {
+            recordingContextMap.delete(noteId)
+            realtimeResults.delete(noteId)
+            finishProcessingJob(job)
+          }
+        }
       }
     }
   )
@@ -497,9 +584,8 @@ export function registerAudioHandlers(): void {
   // Cancel the active processing job
   ipcMain.handle('audio:cancelProcessing', async (_event, noteId: string): Promise<void> => {
     try {
-      if (activeProcessingAbort) {
-        activeProcessingAbort.abort()
-        activeProcessingAbort = null
+      if (activeProcessingJob?.noteId === noteId) {
+        activeProcessingJob.controller.abort()
         console.log(`[AudioHandlers] Cancelled processing for note ${noteId}`)
       }
       // Clean up context for cancelled processing
@@ -533,10 +619,20 @@ export function registerAudioHandlers(): void {
 
   ipcMain.handle(
     'audio:hasStoredRecording',
-    async (_event, noteId: string, spaceId: string): Promise<boolean> => {
+    async (
+      _event,
+      noteId: string,
+      spaceId: string,
+      mode: 'remote' | 'in-person' | 'system-only'
+    ): Promise<boolean> => {
+      if (!isDevApp()) return false
+
       try {
+        if (!['remote', 'in-person', 'system-only'].includes(mode)) return false
         const audioDir = getAudioDir(noteId, spaceId)
-        return fileExists(join(audioDir, 'mic.webm'))
+        const hasPrimary = await isUsableFile(join(audioDir, 'mic.webm'))
+        if (!hasPrimary) return false
+        return mode !== 'remote' || isUsableFile(join(audioDir, 'system.webm'))
       } catch {
         return false
       }
@@ -550,39 +646,33 @@ export function registerAudioHandlers(): void {
       _event,
       noteId: string,
       spaceId: string,
-      options: {
-        mode: 'remote' | 'in-person' | 'system-only'
-        contentType?: 'meeting' | 'media'
-        summaryDepth?: 'conservative' | 'balanced' | 'aggressive'
-        recordingDate: string
-        durationSecs: number
-        language: string
-      }
-    ): Promise<{ metadata: unknown; content: string; summarizationError?: string }> => {
+      options: ReprocessRecordingOptions
+    ): Promise<{
+      metadata: MeetingMetadata
+      content: string
+      processingError?: string
+      summarizationError?: string
+    }> => {
       if (!isDevApp()) {
         throw new Error('[AudioHandlers] reprocessFromDisk is only available in development builds')
       }
 
-      try {
-        activeProcessingAbort = new AbortController()
+      validateStorageId(noteId, 'note ID')
+      validateStorageId(spaceId, 'space ID')
+      validateReprocessOptions(options)
 
-        const context = await prepareRecordingContextFromDisk(
-          noteId,
-          spaceId,
-          {
-            mode: options.mode,
-            contentType: options.contentType ?? 'meeting',
-            summaryDepth: options.summaryDepth,
-            recordingDate: options.recordingDate,
-            durationSecs: options.durationSecs,
-            requestedLanguage: options.language
-          },
-          (pct) =>
-            broadcastProgress(noteId, {
-              stage: 'converting',
-              progress: pct,
-              message: 'Converting audio...'
-            })
+      let job: ActiveProcessingJob | null = null
+      let context: RecordingContext | null = null
+
+      try {
+        job = beginProcessingJob(noteId)
+
+        context = await prepareRecordingContextFromDisk(noteId, spaceId, options, (pct) =>
+          broadcastProgress(noteId, {
+            stage: 'converting',
+            progress: pct,
+            message: 'Converting audio...'
+          })
         )
 
         console.log(`[AudioHandlers] reprocessFromDisk called for note ${noteId}`)
@@ -600,19 +690,21 @@ export function registerAudioHandlers(): void {
           context.summaryDepth,
           (progress: ProcessingProgress) => broadcastProgress(noteId, progress),
           undefined,
-          activeProcessingAbort.signal
+          job.controller.signal
         )
-
-        activeProcessingAbort = null
-        await cleanupAudioFiles(context)
 
         return result
       } catch (error) {
-        activeProcessingAbort = null
         const message = error instanceof Error ? error.message : String(error)
         throw new Error(
           `[AudioHandlers] Failed to reprocess recording from disk for note ${noteId}: ${message}`
         )
+      } finally {
+        try {
+          if (context) await cleanupTemporaryWavs(context)
+        } finally {
+          if (job) finishProcessingJob(job)
+        }
       }
     }
   )

@@ -1,5 +1,6 @@
 import { createContext, useContext } from 'react'
 import type { ProcessingProgress, RealtimeSegment } from '@preload/index.d'
+import type { ReprocessRecordingOptions } from '@preload/types'
 
 export type MeetingRecordingMode = 'remote' | 'in-person' | 'system-only'
 
@@ -17,10 +18,26 @@ export interface MeetingRecordingSession {
   duration: number
 }
 
-export interface ProcessingJob {
+interface BaseProcessingJob {
   noteId: string
   spaceId: string
   folderId: string
+}
+
+export interface RecordingProcessingJob extends BaseProcessingJob {
+  kind: 'recording'
+}
+
+export interface ReprocessProcessingJob extends BaseProcessingJob {
+  kind: 'reprocess'
+  requestId: string
+  options: ReprocessRecordingOptions
+}
+
+export type ProcessingJob = RecordingProcessingJob | ReprocessProcessingJob
+
+export interface ReprocessMeetingRequest extends BaseProcessingJob {
+  options: ReprocessRecordingOptions
 }
 
 export interface ProcessingFailure {
@@ -63,9 +80,11 @@ export interface MeetingLifecycleContextValue {
   pauseRecording: () => void
   resumeRecording: () => void
   stopRecording: () => Promise<void>
+  /** Queue a developer replay and resolve only after the regenerated note is persisted. */
+  reprocessMeeting: (request: ReprocessMeetingRequest) => Promise<void>
   /** Jobs waiting + current (current is first in queue while pumping) */
   processingQueue: ProcessingJob[]
-  /** Job currently running processRecording (head of queue) */
+  /** Job currently running the audio pipeline (head of queue) */
   activeProcessingJob: ProcessingJob | null
   processingProgress: ProcessingProgress | null
   /** Last pipeline failure for a specific note (survives dequeue / active job change) */

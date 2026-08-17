@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
+import type { ReprocessRecordingOptions } from './types'
 
 // File System API
 const fileSystemAPI = {
@@ -407,21 +408,14 @@ const audioAPI = {
     summaryDepth?: 'conservative' | 'balanced' | 'aggressive'
   }) => ipcRenderer.invoke('audio:regenerateSummary', payload),
 
-  hasStoredRecording: (noteId: string, spaceId: string) =>
-    ipcRenderer.invoke('audio:hasStoredRecording', noteId, spaceId),
-
-  reprocessFromDisk: (
+  hasStoredRecording: (
     noteId: string,
     spaceId: string,
-    options: {
-      mode: 'remote' | 'in-person' | 'system-only'
-      contentType?: 'meeting' | 'media'
-      summaryDepth?: 'conservative' | 'balanced' | 'aggressive'
-      recordingDate: string
-      durationSecs: number
-      language: string
-    }
-  ) => ipcRenderer.invoke('audio:reprocessFromDisk', noteId, spaceId, options),
+    mode: 'remote' | 'in-person' | 'system-only'
+  ) => ipcRenderer.invoke('audio:hasStoredRecording', noteId, spaceId, mode),
+
+  reprocessFromDisk: (noteId: string, spaceId: string, options: ReprocessRecordingOptions) =>
+    ipcRenderer.invoke('audio:reprocessFromDisk', noteId, spaceId, options),
 
   // --- Realtime transcription (macOS Apple Silicon) ---
 

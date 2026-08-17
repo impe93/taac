@@ -27,6 +27,16 @@ export interface MeetingMetadata {
   audioFileId?: string // Present if user chose to keep audio
 }
 
+/** Developer-only options for replaying the full meeting pipeline from stored WebM audio. */
+export interface ReprocessRecordingOptions {
+  mode: 'remote' | 'in-person' | 'system-only'
+  contentType?: 'meeting' | 'media'
+  summaryDepth?: 'conservative' | 'balanced' | 'aggressive'
+  recordingDate: string
+  durationSecs: number
+  language: string
+}
+
 export interface Speaker {
   id: string // e.g. 'speaker-0', 'speaker-1'
   label: string // e.g. 'You', 'Speaker 1', or user-assigned name
