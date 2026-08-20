@@ -148,7 +148,8 @@
   },
   "pnpm": {
     "overrides": {
-      "chalk": "^4.1.2"
+      "chalk": "^4.1.2",
+      "@electron/rebuild@4.0.3>node-gyp": "12.4.0"
     },
     "neverBuiltDependencies": [],
     "patchedDependencies": {}
