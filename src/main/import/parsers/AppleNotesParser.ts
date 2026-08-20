@@ -924,7 +924,7 @@ export class AppleNotesParser extends BaseParser {
           if (ext === '.md' || ext === '.html' || ext === '.htm') {
             results.push({
               absolutePath: fullPath,
-              relativePath: relative(dirPath, fullPath),
+              relativePath: this.toPortableRelativePath(relative(dirPath, fullPath)),
               isHtml: ext === '.html' || ext === '.htm'
             })
           }

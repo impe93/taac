@@ -22,6 +22,7 @@ export const MainContentWithAIPanel: FC<MainContentWithAIPanelProps> = ({
 }) => {
   const { isOpen, panelSize, toggle, close, setPanelSize } = useAIChatPanel()
   const aiPanelRef = useRef<ImperativePanelHandle>(null)
+  const aiShortcut = window.platform === 'darwin' ? '⌘⇧A' : 'Ctrl+Shift+A'
 
   const handlePanelResize = useCallback(
     (sizes: number[]) => {
@@ -65,7 +66,7 @@ export const MainContentWithAIPanel: FC<MainContentWithAIPanelProps> = ({
                     size="icon"
                     className="size-7"
                     onClick={close}
-                    title="Close AI panel (⌘⇧A)"
+                    title={`Close AI panel (${aiShortcut})`}
                   >
                     <X className="size-4" />
                   </Button>
@@ -111,7 +112,7 @@ export const MainContentWithAIPanel: FC<MainContentWithAIPanelProps> = ({
           onClick={toggle}
           size="icon"
           className="fixed bottom-6 right-6 z-50 size-12 rounded-full shadow-lg md:hidden"
-          title="Open AI Assistant (⌘⇧A)"
+          title={`Open AI Assistant (${aiShortcut})`}
         >
           <Bot className="size-5" />
         </Button>

@@ -1,0 +1,77 @@
+name: Windows compatibility
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-x64:
+    runs-on: windows-2022
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.21.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      # Installation runs electron-builder install-app-deps, rebuilding native
+      # addons for Electron's ABI on the target OS instead of reusing macOS
+      # binaries in a misleading cross-build.
+      - name: Install Windows dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build application
+        run: pnpm build
+
+      - name: Smoke-test native runtime
+        run: pnpm verify:native
+
+      - name: Package Windows installer
+        run: pnpm exec electron-builder --win --x64 --publish never
+
+      - name: Verify packaged native payload
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem dist -Filter '*-setup.exe' | Select-Object -First 1
+          if (-not $installer) { throw 'NSIS installer was not produced' }
+
+          $executable = Join-Path 'dist/win-unpacked' 'taac.exe'
+          if (-not (Test-Path $executable)) { throw "Unpacked executable missing: $executable" }
+
+          $unpacked = Join-Path 'dist/win-unpacked/resources' 'app.asar.unpacked'
+          if (-not (Test-Path $unpacked)) { throw "ASAR native payload missing: $unpacked" }
+
+          $nodeAddons = @(Get-ChildItem $unpacked -Recurse -Filter '*.node')
+          $dlls = @(Get-ChildItem $unpacked -Recurse -Filter '*.dll')
+          $ffmpeg = @(Get-ChildItem $unpacked -Recurse -Filter 'ffmpeg.exe')
+          if ($nodeAddons.Count -eq 0) { throw 'No native Node addons were unpacked' }
+          if ($dlls.Count -eq 0) { throw 'No native DLLs were unpacked' }
+          if ($ffmpeg.Count -eq 0) { throw 'ffmpeg.exe was not unpacked' }
+
+          Write-Host "Installer: $($installer.Name)"
+          Write-Host "Native addons: $($nodeAddons.Count); DLLs: $($dlls.Count); FFmpeg: $($ffmpeg.Count)"
+
+      - name: Upload Windows artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: |
+            dist/*-setup.exe
+            dist/*.blockmap
+            dist/latest.yml
+          if-no-files-found: warn

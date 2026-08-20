@@ -90,7 +90,7 @@ export const AppTopBar: FC<AppTopBarProps> = ({
         <Search className="size-4 shrink-0" />
         <span className="flex-1 text-left">Search notes…</span>
         <kbd className="pointer-events-none inline-flex h-5 select-none items-center rounded border bg-muted px-1.5 font-mono text-[10px] font-medium">
-          ⌘K
+          {isMacOS ? '⌘K' : 'Ctrl+K'}
         </kbd>
       </button>
 
@@ -113,7 +113,7 @@ export const AppTopBar: FC<AppTopBarProps> = ({
           </TooltipTrigger>
           <TooltipContent side="bottom">
             <p>AI Assistant</p>
-            <p className="text-xs text-muted-foreground">⌘⇧A</p>
+            <p className="text-xs text-muted-foreground">{isMacOS ? '⌘⇧A' : 'Ctrl+Shift+A'}</p>
           </TooltipContent>
         </Tooltip>
         <div style={noDragStyle}>

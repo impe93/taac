@@ -51,15 +51,21 @@ export class HardwareDetector {
 
     const [cpu, mem, graphics] = await Promise.all([si.cpu(), si.mem(), si.graphics()])
 
-    const primaryGpu = graphics.controllers[0]
+    const controllers = graphics.controllers ?? []
+    const primaryGpu = this.selectPrimaryGpu(controllers)
 
     const gpuInfo: GPUInfo = {
-      name: primaryGpu?.name || 'Unknown',
+      // systeminformation exposes the adapter label as `model` on both macOS
+      // and Windows. Keep the legacy `name` fallback for older releases.
+      name: primaryGpu?.model || primaryGpu?.name || 'Unknown',
       vendor: primaryGpu?.vendor || 'Unknown',
       vramBytes: primaryGpu?.vram ? primaryGpu.vram * 1024 * 1024 : null,
-      hasCuda: this.detectCuda(primaryGpu),
+      // Hybrid Windows laptops commonly report the integrated adapter first.
+      // Capabilities must therefore be aggregated across every controller,
+      // while memory/model details come from the preferred compute adapter.
+      hasCuda: controllers.some((gpu) => this.detectCuda(gpu)),
       hasMetal: process.platform === 'darwin',
-      hasVulkan: this.detectVulkan(primaryGpu),
+      hasVulkan: controllers.some((gpu) => this.detectVulkan(gpu)),
       driverVersion: primaryGpu?.driverVersion || null
     }
 
@@ -175,7 +181,7 @@ export class HardwareDetector {
     }
 
     // Bonus for Apple Silicon with unified memory
-    if (gpu.hasMetal && gpu.name.toLowerCase().includes('apple')) {
+    if (gpu.hasMetal && gpu.vendor.toLowerCase().includes('apple')) {
       score += 2
     }
 
@@ -195,17 +201,50 @@ export class HardwareDetector {
   }
 
   /**
-   * Detect Vulkan support (AMD/Intel GPU)
+   * Detect Vulkan support (NVIDIA/AMD/Intel GPU)
    */
   private static detectVulkan(
     gpu: si.Systeminformation.GraphicsControllerData | undefined
   ): boolean {
     if (!gpu) return false
-    // Most modern AMD and Intel GPUs support Vulkan
+    // Current NVIDIA, AMD and Intel adapters generally support Vulkan.
     return (
+      gpu.vendor?.toLowerCase().includes('nvidia') ||
       gpu.vendor?.toLowerCase().includes('amd') ||
       gpu.vendor?.toLowerCase().includes('intel') ||
       false
+    )
+  }
+
+  /**
+   * Pick the adapter whose native backend Taac will actually prefer.
+   *
+   * Windows often returns the low-power Intel/AMD iGPU before a discrete
+   * NVIDIA GPU. Prefer CUDA-capable adapters, then Apple/AMD/Intel compute
+   * adapters, using reported VRAM to break ties within the same family.
+   */
+  private static selectPrimaryGpu(
+    controllers: si.Systeminformation.GraphicsControllerData[]
+  ): si.Systeminformation.GraphicsControllerData | undefined {
+    const score = (gpu: si.Systeminformation.GraphicsControllerData): number => {
+      const vendor = gpu.vendor?.toLowerCase() ?? ''
+      const model = (gpu.model || gpu.name || '').toLowerCase()
+
+      let backendRank = 0
+      if (vendor.includes('nvidia')) backendRank = 4
+      else if (vendor.includes('apple')) backendRank = 3
+      else if (vendor.includes('amd')) backendRank = 2
+      else if (vendor.includes('intel')) backendRank = 1
+
+      // Avoid preferring Windows' software fallback adapter when a real GPU is
+      // also present. VRAM is in MB in systeminformation's response.
+      const softwarePenalty = model.includes('microsoft basic') ? 1_000_000_000 : 0
+      return backendRank * 1_000_000 + (gpu.vram ?? 0) - softwarePenalty
+    }
+
+    return controllers.reduce<si.Systeminformation.GraphicsControllerData | undefined>(
+      (best, current) => (!best || score(current) > score(best) ? current : best),
+      undefined
     )
   }
 
@@ -220,8 +259,8 @@ export class HardwareDetector {
    * Get recommended GPU backend for the current hardware
    */
   static getRecommendedGpuBackend(info: HardwareInfo): 'cuda' | 'metal' | 'vulkan' | false {
+    if (info.platform === 'darwin' && info.gpu.hasMetal) return 'metal'
     if (info.gpu.hasCuda) return 'cuda'
-    if (info.gpu.hasMetal) return 'metal'
     if (info.gpu.hasVulkan) return 'vulkan'
     return false
   }

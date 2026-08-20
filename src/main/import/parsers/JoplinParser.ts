@@ -352,7 +352,7 @@ export class JoplinParser extends BaseParser {
         } else if (entry.isFile()) {
           results.push({
             absolutePath: fullPath,
-            relativePath: relative(exportRoot, fullPath),
+            relativePath: this.toPortableRelativePath(relative(exportRoot, fullPath)),
             isMarkdown: extname(entry.name).toLowerCase() === '.md'
           })
         }
@@ -389,7 +389,7 @@ export class JoplinParser extends BaseParser {
         } else if (entry.isFile()) {
           results.push({
             absolutePath: fullPath,
-            relativePath: relative(exportRoot, fullPath),
+            relativePath: this.toPortableRelativePath(relative(exportRoot, fullPath)),
             isMarkdown: false
           })
         }

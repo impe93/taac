@@ -25,7 +25,7 @@ const TUTORIAL_CARDS = [
     icon: Bot,
     title: 'AI Assistant',
     description:
-      'Load an AI model and open the chat panel (Cmd+Shift+A) to ask questions, get summaries, and brainstorm — all powered by a local LLM running on your machine. No data leaves your device.'
+      'Load an AI model and open the chat panel (Cmd/Ctrl+Shift+A) to ask questions, get summaries, and brainstorm — all powered by a local LLM running on your machine. No data leaves your device.'
   },
   {
     icon: Search,

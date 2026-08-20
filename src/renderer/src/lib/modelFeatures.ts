@@ -48,7 +48,7 @@ export const FEATURES: CuratedFeature[] = [
     label: 'Meeting Notes',
     description:
       'Record meetings, automatically transcribe audio, and identify different speakers — all offline.',
-    benefit: 'Records and summarizes meetings with speaker labels, on your Mac.',
+    benefit: 'Records and summarizes meetings with speaker labels, on your device.',
     optional: true
   }
 ]

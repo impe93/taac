@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { extname } from 'node:path'
+import { extname, sep } from 'node:path'
 
 import type { ImportScanResult, ParsedNote } from '../types'
 
@@ -43,6 +43,16 @@ export abstract class BaseParser {
   protected generateSafeFilename(original: string): string {
     const id = randomUUID()
     return `${id}-${original}`
+  }
+
+  /**
+   * Convert a filesystem-relative path to the portable `/`-separated form used
+   * by ImportManager for logical folder hierarchies. On Windows, path.relative()
+   * returns backslashes; leaving them untouched would flatten nested imports
+   * into a single folder named e.g. `Work\\Project`.
+   */
+  protected toPortableRelativePath(relativePath: string): string {
+    return sep === '/' ? relativePath : relativePath.split(sep).join('/')
   }
 
   protected log(message: string): void {

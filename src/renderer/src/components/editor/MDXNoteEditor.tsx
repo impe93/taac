@@ -122,7 +122,9 @@ export const MDXNoteEditor: FC<MDXNoteEditorProps> = ({
         const asset = await window.fileSystem.saveAsset(spaceId, file.name, uint8Array, 'image')
 
         // Extract filename from the full path
-        const filename = asset.path.split('/').pop() || asset.id
+        // IPC returns an OS-native absolute path. Accept both POSIX and Windows
+        // separators before placing only the filename in the custom asset URL.
+        const filename = asset.path.split(/[\\/]/).pop() || asset.id
 
         // Return custom protocol URL for Electron
         // Format: taac-asset://spaceId/images/filename

@@ -314,7 +314,9 @@ export const MeetingLifecycleProvider: FC<{ children: ReactNode }> = ({ children
           if (audioTracks.length === 0) {
             displayStream.getTracks().forEach((track) => track.stop())
             throw new Error(
-              'System audio capture is not available. Ensure Screen Recording permission is granted in System Settings.'
+              window.platform === 'darwin'
+                ? 'System audio capture is not available. Ensure Screen Recording permission is granted in System Settings.'
+                : 'System audio capture is not available. Check Windows privacy settings and select a capturable display.'
             )
           }
           return new MediaStream(audioTracks)

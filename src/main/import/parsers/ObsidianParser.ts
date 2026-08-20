@@ -333,7 +333,7 @@ export class ObsidianParser extends BaseParser {
         } else if (entry.isFile()) {
           results.push({
             absolutePath: fullPath,
-            relativePath: relative(vaultRoot, fullPath),
+            relativePath: this.toPortableRelativePath(relative(vaultRoot, fullPath)),
             isMarkdown: extname(entry.name).toLowerCase() === '.md'
           })
         }

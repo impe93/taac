@@ -128,9 +128,16 @@ function createWindow(): void {
       : {}),
     show: false,
     autoHideMenuBar: true,
-    titleBarStyle: 'hiddenInset',
-    // Vertically center the native traffic lights within the 40px top bar.
-    trafficLightPosition: { x: 16, y: 13 },
+    // hiddenInset/trafficLightPosition are macOS-only. Windows keeps its native
+    // title bar and window controls; applying a hidden style there can leave a
+    // draggable window with no minimize/maximize/close buttons.
+    ...(process.platform === 'darwin'
+      ? {
+          titleBarStyle: 'hiddenInset' as const,
+          // Vertically center the native traffic lights within the 40px top bar.
+          trafficLightPosition: { x: 16, y: 13 }
+        }
+      : {}),
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
